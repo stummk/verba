@@ -12,6 +12,8 @@ AppName=Verba
 AppVersion={#AppVersion}
 AppPublisher=Verba
 DefaultDirName={autopf}\Verba
+UsePreviousAppDir=yes
+Uninstallable=yes
 DefaultGroupName=Verba
 DisableProgramGroupPage=yes
 OutputDir=..\dist
@@ -21,6 +23,9 @@ UninstallDisplayIcon={app}\Verba.exe
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+CloseApplications=yes
+RestartApplications=yes
+RestartIfNeededByRun=yes
 PrivilegesRequiredOverridesAllowed=dialog
 ; User data lives in %LOCALAPPDATA%\Verba and survives uninstall/updates.
 
@@ -34,6 +39,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "..\dist\verba\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
+
+[InstallDelete]
+; Remove files from older one-dir bundles before copying the new version.
+; Runtime data is stored outside {app} and is therefore preserved.
+Type: filesandordirs; Name: "{app}\*"
 
 [Icons]
 Name: "{group}\Verba"; Filename: "{app}\Verba.exe"

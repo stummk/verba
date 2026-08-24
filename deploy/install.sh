@@ -37,8 +37,18 @@ EOF
 
 echo "Installing Verba into $TARGET ..."
 mkdir -p "$TARGET"
+
+SERVICE_WAS_ACTIVE=0
+if command -v systemctl &>/dev/null && systemctl is-active --quiet verba 2>/dev/null; then
+    SERVICE_WAS_ACTIVE=1
+    systemctl stop verba
+fi
+
+# Replace only application files. Keep the virtualenv, runtime data and user
+# workspaces so rerunning this script upgrades an existing installation.
 for item in backend frontend docs requirements deploy run.py start.sh README.md; do
-    cp -r "$SOURCE_DIR/$item" "$TARGET/"
+    rm -rf "$TARGET/$item"
+    cp -r "$SOURCE_DIR/$item" "$TARGET/$item"
 done
 
 echo "Creating virtual environment ..."
@@ -55,7 +65,11 @@ chown -R verba:verba "$TARGET"
 if command -v systemctl &>/dev/null; then
     sed "s|/opt/verba|$TARGET|g" "$TARGET/deploy/verba.service" > /etc/systemd/system/verba.service
     systemctl daemon-reload
-    systemctl enable --now verba
+    if [[ $SERVICE_WAS_ACTIVE -eq 1 ]]; then
+        systemctl enable --now verba
+    else
+        systemctl enable verba
+    fi
     echo
     echo "Verba is running: http://$(hostname -I 2>/dev/null | awk '{print $1}'):8710"
     echo "Status:  systemctl status verba"

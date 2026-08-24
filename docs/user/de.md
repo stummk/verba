@@ -9,11 +9,13 @@ optionaler KI-Bereinigung/Übersetzung, PDF-Export, semantischer Suche und einer
 **Fertige Pakete** (Releases-Seite des Projekts):
 
 - **Windows:** `Verba-Setup-….exe` — Doppelklick, Assistent, Startmenü-Eintrag.
-  Die Daten liegen pro Nutzer und überstehen Updates.
+  Für ein Update einfach den neuen Installer über die bestehende Installation
+  ausführen; die Daten liegen pro Nutzer und überstehen Updates.
 - **Linux-Desktop:** `Verba-….AppImage` — ausführbar machen und starten.
 - **Linux-Server:** `verba-server-….zip` entpacken und `sudo ./deploy/install.sh`
   ausführen — richtet Dienst (systemd) und Autostart ein; Vorlagen für
-  nginx/Caddy liegen bei.
+  nginx/Caddy liegen bei. Bei einer bestehenden Installation aktualisiert
+  derselbe Befehl Verba automatisch und erhält Daten und Arbeitsbereiche.
 
 **Aus dem Quellcode:**
 

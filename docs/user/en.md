@@ -9,11 +9,13 @@ transcription API.
 **Ready-made packages** (project releases page):
 
 - **Windows:** `Verba-Setup-….exe` — double-click, wizard, start menu entry.
-  Data is stored per user and survives updates.
+  To update, run the newer installer over the existing installation. Data is
+  stored per user and survives updates.
 - **Linux desktop:** `Verba-….AppImage` — make executable and run.
 - **Linux server:** unpack `verba-server-….zip` and run
   `sudo ./deploy/install.sh` — sets up the systemd service and autostart;
-  nginx/Caddy templates are included.
+  nginx/Caddy templates are included. On an existing installation, running
+  the same command updates Verba automatically and keeps data and workspaces.
 
 **From source:**
 
