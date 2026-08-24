@@ -160,6 +160,27 @@ def test_build_document_without_type_never_calls_llm(data_env, tmp_path, monkeyp
     assert doc["blocks"] == [{"kind": "paragraph", "text": "Hallo Welt."}]
 
 
+def test_build_document_includes_file_header(data_env, tmp_path):
+    file_row, project = make_done_file(tmp_path)
+    with db.get_conn() as conn:
+        conn.execute(
+            "UPDATE files SET header_left = 'Text', header_middle = 'Zusatz', "
+            "header_right = 'Prefix' WHERE id = ?",
+            (file_row["id"],),
+        )
+    doc = pdf.build_document(workspace.get_file(file_row["id"]), project, "", NO_CANCEL, no_report)
+    assert doc["header_left"] == "Text"
+    assert doc["header_middle"] == "Zusatz"
+    assert doc["header_right"] == "Prefix"
+
+
+def test_import_populates_automatic_header_defaults(data_env, tmp_path):
+    file_row, _project = make_done_file(tmp_path, name="aufnahme.mp3")
+    assert file_row["header_left"] == "aufnahme"
+    assert file_row["header_middle"] == ""
+    assert file_row["header_right"] == ""
+
+
 # ── stage 2: renderer ─────────────────────────────────────────────────
 
 ALL_KINDS_DOC = {

@@ -56,3 +56,15 @@ def test_filename_parsing(stem, title, recorded_at, tmp_path):
     result = metadata.extract_metadata(path)
     assert result["title"] == title
     assert result["recorded_at"] == recorded_at
+
+
+def test_filename_scheme_parses_languages_and_header_fields(tmp_path):
+    path = tmp_path / "20260401_de__Titel_Zusatz.mp3"
+    path.write_bytes(b"not-audio")
+    result = metadata.extract_metadata(path)
+    assert result["recorded_at"] == "2026-04-01"
+    assert result["language"] == "de"
+    assert result["target_language"] == ""
+    assert result["title"] == "Titel"
+    assert result["addition"] == "Zusatz"
+    assert metadata.format_display_date(result["recorded_at"]) == "01.04.2026"

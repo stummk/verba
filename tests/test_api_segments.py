@@ -51,6 +51,24 @@ def test_update_segment_endpoint(client, file_row):
     assert response.json()["speaker"] == "Max"
 
 
+def test_update_file_header_endpoint(client, file_row):
+    response = client.put(
+        f"/api/files/{file_row['id']}/header",
+        json={"header_left": "Protokoll", "header_middle": "Sitzung", "header_right": "TOP 1"},
+    )
+    assert response.status_code == 200
+    assert response.json()["header_left"] == "Protokoll"
+    saved = client.get(f"/api/files/{file_row['id']}/segments").json()
+    assert saved["file"]["header_middle"] == "Sitzung"
+
+
+def test_update_file_header_rejects_too_long_value(client, file_row):
+    response = client.put(
+        f"/api/files/{file_row['id']}/header", json={"header_left": "x" * 501}
+    )
+    assert response.status_code == 422
+
+
 def test_update_missing_segment_404(client, file_row):
     assert client.put("/api/segments/99999", json={"text": "x"}).status_code == 404
 

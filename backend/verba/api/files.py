@@ -254,6 +254,20 @@ class TextUpdate(BaseModel):
     content: str = Field(max_length=2_000_000)
 
 
+class FileHeaderUpdate(BaseModel):
+    header_left: str = Field(default="", max_length=500)
+    header_middle: str = Field(default="", max_length=500)
+    header_right: str = Field(default="", max_length=500)
+
+
+@router.put("/files/{file_id}/header")
+def update_file_header(file_id: int, body: FileHeaderUpdate) -> dict:
+    _file_or_404(file_id)
+    updated = workspace.update_file(file_id, body.model_dump())
+    assert updated is not None
+    return updated
+
+
 @router.put("/files/{file_id}/texts/{kind}")
 def update_text(file_id: int, kind: str, body: TextUpdate, language: str = "") -> dict:
     """Manual edit of a derived text (cleanup/translation) from the editor."""

@@ -149,7 +149,7 @@ def maybe_enqueue_auto_process(file_id: int, session_id: str = "") -> dict[str, 
         return None
 
     steps = ["cleanup"]
-    target = project.get("auto_language") or ""
+    target = file_row.get("target_language") or project.get("auto_language") or ""
     if target:
         steps.append("translate")
     return job_queue.enqueue(

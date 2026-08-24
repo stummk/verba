@@ -8,7 +8,7 @@ with an LLM it gets smarter (stanzas, dialogue roles, minutes with to-dos).
 Stage 2 (render): a deterministic fpdf2 renderer lays the blocks out
 according to the transcript type's template. Folder exports append each
 file as a section separated by spacing only — no table of contents, no
-extra section titles; the per-file header comes from the type template.
+extra section titles; the per-file header comes from file metadata.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from typing import Any
 
 from ..core.jobs import JobCancelled, job_queue
 from . import llm, pipeline, transcripts, workspace
+from .metadata import format_display_date
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +199,9 @@ def build_document(
     return {
         "title": file_row.get("title") or Path(file_row["rel_path"]).stem,
         "date": file_row.get("recorded_at") or "",
+        "header_left": file_row.get("header_left") or "",
+        "header_middle": file_row.get("header_middle") or "",
+        "header_right": format_display_date(file_row.get("header_right") or ""),
         "blocks": blocks,
     }
 
@@ -257,16 +261,32 @@ class _Renderer:
         self.pdf.multi_cell(0, height, self._text(value), new_x="LMARGIN", new_y="NEXT")
 
     def section(self, doc: dict[str, Any]) -> None:
-        """One file: header from the type template, then its blocks."""
+        """Render one file's optional header and its blocks."""
         pdf = self.pdf
-        pdf.set_font(self.family, "B", 15)
-        self._write(8, doc["title"])
-        if doc.get("date"):
-            pdf.set_font(self.family, "", 9)
-            pdf.set_text_color(120, 120, 120)
-            self._write(5, doc["date"])
-            pdf.set_text_color(0, 0, 0)
-        pdf.ln(4)
+        left = doc.get("header_left") or ""
+        middle = doc.get("header_middle") or ""
+        right = doc.get("header_right") or ""
+        if left or middle or right:
+            page_width = pdf.w - pdf.l_margin - pdf.r_margin
+            pdf.set_font(self.family, "B", 11)
+            pdf.cell(page_width * 0.45, 7, self._text(left), align="L")
+            pdf.set_font(self.family, "", 11)
+            pdf.cell(
+                page_width * 0.30,
+                7,
+                self._text(f"({middle})" if middle else ""),
+                align="C",
+            )
+            pdf.set_font(self.family, "B", 11)
+            pdf.cell(
+                page_width * 0.25,
+                7,
+                self._text(right),
+                align="R",
+                new_x="LMARGIN",
+                new_y="NEXT",
+            )
+            pdf.ln(4)
         for block in doc["blocks"]:
             self._block(block)
 

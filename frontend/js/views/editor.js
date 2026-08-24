@@ -42,6 +42,21 @@ export async function render(view, _status, params) {
     <p><a href="#/project/${file.project_id}" class="muted small">${t("editor.back")}</a></p>
     <h1>${file.filename}</h1>
 
+    <div class="card file-header-editor">
+      <h2>${t("editor.pdfHeader")}</h2>
+      <div class="form-grid header-fields">
+        <label>${t("editor.pdfHeaderLeft")}
+          <input id="header-left" value="${file.header_left ?? ""}" maxlength="500">
+        </label>
+        <label>${t("editor.pdfHeaderMiddle")}
+          <input id="header-middle" value="${file.header_middle ?? ""}" maxlength="500">
+        </label>
+        <label>${t("editor.pdfHeaderRight")}
+          <input id="header-right" value="${file.header_right ?? ""}" maxlength="500">
+        </label>
+      </div>
+    </div>
+
     <div class="card">
       <div id="waveform" class="waveform"></div>
       <p class="muted small" id="wave-loading">${t("editor.loading")}</p>
@@ -100,6 +115,29 @@ export async function render(view, _status, params) {
   el("audio-trim").innerHTML = iconSvg("crop");
   el("audio-cut").innerHTML = iconSvg("cut");
   el("clear-selection").innerHTML = iconSvg("close");
+
+  const headerTimers = new Map();
+  for (const field of ["left", "middle", "right"]) {
+    const input = el(`header-${field}`);
+    input.addEventListener("input", () => {
+      el("save-state").textContent = "…";
+      clearTimeout(headerTimers.get(field));
+      headerTimers.set(field, setTimeout(async () => {
+        try {
+          const updated = await api.updateFileHeader(fileId, {
+            header_left: el("header-left").value,
+            header_middle: el("header-middle").value,
+            header_right: el("header-right").value,
+          });
+          Object.assign(file, updated);
+          el("save-state").textContent = t("editor.saved");
+        } catch (error) {
+          el("save-state").textContent = "";
+          toast(t("editor.saveError", { message: error.message }));
+        }
+      }, AUTOSAVE_DELAY));
+    });
+  }
 
   // ── waveform ────────────────────────────────────────────────────────
   const styles = getComputedStyle(document.documentElement);

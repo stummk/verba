@@ -19,7 +19,7 @@ from typing import Any, BinaryIO
 from .. import config, db
 from ..events import hub
 from .media import is_audio_file, probe_duration
-from .metadata import extract_metadata
+from .metadata import extract_metadata, format_display_date
 
 WORKSPACE_SUBDIRS = ("audio", "transcripts", "exports")
 
@@ -140,6 +140,25 @@ def get_file(file_id: int) -> dict[str, Any] | None:
     return db.row_to_dict(row)
 
 
+UPDATABLE_FILE_FIELDS = ("header_left", "header_middle", "header_right")
+
+
+def update_file(file_id: int, changes: dict[str, Any]) -> dict[str, Any] | None:
+    fields = {k: v for k, v in changes.items() if k in UPDATABLE_FILE_FIELDS}
+    if not fields:
+        return get_file(file_id)
+    assignments = ", ".join(f"{key} = ?" for key in fields)
+    with db.get_conn() as conn:
+        cursor = conn.execute(
+            f"UPDATE files SET {assignments} WHERE id = ?",  # noqa: S608 — whitelisted keys
+            (*fields.values(), file_id),
+        )
+        if cursor.rowcount == 0:
+            return None
+    emit_file_update(file_id)
+    return get_file(file_id)
+
+
 def file_path(file_row: dict[str, Any]) -> Path:
     project = get_project(file_row["project_id"])
     assert project is not None
@@ -169,7 +188,8 @@ def register_file(project: dict[str, Any], target: Path, source: str = "") -> di
     with db.get_conn() as conn:
         cursor = conn.execute(
             "INSERT INTO files (project_id, filename, rel_path, source_path, duration, "
-            "title, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "title, recorded_at, language, target_language, header_left, header_middle, "
+            "header_right) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 project["id"],
                 target.name,
@@ -177,6 +197,11 @@ def register_file(project: dict[str, Any], target: Path, source: str = "") -> di
                 source,
                 duration,
                 meta["title"],
+                format_display_date(meta["recorded_at"]),
+                meta.get("language", ""),
+                meta.get("target_language", ""),
+                meta["title"] or target.stem,
+                meta.get("addition", ""),
                 meta["recorded_at"],
             ),
         )

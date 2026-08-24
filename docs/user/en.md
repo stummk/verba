@@ -157,6 +157,12 @@ transcript and AI texts:
     replaces exactly the affected segments
   - **Trim to selection / Remove selection** — audio cutting via ffmpeg;
     the result becomes a *new* file in the transcript, the original is kept
+- The editor's **PDF header** section stores a left text, a centered addition,
+  and a right prefix per file. The title and recording date are suggested
+  automatically, and the centered addition is enclosed in parentheses in the PDF;
+  when all three fields are empty, no header is rendered.
+- File names may optionally follow `date_source-language_target-language_title_addition`;
+  this pre-fills the language, optional translation target, and header fields.
 
 ## Whisper models
 
@@ -197,8 +203,7 @@ extra whitespace or a script layout for role plays.
 Without a type a plain text PDF is produced.
 
 **PDF export (all)** creates one collective PDF: each file follows as its own
-section separated by spacing only — no table of contents and no extra
-titles; the per-file header (title and date) comes from the template.
+section separated by spacing only — no table of contents and no extra titles.
 Finished PDFs appear in the **Exports (PDF)** card for download or deletion;
 in the workspace they live under `exports/`.
 

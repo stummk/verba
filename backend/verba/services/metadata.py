@@ -1,7 +1,7 @@
 """Metadata extraction from audio tags (via `av`) and filename schemes.
 
-Filenames like "20240817_Predigt Titel.mp3" or "2024-08-17 Interview.wav"
-carry a recording date and a title; MP3/MP4 tags may carry both too.
+Filenames may use ``date_source-target_title_addition.ext``. Empty fields
+are allowed; MP3/MP4 tags may still provide a title or date.
 Tag values win over filename-derived values.
 """
 
@@ -20,8 +20,34 @@ _FILENAME_DATE = re.compile(
 )
 
 
+def format_display_date(value: str) -> str:
+    """Format an ISO date for display in a PDF header."""
+    try:
+        return date.fromisoformat(value).strftime("%d.%m.%Y")
+    except ValueError:
+        return value
+
+
 def _parse_filename(stem: str) -> dict[str, str]:
-    result = {"title": "", "recorded_at": ""}
+    result = {
+        "title": "", "recorded_at": "", "language": "", "target_language": "", "addition": ""
+    }
+    fields = stem.split("_")
+    if len(fields) >= 5 and fields[0].isdigit():
+        (
+            raw_date,
+            result["language"],
+            result["target_language"],
+            result["title"],
+            result["addition"],
+        ) = fields[:5]
+        try:
+            parsed = date(int(raw_date[:4]), int(raw_date[4:6]), int(raw_date[6:8]))
+            if len(raw_date) == 8:
+                result["recorded_at"] = parsed.isoformat()
+        except (ValueError, IndexError):
+            pass
+        return result
     match = _FILENAME_DATE.match(stem)
     rest = stem
     if match:
@@ -61,7 +87,7 @@ def _normalize_tag_date(raw: str) -> str:
 
 
 def extract_metadata(path: Path) -> dict[str, Any]:
-    """Return {"title": str, "recorded_at": "YYYY-MM-DD" | ""} for an audio file."""
+    """Return metadata parsed from tags and the optional filename scheme."""
     result = _parse_filename(path.stem)
     tags = _read_tags(path)
 

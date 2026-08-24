@@ -10,6 +10,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 from . import config
@@ -52,6 +53,10 @@ CREATE TABLE IF NOT EXISTS files (
     error       TEXT NOT NULL DEFAULT '',
     title       TEXT NOT NULL DEFAULT '',
     recorded_at TEXT NOT NULL DEFAULT '',
+    header_left TEXT NOT NULL DEFAULT '',
+    header_middle TEXT NOT NULL DEFAULT '',
+    header_right TEXT NOT NULL DEFAULT '',
+    target_language TEXT NOT NULL DEFAULT '',
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -182,8 +187,29 @@ def _migrate(conn: sqlite3.Connection) -> None:
     add_missing("projects", "auto_language", "auto_language TEXT NOT NULL DEFAULT ''")
     add_missing("files", "title", "title TEXT NOT NULL DEFAULT ''")
     add_missing("files", "recorded_at", "recorded_at TEXT NOT NULL DEFAULT ''")
+    add_missing("files", "header_left", "header_left TEXT NOT NULL DEFAULT ''")
+    add_missing("files", "header_middle", "header_middle TEXT NOT NULL DEFAULT ''")
+    add_missing("files", "header_right", "header_right TEXT NOT NULL DEFAULT ''")
+    add_missing("files", "target_language", "target_language TEXT NOT NULL DEFAULT ''")
     add_missing("jobs", "session_id", "session_id TEXT NOT NULL DEFAULT ''")
     add_missing("jobs", "priority", "priority INTEGER NOT NULL DEFAULT 0")
+
+    if not get_meta(conn, "file_headers_v2_initialized"):
+        rows = conn.execute(
+            "SELECT id, rel_path, title, recorded_at, header_left, header_middle, header_right "
+            "FROM files"
+        ).fetchall()
+        for row in rows:
+            left = row["header_left"] or row["title"] or Path(row["rel_path"]).stem
+            right = row["header_right"] or row["recorded_at"]
+            if right == row["recorded_at"] and isinstance(right, str) and len(right) == 10:
+                right = f"{right[8:10]}.{right[5:7]}.{right[:4]}"
+            conn.execute(
+                "UPDATE files SET header_left = ?, header_middle = '', header_right = ? "
+                "WHERE id = ?",
+                (left, right, row["id"]),
+            )
+        set_meta(conn, "file_headers_v2_initialized", "1")
 
 
 def get_meta(conn: sqlite3.Connection, key: str) -> str | None:

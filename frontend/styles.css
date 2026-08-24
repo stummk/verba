@@ -419,6 +419,8 @@ details.advanced .form-grid { margin-top: .25rem; }
 }
 .time-display { font-family: ui-monospace, Consolas, monospace; }
 .editor-head { display: flex; align-items: center; gap: .6rem; }
+.file-header-editor h2 { font-size: 1rem; margin: 0; }
+.header-fields { margin-top: .25rem; }
 
 .segment-list { display: flex; flex-direction: column; }
 .seg-row {

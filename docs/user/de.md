@@ -164,6 +164,13 @@ transkribierten Datei öffnet den Editor — einen
     ersetzt exakt die betroffenen Segmente
   - **Auf Auswahl kürzen / Auswahl entfernen** — Audio-Schnitt per ffmpeg;
     das Ergebnis entsteht als *neue* Datei im Transkript, das Original bleibt erhalten
+- Im Bereich **PDF-Header** im Editor lassen sich pro Datei ein linker Text, ein
+  mittiger Zusatz und ein rechtes Prefix bearbeiten. Titel und Aufnahmedatum werden
+  automatisch vorgeschlagen, der mittlere Zusatz erscheint im PDF in Klammern. Wenn
+  alle drei Felder leer sind, gibt es für die Datei keine Kopfzeile.
+- Dateinamen können optional als `Datum_Dateisprache_Zielsprache_Titel_Zusatz` aufgebaut
+  sein. Dadurch werden Sprache, optionale Übersetzung sowie die Headerfelder automatisch
+  vorbelegt.
 
 ## Whisper-Modelle
 
@@ -206,8 +213,7 @@ Skriptlayout beim Rollenspiel. Ohne Typ entsteht ein schlichtes Text-PDF.
 
 **PDF-Export (alle)** erzeugt ein Sammel-PDF: Jede Datei folgt als eigener
 Abschnitt, nur durch Abstand getrennt — ohne Inhaltsverzeichnis und ohne
-zusätzliche Titel; die Kopfzeile je Datei (Titel und Datum) kommt aus dem
-Template. Fertige PDFs erscheinen in der Karte **Exporte (PDF)** zum
+zusätzliche Titel. Fertige PDFs erscheinen in der Karte **Exporte (PDF)** zum
 Herunterladen oder Löschen; im Workspace liegen sie unter `exports/`.
 
 ## Suche

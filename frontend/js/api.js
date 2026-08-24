@@ -65,6 +65,8 @@ export const api = {
     request("POST", `/api/projects/${projectId}/files/import`, { paths }),
   uploadFile: (projectId, file) => upload(`/api/projects/${projectId}/files/upload`, file),
   deleteFile: (fileId) => request("DELETE", `/api/files/${fileId}`),
+  updateFileHeader: (fileId, header) =>
+    request("PUT", `/api/files/${fileId}/header`, header),
   browse: (path = "") => request("GET", `/api/files/browse?path=${encodeURIComponent(path)}`),
 
   // models

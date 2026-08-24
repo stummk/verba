@@ -315,7 +315,7 @@ export async function render(view, _status, params) {
     languageSelect.className = "file-language";
     fillLanguageSelect(languageSelect, {
       placeholder: t("project.advAuto"),
-      selected: fileLanguages.get(fileRow.id) ?? "",
+      selected: fileLanguages.get(fileRow.id) ?? fileRow.language ?? "",
     });
     languageSelect.onchange = () => fileLanguages.set(fileRow.id, languageSelect.value);
     languageCell.appendChild(languageSelect);
