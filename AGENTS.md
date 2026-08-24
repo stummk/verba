@@ -58,6 +58,8 @@ the onboarding — in tests via `setup_check.install_group(...)` when needed.
 
 ## Test Routines
 
+- After every code change, run `python -m ruff format --check backend/ tests/ run.py` and
+  fix any reported files before considering the change complete.
 - Every new route: test with FastAPI `TestClient` (`tests/`), including the error case.
 - `conftest.py` sets `VERBA_DATA_DIR` to a tmp directory — tests must never
   touch the real `data/`.

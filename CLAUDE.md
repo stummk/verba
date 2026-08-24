@@ -16,7 +16,7 @@ python run.py --server --host 0.0.0.0 --port 8710   # server mode, no browser
 # Tests & lint (from the project root, venv active)
 python -m pytest tests/ -q
 python -m ruff check backend/ tests/ run.py
-python -m ruff format backend/ tests/ run.py
+python -m ruff format --check backend/ tests/ run.py
 ```
 
 ## Structure (short version)
@@ -87,6 +87,8 @@ python -m ruff format backend/ tests/ run.py
   and `matchMedia` calls in JS — `tests/test_pwa.py` enforces this.
   Base: 1rem = 16px.
 - Tests for every new API route and every service; FastAPI's `TestClient` is enough.
+- After every code change, run `python -m ruff format --check backend/ tests/ run.py` and
+  fix any reported files before considering the change complete.
 - **Maintain the in-app docs:** user-visible feature changes belong in the
   user guide `docs/user/{de,en,ru}.md` (in the app under Settings →
   Documentation) — always update all three languages.

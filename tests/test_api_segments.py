@@ -63,9 +63,7 @@ def test_update_file_header_endpoint(client, file_row):
 
 
 def test_update_file_header_rejects_too_long_value(client, file_row):
-    response = client.put(
-        f"/api/files/{file_row['id']}/header", json={"header_left": "x" * 501}
-    )
+    response = client.put(f"/api/files/{file_row['id']}/header", json={"header_left": "x" * 501})
     assert response.status_code == 422
 
 

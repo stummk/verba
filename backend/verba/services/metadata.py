@@ -29,9 +29,7 @@ def format_display_date(value: str) -> str:
 
 
 def _parse_filename(stem: str) -> dict[str, str]:
-    result = {
-        "title": "", "recorded_at": "", "language": "", "target_language": "", "addition": ""
-    }
+    result = {"title": "", "recorded_at": "", "language": "", "target_language": "", "addition": ""}
     fields = stem.split("_")
     if len(fields) >= 5 and fields[0].isdigit():
         (
