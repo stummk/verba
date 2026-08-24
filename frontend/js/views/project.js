@@ -99,7 +99,8 @@ export async function render(view, _status, params) {
     <div class="card">
       <table class="filetable">
         <thead><tr>
-          <th>${t("project.colFile")}</th><th>${t("project.colDuration")}</th>
+          <th>${t("project.colFile")}</th><th>${t("project.colLanguage")}</th>
+          <th>${t("project.colDuration")}</th>
           <th>${t("project.colStatus")}</th><th class="col-actions"></th>
         </tr></thead>
         <tbody id="file-rows"></tbody>
@@ -134,6 +135,7 @@ export async function render(view, _status, params) {
   selectStep(project.files.length ? 2 : 1); // with files present, work continues at step 2
 
   const files = new Map(project.files.map((f) => [f.id, f]));
+  const fileLanguages = new Map();
   fileJobs.clear();
   renderRows(files);
 
@@ -184,7 +186,14 @@ export async function render(view, _status, params) {
 
   el("transcribe-all").onclick = async () => {
     try {
-      const jobs = await api.transcribeProject(projectId, false, flowOptions());
+      const jobs = [];
+      for (const fileRow of files.values()) {
+        if (fileRow.status === "done" || fileRow.status === "transcribing" || fileJobs.has(fileRow.id)) {
+          continue;
+        }
+        jobs.push(await api.transcribeFile(fileRow.id, fileOptions(fileRow)));
+      }
+      if (!jobs.length) throw new Error(t("project.noFilesToTranscribe"));
       toast(t("project.jobsStarted", { count: jobs.length }));
     } catch (error) {
       toast(error.message);
@@ -301,6 +310,16 @@ export async function render(view, _status, params) {
     const durationCell = document.createElement("td");
     durationCell.textContent = formatDuration(fileRow.duration);
 
+    const languageCell = document.createElement("td");
+    const languageSelect = document.createElement("select");
+    languageSelect.className = "file-language";
+    fillLanguageSelect(languageSelect, {
+      placeholder: t("project.advAuto"),
+      selected: fileLanguages.get(fileRow.id) ?? "",
+    });
+    languageSelect.onchange = () => fileLanguages.set(fileRow.id, languageSelect.value);
+    languageCell.appendChild(languageSelect);
+
     const statusCell = document.createElement("td");
     const badge = document.createElement("span");
     badge.className = `badge badge-${fileRow.status}`;
@@ -329,7 +348,7 @@ export async function render(view, _status, params) {
       actionCell.append(iconButton(
         fileRow.status === "done" ? "refresh" : "mic",
         fileRow.status === "done" ? t("project.again") : t("project.transcribe"),
-        () => api.transcribeFile(fileRow.id, flowOptions()).catch((e) => toast(e.message)),
+        () => api.transcribeFile(fileRow.id, fileOptions(fileRow)).catch((e) => toast(e.message)),
       ));
     }
     if (fileRow.status === "done") {
@@ -351,8 +370,14 @@ export async function render(view, _status, params) {
       renderRows(files);
     }));
 
-    tr.append(nameCell, durationCell, statusCell, actionCell);
+    tr.append(nameCell, languageCell, durationCell, statusCell, actionCell);
     return tr;
+  }
+
+  function fileOptions(fileRow) {
+    const options = flowOptions();
+    const language = fileLanguages.get(fileRow.id);
+    return language ? { ...options, language } : options;
   }
 
   function updateProgressRow(job) {

@@ -329,13 +329,14 @@ details.advanced .form-grid { margin-top: .25rem; }
   vertical-align: top;
   overflow-wrap: anywhere;
 }
+.file-language { min-width: 9rem; }
 .filetable tr:last-child td { border-bottom: none; }
 .col-actions { text-align: right; white-space: nowrap; }
 .col-actions button { margin-left: .3rem; }
 /* narrow phones: drop the duration column so the file name keeps room */
 @media (max-width: 30em) {
-  .filetable th:nth-child(2),
-  .filetable td:nth-child(2) { display: none; }
+  .filetable th:nth-child(3),
+  .filetable td:nth-child(3) { display: none; }
   .col-actions button { margin-left: 0; }
 }
 
