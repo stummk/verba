@@ -55,6 +55,24 @@ def test_repair_marker_wipes_site_packages_on_start(tmp_path, monkeypatch):
     sys.path.remove(str(target))
 
 
+def test_repair_marker_survives_locked_site_packages(tmp_path, monkeypatch):
+    monkeypatch.setenv("VERBA_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(config, "FROZEN", True)
+    target = tmp_path / "data" / "site-packages"
+    target.mkdir(parents=True)
+    config.site_packages_repair_marker().touch()
+
+    def locked_rmtree(path):
+        raise PermissionError("locked")
+
+    monkeypatch.setattr("shutil.rmtree", locked_rmtree)
+    config.ensure_runtime_site_packages()
+
+    assert config.site_packages_repair_marker().exists()
+    assert target.is_dir()
+    sys.path.remove(str(target))
+
+
 def test_install_group_dispatches_to_frozen_pip(monkeypatch):
     calls = {}
     monkeypatch.setattr(config, "FROZEN", True)

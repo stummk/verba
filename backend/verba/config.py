@@ -72,8 +72,12 @@ def ensure_runtime_site_packages() -> None:
         import shutil
 
         logger.warning("repairing site-packages (a previous installation failed)")
-        shutil.rmtree(target, ignore_errors=True)
-        marker.unlink(missing_ok=True)
+        try:
+            shutil.rmtree(target)
+        except OSError:
+            logger.exception("site-packages repair failed; will retry on next start")
+        else:
+            marker.unlink(missing_ok=True)
     target.mkdir(parents=True, exist_ok=True)
     if str(target) not in sys.path:
         sys.path.insert(0, str(target))
