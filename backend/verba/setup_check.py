@@ -23,6 +23,7 @@ import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from importlib import import_module, invalidate_caches
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
@@ -446,6 +447,20 @@ def _purge_modules_under(target: Path) -> None:
 
 
 def _pip_install_subprocess(packages: list[str], on_line: Callable[[str], None]) -> None:
+    if find_spec("pip") is None:
+        _emit("pip", 0, "pip fehlt in der Python-Umgebung; installiere pip ...")
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "ensurepip", "--upgrade"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as exc:
+            detail = getattr(exc, "stderr", "") or getattr(exc, "stdout", "") or str(exc)
+            raise RuntimeError(f"pip konnte nicht eingerichtet werden: {detail.strip()}") from exc
+        invalidate_caches()
+
     cmd = [sys.executable, "-m", "pip", "install", "--progress-bar", "off", *packages]
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8"

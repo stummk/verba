@@ -95,6 +95,34 @@ def test_setup_run_endpoint_reports_started(client, monkeypatch):
     assert response.json()["started"] is True
 
 
+def test_feature_install_bootstraps_missing_pip(monkeypatch):
+    calls = []
+
+    class FakeProcess:
+        stdout = iter(["Successfully installed example\n"])
+        returncode = 0
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(setup_check, "find_spec", lambda name: None if name == "pip" else object())
+    monkeypatch.setattr(
+        setup_check.subprocess,
+        "run",
+        lambda command, **kwargs: calls.append((command, kwargs)),
+    )
+    monkeypatch.setattr(setup_check.subprocess, "Popen", lambda *args, **kwargs: FakeProcess())
+
+    setup_check._pip_install_subprocess(["example"], lambda line: None)
+
+    assert calls == [
+        (
+            [setup_check.sys.executable, "-m", "ensurepip", "--upgrade"],
+            {"check": True, "capture_output": True, "text": True},
+        )
+    ]
+
+
 def test_shutdown_endpoint_is_disabled_outside_desktop_mode(client, monkeypatch):
     monkeypatch.delenv("VERBA_DESKTOP_MODE", raising=False)
     response = client.post("/api/system/shutdown")
