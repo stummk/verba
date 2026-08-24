@@ -117,6 +117,7 @@ def main() -> None:
     settings = get_settings()
     host = args.host or ("0.0.0.0" if args.server else "127.0.0.1")
     port = args.port or settings.server.port
+    os.environ["VERBA_DESKTOP_MODE"] = "0" if args.server else "1"
 
     if not args.server and not args.no_browser:
         browse_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host

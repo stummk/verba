@@ -25,6 +25,10 @@ transcription API.
 On first start the core components are set up automatically; the app opens in
 your browser at `http://127.0.0.1:8710`.
 
+In desktop mode, the **Exit** button in the top right stops the local Verba
+process. Closing the only Verba browser window also stops the desktop server
+automatically. In server mode, Verba continues running.
+
 Verba is a **PWA**: the browser can "install" the app (icon in the address bar
 or "Add to home screen"), after which it feels like a standalone app. The
 interface also loads without a connection; as soon as the server is reachable

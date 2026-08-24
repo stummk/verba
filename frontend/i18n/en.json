@@ -6,6 +6,7 @@
   "app.offline": "No connection to the server. The app is offline — once the connection is back, this view resumes automatically.",
   "app.setupProgress": "Setup: {step} ({percent}%)",
   "app.jobProgress": "Job #{id} ({kind}): {percent}%",
+  "app.shutdown": "Exit",
   "nav.projects": "Transcripts",
   "nav.search": "Search",
   "nav.settings": "Settings",

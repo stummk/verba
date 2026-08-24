@@ -93,3 +93,10 @@ def test_setup_run_endpoint_reports_started(client, monkeypatch):
     response = client.post("/api/system/setup/run", json={"include_optional": False})
     assert response.status_code == 200
     assert response.json()["started"] is True
+
+
+def test_shutdown_endpoint_is_disabled_outside_desktop_mode(client, monkeypatch):
+    monkeypatch.delenv("VERBA_DESKTOP_MODE", raising=False)
+    response = client.post("/api/system/shutdown")
+    assert response.status_code == 200
+    assert response.json() == {"stopped": False}

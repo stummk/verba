@@ -45,6 +45,7 @@ export const api = {
   // system & settings
   systemStatus: () => request("GET", "/api/system/status"),
   systemInfo: () => request("GET", "/api/system/info"),
+  shutdown: () => request("POST", "/api/system/shutdown"),
   runSetup: (includeOptional = true) =>
     request("POST", "/api/system/setup/run", { include_optional: includeOptional }),
   getSettings: () => request("GET", "/api/settings"),

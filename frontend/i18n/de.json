@@ -6,6 +6,7 @@
   "app.offline": "Keine Verbindung zum Server. Die App ist offline — sobald die Verbindung wieder steht, geht es hier automatisch weiter.",
   "app.setupProgress": "Einrichtung: {step} ({percent}%)",
   "app.jobProgress": "Job #{id} ({kind}): {percent}%",
+  "app.shutdown": "Beenden",
   "nav.projects": "Transkripte",
   "nav.search": "Suche",
   "nav.settings": "Einstellungen",

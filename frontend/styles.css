@@ -120,6 +120,8 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.top-bar-shutdown { margin-left: .5rem; }
 .dot { width: .6rem; height: .6rem; border-radius: 50%; flex: none; }
 .dot.online { background: var(--md-success); }
 .dot.offline { background: var(--md-error); }

@@ -65,6 +65,12 @@ async function navigate() {
 function bindShell() {
   const indicator = el("ws-indicator");
   const engineStatus = el("engine-status");
+  const shutdown = el("shutdown");
+
+  shutdown.onclick = () => {
+    shutdown.disabled = true;
+    api.shutdown().catch(() => {});
+  };
 
   let wasOffline = false;
   ws.on("connection", ({ online }) => {
@@ -115,6 +121,7 @@ async function init() {
 
   try {
     systemStatus = await api.systemStatus();
+    el("shutdown").hidden = !systemStatus.desktop_mode;
     if (!systemStatus.ready && !systemStatus.setup_completed && !location.hash) {
       location.hash = "#/setup";
     }
@@ -122,6 +129,12 @@ async function init() {
 
   window.addEventListener("hashchange", navigate);
   await navigate();
+
+  window.addEventListener("pagehide", () => {
+    if (systemStatus?.desktop_mode) {
+      navigator.sendBeacon("/api/system/shutdown");
+    }
+  });
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(() => {});

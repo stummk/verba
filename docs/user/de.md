@@ -25,6 +25,11 @@ optionaler KI-Bereinigung/Übersetzung, PDF-Export, semantischer Suche und einer
 Beim ersten Start werden die Grundkomponenten automatisch eingerichtet; die
 Anwendung öffnet sich im Browser unter `http://127.0.0.1:8710`.
 
+Im Desktopmodus beendet der Button **Beenden** oben rechts den lokalen Verba-
+Prozess. Wenn das einzige Verba-Browserfenster geschlossen wird, beendet sich
+der Desktopserver ebenfalls automatisch. Im Servermodus bleibt Verba dagegen
+weiter aktiv.
+
 Verba ist eine **PWA**: Im Browser lässt sich die App „installieren" (Symbol in
 der Adressleiste bzw. „Zum Startbildschirm hinzufügen") und fühlt sich dann wie
 eine eigenständige App an. Die Oberfläche lädt auch ohne Verbindung; sobald der
