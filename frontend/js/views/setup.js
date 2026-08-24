@@ -108,11 +108,17 @@ function applyProgress(progress) {
   const log = el("setup-log");
   if (!bar) return;
   bar.style.width = `${progress.percent ?? 0}%`;
-  step.textContent = progress.error
-    ? t("setup.failed")
-    : progress.running
-      ? t("setup.running", { step: progress.step })
-      : t("setup.done");
+  if (progress.error) {
+    step.textContent = t("setup.failed");
+  } else if (progress.running) {
+    step.textContent = t("setup.running", {
+      step: progress.step,
+      detail: progress.detail || "",
+      percent: progress.percent ?? 0,
+    });
+  } else {
+    step.textContent = t("setup.done");
+  }
   log.textContent = (progress.log ?? []).join("\n");
   log.scrollTop = log.scrollHeight;
 }

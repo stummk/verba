@@ -81,7 +81,11 @@ function bindShell() {
   });
   ws.on("setup.progress", (progress) => {
     engineStatus.textContent = progress.running
-      ? t("app.setupProgress", { step: progress.step, percent: progress.percent })
+      ? t("app.setupProgress", {
+        step: progress.step,
+        detail: progress.detail || "",
+        percent: progress.percent,
+      })
       : "";
   });
   ws.on("engine.status", ({ engine, state, detail }) => {

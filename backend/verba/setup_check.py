@@ -96,6 +96,7 @@ class SetupProgress:
 
     running: bool = False
     step: str = ""
+    detail: str = ""
     percent: int = 0
     error: str = ""
     log: list[str] = field(default_factory=list)
@@ -104,6 +105,7 @@ class SetupProgress:
         return {
             "running": self.running,
             "step": self.step,
+            "detail": self.detail,
             "percent": self.percent,
             "error": self.error,
             "log": self.log[-50:],
@@ -318,6 +320,7 @@ def _emit(step: str, percent: int, message: str | None = None) -> None:
     progress.step = step
     progress.percent = percent
     if message:
+        progress.detail = message
         progress.log.append(message)
         logger.info("Setup: %s", message)
     hub.publish("setup.progress", progress.as_dict())
@@ -477,18 +480,30 @@ def _pip_install_subprocess(packages: list[str], on_line: Callable[[str], None])
 
 def install_group(group: FeatureGroup) -> None:
     """pip-install one feature group (frozen build: into <data>/site-packages)."""
-    _emit(f"group:{group.key}", 0, f"Installiere {group.label} ...")
+    step = group.label
+    package_list = ", ".join(group.packages)
+    _emit(
+        step,
+        0,
+        f"Bereite Installation von {group.label} vor ({package_list}) ...",
+    )
     if config.FROZEN:
+        _emit(step, 10, f"Lade {group.label} aus dem Paketbestand ...")
         _pip_install_frozen(group.packages)
     else:
-        _pip_install_subprocess(group.packages, lambda line: _emit(f"group:{group.key}", 50, line))
+        _emit(step, 10, f"Lade Pakete für {group.label} herunter ...")
+        _pip_install_subprocess(
+            group.packages,
+            lambda line: _emit(step, 50, f"Installationsausgabe: {line}"),
+        )
+    _emit(step, 90, f"Prüfe {group.label} ...")
     invalidate_caches()
     try:
         import_module(group.import_name)
     except ImportError as exc:
         logger.exception("import of %s failed after installation", group.import_name)
         raise RuntimeError(f"{group.label}: import failed after installation: {exc}") from exc
-    _emit(f"group:{group.key}", 100, f"{group.label} installiert.")
+    _emit(step, 100, f"{group.label} installiert und geprüft.")
 
 
 def run_setup(include_optional: bool = True) -> None:
@@ -510,7 +525,7 @@ def run_setup(include_optional: bool = True) -> None:
         settings = config.get_settings()
         settings.setup.completed = True
         config.save_settings(settings)
-        _emit("done", 100, "Setup completed.")
+        _emit("done", 100, "Alle Komponenten installiert und geprüft. Einrichtung abgeschlossen.")
     except Exception as exc:
         logger.exception("setup failed")
         progress.error = str(exc)
