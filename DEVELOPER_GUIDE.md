@@ -285,6 +285,18 @@ Four frozen-mode specifics the spec handles deliberately (do not remove):
 iscc /DAppVersion=1.0.0 packaging\verba.iss       # → dist\Verba-Setup-1.0.0.exe
 ```
 
+For published Windows builds, the application and installer should be signed
+with a publicly trusted Authenticode code-signing certificate. The Windows job
+in `.github/workflows/release.yml` does this automatically when these two
+GitHub repository secrets are configured:
+
+- `WINDOWS_CODESIGN_CERTIFICATE_BASE64`: the PFX file encoded as Base64
+- `WINDOWS_CODESIGN_CERTIFICATE_PASSWORD`: the PFX file password
+
+The certificate must never be committed to the repository. The signature
+prevents the "Unknown publisher" warning; SmartScreen may still show a
+reputation warning for a new certificate, even when the signature is valid.
+
 ### Linux AppImage
 
 ```bash

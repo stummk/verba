@@ -35,6 +35,22 @@ jobs:
       - name: PyInstaller build
         run: pyinstaller packaging/verba.spec --noconfirm
 
+      - name: Sign application
+        if: ${{ secrets.WINDOWS_CODESIGN_CERTIFICATE_BASE64 != '' }}
+        shell: pwsh
+        env:
+          WINDOWS_CODESIGN_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CODESIGN_CERTIFICATE_BASE64 }}
+          WINDOWS_CODESIGN_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_CERTIFICATE_PASSWORD }}
+        run: |
+          $certificatePath = Join-Path $env:RUNNER_TEMP "verba-code-signing.pfx"
+          [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:WINDOWS_CODESIGN_CERTIFICATE_BASE64))
+          $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse -File |
+            Sort-Object FullName | Select-Object -Last 1
+          if (-not $signTool) { throw "Windows SignTool was not found" }
+          & $signTool.FullName sign /fd SHA256 /f $certificatePath /p $env:WINDOWS_CODESIGN_CERTIFICATE_PASSWORD /tr http://timestamp.digicert.com /td SHA256 dist\verba\Verba.exe
+          if ($LASTEXITCODE -ne 0) { throw "Signing Verba.exe failed" }
+          Remove-Item $certificatePath -Force
+
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
 
@@ -42,6 +58,23 @@ jobs:
         run: |
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
             /DAppVersion=${{ steps.version.outputs.version }} packaging\verba.iss
+
+      - name: Sign installer
+        if: ${{ secrets.WINDOWS_CODESIGN_CERTIFICATE_BASE64 != '' }}
+        shell: pwsh
+        env:
+          WINDOWS_CODESIGN_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CODESIGN_CERTIFICATE_BASE64 }}
+          WINDOWS_CODESIGN_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_CERTIFICATE_PASSWORD }}
+        run: |
+          $certificatePath = Join-Path $env:RUNNER_TEMP "verba-code-signing.pfx"
+          [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:WINDOWS_CODESIGN_CERTIFICATE_BASE64))
+          $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse -File |
+            Sort-Object FullName | Select-Object -Last 1
+          if (-not $signTool) { throw "Windows SignTool was not found" }
+          $installerPath = "dist\Verba-Setup-${{ steps.version.outputs.version }}.exe"
+          & $signTool.FullName sign /fd SHA256 /f $certificatePath /p $env:WINDOWS_CODESIGN_CERTIFICATE_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $installerPath
+          if ($LASTEXITCODE -ne 0) { throw "Signing installer failed" }
+          Remove-Item $certificatePath -Force
 
       - name: Upload to release
         shell: bash
