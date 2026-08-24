@@ -29,6 +29,165 @@ deploy/                    systemd unit, nginx/Caddy examples, install.sh
 .github/workflows/         CI (ruff + pytest) and release pipeline
 ```
 
+## Get Started
+
+Diese Anleitung richtet sich an Personen, die Verba lokal aus dem Quellcode
+entwickeln möchten. Verba benötigt keinen Frontend-Build und keinen separaten
+Datenbankserver.
+
+### 1. Voraussetzungen installieren
+
+Benötigt werden:
+
+- Git
+- Python 3.11 oder neuer
+- Visual Studio Code (empfohlen) mit einer Python-Erweiterung
+- optional: FFmpeg für Audioverarbeitung; die In-App-Einrichtung kann FFmpeg
+  beim ersten Start automatisch einrichten
+
+Prüfe die Installation im Terminal:
+
+```text
+git --version
+python --version
+```
+
+Unter Windows kann statt `python` auch `py -3` verwendet werden.
+
+### 2. Repository klonen
+
+```bash
+git clone <REPOSITORY-URL>
+cd verba
+```
+
+Öffne anschließend den Ordner `verba` in VS Code. Alle folgenden Befehle werden
+im Projektordner ausgeführt.
+
+### 3. Virtuelle Umgebung anlegen
+
+Windows PowerShell:
+
+```powershell
+py -3 -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+Falls PowerShell das Aktivieren wegen der Ausführungsrichtlinie blockiert,
+kann die Umgebung ohne Aktivierung verwendet werden:
+
+```powershell
+.venv\Scripts\python.exe -m pip install -r requirements/core.txt -r requirements/dev.txt
+```
+
+Linux/macOS:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+### 4. Abhängigkeiten installieren
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install -r requirements/core.txt -r requirements/dev.txt
+```
+
+Die großen optionalen Pakete für Whisper, Embeddings, LLM und PDF werden nicht
+in die Kernabhängigkeiten installiert. Sie werden beim ersten Start in der
+Anwendung unter **Einrichtung** als Feature-Gruppen nachinstalliert.
+
+### 5. Anwendung starten
+
+Für die normale Desktop-Entwicklung:
+
+Windows:
+
+```powershell
+start.bat
+```
+
+Linux/macOS:
+
+```bash
+./start.sh
+```
+
+Die Startskripte erzeugen `.venv` bei Bedarf und starten `run.py`. Der Browser
+wird automatisch geöffnet. Alternativ kann die Anwendung direkt gestartet
+werden:
+
+```bash
+python run.py
+```
+
+Für Server- oder API-Entwicklung ohne automatisches Browserfenster:
+
+```bash
+python run.py --server --host 127.0.0.1 --port 8710
+```
+
+Danach ist die Anwendung unter `http://127.0.0.1:8710` erreichbar. Ist der
+Port belegt, verwende zum Beispiel `--port 8711`.
+
+### 6. Ersteinrichtung durchführen
+
+1. Öffne Verba im Browser.
+2. Starte unter **Einstellungen → Einrichtung** die benötigten Feature-Gruppen.
+3. Richte mindestens ein Whisper-Modell ein, wenn du Audio transkribieren
+  möchtest.
+4. Konfiguriere optional ein lokales oder OpenAI-kompatibles LLM für Bereinigung,
+  Übersetzung, Suche und intelligente PDF-Strukturierung.
+5. Importiere eine kurze Audiodatei und teste den vollständigen Ablauf.
+
+Die Laufzeitdaten liegen während der Entwicklung unter `data/` und sind vom
+Quellcode getrennt. Tests überschreiben diesen Pfad über `VERBA_DATA_DIR` und
+verwenden niemals die echte Entwicklungsdatenbank.
+
+### 7. Tests und Codequalität ausführen
+
+Mit aktivierter `.venv`:
+
+```bash
+python -m pytest tests/ -q
+python -m ruff check backend/ tests/ run.py
+python -m ruff format backend/ tests/ run.py
+```
+
+Unter Windows ohne Aktivierung ersetze `python` durch
+`.venv\Scripts\python.exe`. Führe die Tests vor jedem Commit aus. Neue API-
+Routen werden mit FastAPI `TestClient` getestet; Netzwerkzugriffe und schwere
+Modelle müssen in Tests gemockt werden.
+
+### 8. Frontend entwickeln
+
+Das Frontend ist bewusst ohne npm, Bundler und Build-Schritt aufgebaut:
+
+1. Bearbeite die ES-Module unter `frontend/js/` und die Styles unter
+  `frontend/styles.css`.
+2. Lege sichtbare Texte in allen drei Katalogen unter `frontend/i18n/` an:
+  `de.json`, `en.json` und `ru.json`.
+3. Füge jede neue Frontend-Datei in die `SHELL`-Liste von `frontend/sw.js` ein.
+4. Verwende keine `px`-Einheiten im Frontend; die PWA-Tests prüfen das.
+5. Lade die Browserseite neu. Der laufende Server liefert die statischen Dateien
+  direkt aus dem Projektordner.
+
+### 9. Änderungen prüfen und committen
+
+```bash
+git status
+git diff --check
+python -m pytest tests/ -q
+python -m ruff check backend/ tests/ run.py
+git diff
+git add <geänderte-dateien>
+git commit -m "Changed: kurze Beschreibung"
+```
+
+Commit-Nachrichten beginnen mit einem englischen Präfix wie `New:`, `Fixed:`,
+`Changed:`, `Tests:` oder `Docs:`.
+
 ## Development
 
 ```bash
