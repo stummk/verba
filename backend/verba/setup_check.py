@@ -472,9 +472,7 @@ def install_group(group: FeatureGroup) -> None:
         import_module(group.import_name)
     except ImportError as exc:
         logger.exception("import of %s failed after installation", group.import_name)
-        raise RuntimeError(
-            f"{group.label}: import failed after installation: {exc}"
-        ) from exc
+        raise RuntimeError(f"{group.label}: import failed after installation: {exc}") from exc
     _emit(f"group:{group.key}", 100, f"{group.label} installiert.")
 
 

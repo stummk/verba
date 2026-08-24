@@ -301,9 +301,9 @@ class _Renderer:
                 self._write(6, f"•  {item}")
             pdf.ln(3)
         elif kind == "separator":
-                pdf.set_font(self.family, "", 11)
-                pdf.cell(0, 8, self._text("*   *   *"), align="C", new_x="LMARGIN", new_y="NEXT")
-                pdf.ln(4)
+            pdf.set_font(self.family, "", 11)
+            pdf.cell(0, 8, self._text("*   *   *"), align="C", new_x="LMARGIN", new_y="NEXT")
+            pdf.ln(4)
         else:  # paragraph
             pdf.set_font(self.family, "", 11)
             self._write(6, block["text"])
@@ -320,9 +320,7 @@ def render_pdf(docs: list[dict[str, Any]], type_key: str, target: Path) -> None:
     try:
         from fpdf import FPDF
     except ImportError as exc:
-        raise RuntimeError(
-            "PDF export requires the fpdf2 package — complete setup first"
-        ) from exc
+        raise RuntimeError("PDF export requires the fpdf2 package — complete setup first") from exc
 
     pdf = FPDF(format="A4")
     pdf.set_auto_page_break(auto=True, margin=18)

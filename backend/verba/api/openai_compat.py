@@ -77,9 +77,7 @@ async def create_transcription(
     if project_type:
         type_row = project_types.get_type_by_key(project_type)
         if type_row is None:
-            raise HTTPException(
-                status_code=400, detail=f"Unknown transcript type: {project_type}"
-            )
+            raise HTTPException(status_code=400, detail=f"Unknown transcript type: {project_type}")
         type_prompt = type_row["system_prompt"]
         cleanup = True  # a type only makes sense with cleanup applied
     if cleanup and llm.llm_location() == "none":
@@ -114,9 +112,7 @@ async def create_transcription(
     if current is None or current["status"] == "cancelled":
         raise HTTPException(status_code=409, detail="Transcription was cancelled")
     if current["status"] == "failed":
-        raise HTTPException(
-            status_code=500, detail=current["error"] or "Transcription failed"
-        )
+        raise HTTPException(status_code=500, detail=current["error"] or "Transcription failed")
 
     result = public_api.pop_result(job["id"])
     if result is None:

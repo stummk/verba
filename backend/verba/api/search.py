@@ -51,9 +51,7 @@ def search(body: SearchRequest) -> dict:
 def ask(body: SearchRequest) -> dict:
     _ensure_available()
     if llm_location() == "none":
-        raise HTTPException(
-            status_code=409, detail="No LLM configured — set one up in Settings"
-        )
+        raise HTTPException(status_code=409, detail="No LLM configured — set one up in Settings")
     return rag.ask(body.query, body.filters(), limit=min(body.limit, 12))
 
 

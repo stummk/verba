@@ -353,9 +353,7 @@ def _pick_model_file() -> Path:
             return candidate
     installed = list_installed_models()
     if not installed:
-        raise RuntimeError(
-            "No local LLM model installed — download one in Settings"
-        )
+        raise RuntimeError("No local LLM model installed — download one in Settings")
     recommended = recommend_model()
     for model in installed:
         if model["file"] == recommended["file"]:
