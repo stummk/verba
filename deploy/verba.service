@@ -1,0 +1,35 @@
+# Verba systemd unit — install to /etc/systemd/system/verba.service
+#
+#   sudo useradd --system --create-home --home-dir /opt/verba verba   # once
+#   sudo cp deploy/verba.service /etc/systemd/system/verba.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now verba
+#
+# Assumes Verba was installed to /opt/verba via deploy/install.sh
+# (which creates the virtualenv at /opt/verba/.venv).
+
+[Unit]
+Description=Verba transcription server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=verba
+Group=verba
+WorkingDirectory=/opt/verba
+ExecStart=/opt/verba/.venv/bin/python run.py --server --port 8710
+Restart=on-failure
+RestartSec=5
+
+# Runtime data (settings, database, models, logs) lives under /opt/verba/data.
+Environment=VERBA_DATA_DIR=/opt/verba/data
+
+# Hardening — relax if a workspace outside /opt/verba is configured.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/verba
+
+[Install]
+WantedBy=multi-user.target

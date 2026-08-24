@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "verba",
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
+      "runtimeArgs": ["run.py", "--server", "--host", "127.0.0.1", "--port", "8710"],
+      "port": 8710
+    }
+  ]
+}

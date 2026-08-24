@@ -1,0 +1,13 @@
+{
+  "name": "Verba",
+  "short_name": "Verba",
+  "description": "Audio-Transkription mit KI-Bereinigung, Übersetzung, Editor und semantischer Suche",
+  "lang": "de",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#14161b",
+  "theme_color": "#1c1f26",
+  "icons": [
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

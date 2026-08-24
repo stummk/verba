@@ -1,0 +1,247 @@
+"""Project workspaces: one dedicated folder per project on disk.
+
+Layout: <workspaces>/<slug>/
+    project.json    project metadata (transparency for the user)
+    audio/          imported copies of the audio files
+    transcripts/    one JSON per transcribed file
+    exports/        PDF exports (phase 5)
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import shutil
+import unicodedata
+from pathlib import Path
+from typing import Any, BinaryIO
+
+from .. import config, db
+from ..events import hub
+from .media import is_audio_file, probe_duration
+from .metadata import extract_metadata
+
+WORKSPACE_SUBDIRS = ("audio", "transcripts", "exports")
+
+
+def slugify(name: str) -> str:
+    normalized = unicodedata.normalize("NFKD", name)
+    ascii_name = normalized.encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", ascii_name).strip("-").lower()
+    return slug or "projekt"
+
+
+def _unique_slug(conn, base: str) -> str:
+    slug = base
+    counter = 2
+    while conn.execute("SELECT 1 FROM projects WHERE slug = ?", (slug,)).fetchone():
+        slug = f"{base}-{counter}"
+        counter += 1
+    return slug
+
+
+def project_dir(project: dict[str, Any]) -> Path:
+    return Path(project["workspace"])
+
+
+def create_project(name: str, type_id: int | None = None) -> dict[str, Any]:
+    settings = config.get_settings()
+    with db.get_conn() as conn:
+        slug = _unique_slug(conn, slugify(name))
+        workspace = config.workspaces_dir(settings) / slug
+        cursor = conn.execute(
+            "INSERT INTO projects (name, slug, workspace, type_id) VALUES (?, ?, ?, ?)",
+            (name, slug, str(workspace), type_id),
+        )
+        project_id = cursor.lastrowid
+
+    for subdir in WORKSPACE_SUBDIRS:
+        (workspace / subdir).mkdir(parents=True, exist_ok=True)
+    (workspace / "project.json").write_text(
+        json.dumps({"name": name, "slug": slug, "id": project_id}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return get_project(project_id)  # type: ignore[return-value]
+
+
+def get_project(project_id: int) -> dict[str, Any] | None:
+    with db.get_conn() as conn:
+        row = conn.execute(
+            "SELECT p.*, t.key AS type_key, t.name AS type_name, t.system_prompt AS type_prompt "
+            "FROM projects p LEFT JOIN project_types t ON t.id = p.type_id "
+            "WHERE p.id = ?",
+            (project_id,),
+        ).fetchone()
+    return db.row_to_dict(row)
+
+
+UPDATABLE_PROJECT_FIELDS = ("type_id", "auto_process", "auto_language")
+
+
+def update_project(project_id: int, changes: dict[str, Any]) -> dict[str, Any] | None:
+    """Update selected project fields (type, auto-processing); ignores unknown keys."""
+    fields = {k: v for k, v in changes.items() if k in UPDATABLE_PROJECT_FIELDS}
+    if not fields:
+        return get_project(project_id)
+    assignments = ", ".join(f"{key} = ?" for key in fields)
+    with db.get_conn() as conn:
+        cursor = conn.execute(
+            f"UPDATE projects SET {assignments} WHERE id = ?",  # noqa: S608 — whitelisted keys
+            (*fields.values(), project_id),
+        )
+        if cursor.rowcount == 0:
+            return None
+    return get_project(project_id)
+
+
+def list_projects() -> list[dict[str, Any]]:
+    with db.get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT p.*, t.name AS type_name,
+                   COUNT(f.id) AS file_count,
+                   SUM(CASE WHEN f.status = 'done' THEN 1 ELSE 0 END) AS done_count
+            FROM projects p
+            LEFT JOIN project_types t ON t.id = p.type_id
+            LEFT JOIN files f ON f.project_id = p.id
+            GROUP BY p.id ORDER BY p.created_at DESC
+            """
+        ).fetchall()
+    return db.rows_to_dicts(rows)
+
+
+def delete_project(project_id: int, delete_files: bool = False) -> None:
+    project = get_project(project_id)
+    if project is None:
+        return
+    from .vectorstore import remove_project  # local import: avoids a module cycle
+
+    remove_project(project_id)  # search index entries disappear immediately
+    with db.get_conn() as conn:
+        conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+    if delete_files:
+        shutil.rmtree(project_dir(project), ignore_errors=True)
+
+
+# ── files ─────────────────────────────────────────────────────────────
+
+
+def list_files(project_id: int) -> list[dict[str, Any]]:
+    with db.get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM files WHERE project_id = ? ORDER BY filename", (project_id,)
+        ).fetchall()
+    return db.rows_to_dicts(rows)
+
+
+def get_file(file_id: int) -> dict[str, Any] | None:
+    with db.get_conn() as conn:
+        row = conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
+    return db.row_to_dict(row)
+
+
+def file_path(file_row: dict[str, Any]) -> Path:
+    project = get_project(file_row["project_id"])
+    assert project is not None
+    return project_dir(project) / file_row["rel_path"]
+
+
+def emit_file_update(file_id: int) -> None:
+    file_row = get_file(file_id)
+    if file_row is not None:
+        hub.publish("file.update", file_row)
+
+
+def unique_target(audio_dir: Path, filename: str) -> Path:
+    target = audio_dir / filename
+    stem, suffix = target.stem, target.suffix
+    counter = 2
+    while target.exists():
+        target = audio_dir / f"{stem}-{counter}{suffix}"
+        counter += 1
+    return target
+
+
+def register_file(project: dict[str, Any], target: Path, source: str = "") -> dict[str, Any]:
+    rel_path = str(target.relative_to(project_dir(project)))
+    duration = probe_duration(target)
+    meta = extract_metadata(target)
+    with db.get_conn() as conn:
+        cursor = conn.execute(
+            "INSERT INTO files (project_id, filename, rel_path, source_path, duration, "
+            "title, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                project["id"],
+                target.name,
+                rel_path,
+                source,
+                duration,
+                meta["title"],
+                meta["recorded_at"],
+            ),
+        )
+        file_id = cursor.lastrowid
+    file_row = get_file(file_id)
+    assert file_row is not None
+    hub.publish("file.update", file_row)
+    return file_row
+
+
+def import_paths(project: dict[str, Any], paths: list[str]) -> list[dict[str, Any]]:
+    """Copy audio files (or all audio files inside folders) into the workspace."""
+    audio_dir = project_dir(project) / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+
+    sources: list[Path] = []
+    for raw in paths:
+        path = Path(raw)
+        if path.is_dir():
+            sources.extend(sorted(p for p in path.rglob("*") if p.is_file() and is_audio_file(p)))
+        elif path.is_file() and is_audio_file(path):
+            sources.append(path)
+
+    imported: list[dict[str, Any]] = []
+    for source in sources:
+        target = unique_target(audio_dir, source.name)
+        shutil.copy2(source, target)
+        imported.append(register_file(project, target, source=str(source)))
+    return imported
+
+
+def save_upload(project: dict[str, Any], filename: str, stream: BinaryIO) -> dict[str, Any]:
+    audio_dir = project_dir(project) / "audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = Path(filename).name  # strip any client-sent directory parts
+    target = unique_target(audio_dir, safe_name)
+    with open(target, "wb") as out:
+        shutil.copyfileobj(stream, out)
+    return register_file(project, target)
+
+
+def delete_file(file_id: int) -> None:
+    """Remove the DB entry and the workspace copy (never the original source)."""
+    file_row = get_file(file_id)
+    if file_row is None:
+        return
+    path = file_path(file_row)
+    from .vectorstore import remove_file  # local import: avoids a module cycle
+
+    remove_file(file_id)  # search index entries disappear immediately
+    with db.get_conn() as conn:
+        conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
+    if path.exists():
+        path.unlink()
+
+
+def set_file_status(
+    file_id: int, status: str, error: str = "", duration: float | None = None, language: str = ""
+) -> None:
+    with db.get_conn() as conn:
+        conn.execute(
+            "UPDATE files SET status = ?, error = ?, "
+            "duration = COALESCE(?, duration), "
+            "language = CASE WHEN ? != '' THEN ? ELSE language END "
+            "WHERE id = ?",
+            (status, error, duration, language, language, file_id),
+        )
+    emit_file_update(file_id)

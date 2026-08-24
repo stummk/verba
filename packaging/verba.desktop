@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Verba
+Comment=Audio-Transkription mit KI-Bereinigung, Editor und semantischer Suche
+Comment[en]=Audio transcription with AI cleanup, editor and semantic search
+Exec=Verba
+Icon=verba
+Terminal=false
+Categories=AudioVideo;Audio;Utility;
+StartupNotify=false

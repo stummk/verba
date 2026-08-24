@@ -1,0 +1,18 @@
+[project]
+name = "verba"
+version = "0.1.0"
+description = "Cross-platform transcription tool with faster-whisper, LLM pipeline, editor, PDF export and semantic search"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["backend", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["backend"]
+addopts = "-q"

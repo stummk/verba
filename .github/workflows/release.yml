@@ -1,0 +1,103 @@
+# Release pipeline: every published GitHub release gets three artifacts —
+#   1. Verba-Setup-<version>.exe        Windows one-click installer (PyInstaller + Inno Setup)
+#   2. Verba-<version>-x86_64.AppImage  Linux desktop build (.desktop integration included)
+#   3. verba-server-<version>.zip       headless server package (install.sh + systemd + proxy examples)
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write  # upload assets to the release
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Resolve version from tag
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Install build dependencies
+        run: python -m pip install -r requirements/core.txt pyinstaller
+
+      - name: PyInstaller build
+        run: pyinstaller packaging/verba.spec --noconfirm
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            /DAppVersion=${{ steps.version.outputs.version }} packaging\verba.iss
+
+      - name: Upload to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" "dist/Verba-Setup-${{ steps.version.outputs.version }}.exe"
+
+  linux-appimage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Resolve version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Install build dependencies
+        run: python -m pip install -r requirements/core.txt pyinstaller
+
+      - name: PyInstaller build
+        run: pyinstaller packaging/verba.spec --noconfirm
+
+      - name: Build AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"  # runners have no FUSE
+        run: bash packaging/build_appimage.sh ${{ steps.version.outputs.version }}
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" "dist/Verba-${{ steps.version.outputs.version }}-x86_64.AppImage"
+
+  server-zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble server package
+        run: |
+          version=${{ steps.version.outputs.version }}
+          mkdir -p "build/verba-server-$version"
+          cp -r backend frontend docs requirements deploy run.py start.sh README.md \
+            "build/verba-server-$version/"
+          chmod +x "build/verba-server-$version/deploy/install.sh" \
+                   "build/verba-server-$version/start.sh"
+          cd build && zip -qr "../verba-server-$version.zip" "verba-server-$version"
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" "verba-server-${{ steps.version.outputs.version }}.zip"

@@ -1,0 +1,17 @@
+# Verba behind Caddy — complete example.
+# Caddy proxies WebSockets automatically and provisions TLS certificates
+# itself; only the upload size and long /v1 requests need explicit settings.
+
+verba.example.com {
+	request_body {
+		max_size 2GB
+	}
+
+	reverse_proxy 127.0.0.1:8710 {
+		# Long-running synchronous /v1 transcription requests
+		transport http {
+			read_timeout 3600s
+			write_timeout 3600s
+		}
+	}
+}
