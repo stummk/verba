@@ -122,6 +122,7 @@ def _parse_blocks(raw: str) -> list[dict[str, Any]] | None:
 
 def _structure_rule_based(text: str, type_key: str) -> list[dict[str, Any]]:
     """Deterministic fallback: paragraphs, stanzas or speaker turns from plain text."""
+    type_key = {"lied": "song", "gedicht": "poem", "protokoll": "protocol"}.get(type_key, type_key)
     paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
     if type_key in STANZA_TYPES:
         return [

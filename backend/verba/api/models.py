@@ -30,13 +30,6 @@ def download_model(body: DownloadRequest) -> dict:
     name = body.name.strip()
     if not name or not _NAME_RE.match(name):
         raise HTTPException(status_code=422, detail="Invalid model name")
-    try:
-        import faster_whisper  # noqa: F401
-    except ImportError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="faster-whisper is not installed — complete setup first",
-        ) from exc
     if not whisper.start_model_download(name):
         raise HTTPException(status_code=409, detail="This model is already being downloaded")
     return {"started": True, "name": name}

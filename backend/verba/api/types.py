@@ -17,7 +17,7 @@ class TypeRequest(BaseModel):
 
 @router.get("")
 def list_types() -> list[dict]:
-    return project_types.list_types()
+    return project_types.list_types(include_legacy=False)
 
 
 @router.post("", status_code=201)

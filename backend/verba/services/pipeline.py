@@ -29,7 +29,8 @@ CLEANUP_SYSTEM_PROMPT = (
 )
 
 TRANSLATE_SYSTEM_PROMPT = (
-    "You translate transcriptions accurately and completely into {language}. Preserve "
+    "You translate transcriptions accurately and completely into {language}. Übersetzt "
+    "content must preserve "
     "the paragraphs and structure of the original. Reply only with the translation, "
     "without commentary."
 )

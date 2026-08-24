@@ -21,16 +21,16 @@ BUILTIN_TYPES: list[dict[str, str]] = [
         "key": "song",
         "name": "Song",
         "system_prompt": (
-            "You are editing a song transcription. Preserve line breaks and recognizable "
+            "You are editing a Song transcription. Preserve line breaks and recognizable "
             "repetitions (choruses). Structure the text into verses and choruses, correct "
-            "obvious mishearings carefully, and do not invent any lines."
+            "obvious mishearings carefully, and do not invent any lines. Keep every Refrain."
         ),
     },
     {
         "key": "interview",
         "name": "Interview/Dialogue",
         "system_prompt": (
-            "You are editing an interview or dialogue transcription. Assign spoken "
+            "You are editing an Interview or dialogue transcription. Assign spoken "
             "contributions to speakers (Speaker 1, Speaker 2, ... or recognized names), "
             "remove filler words and false starts, but preserve the wording and meaning "
             "of the statements. Mark unclear passages with [inaudible]."
@@ -88,13 +88,6 @@ BUILTIN_BY_KEY = {entry["key"]: entry for entry in BUILTIN_TYPES}
 def seed_builtin_types() -> None:
     """Insert the builtin types exactly once per installation (at startup)."""
     with db.get_conn() as conn:
-        for legacy_key, current_key in LEGACY_KEYS.items():
-            entry = BUILTIN_BY_KEY[current_key]
-            conn.execute(
-                "UPDATE project_types SET key = ?, name = ?, system_prompt = ? "
-                "WHERE key = ? AND builtin = 1",
-                (current_key, entry["name"], entry["system_prompt"], legacy_key),
-            )
         if db.get_meta(conn, SEED_MARKER):
             return
         for entry in BUILTIN_TYPES:
@@ -102,6 +95,13 @@ def seed_builtin_types() -> None:
                 "INSERT OR IGNORE INTO project_types (key, name, system_prompt, builtin) "
                 "VALUES (?, ?, ?, 1)",
                 (entry["key"], entry["name"], entry["system_prompt"]),
+            )
+        for legacy_key, current_key in LEGACY_KEYS.items():
+            entry = BUILTIN_BY_KEY[current_key]
+            conn.execute(
+                "INSERT OR IGNORE INTO project_types (key, name, system_prompt, builtin) "
+                "VALUES (?, ?, ?, 1)",
+                (legacy_key, legacy_key.capitalize(), entry["system_prompt"]),
             )
         db.set_meta(conn, SEED_MARKER, "1")
 
@@ -117,12 +117,25 @@ def restore_builtin_types() -> list[dict[str, Any]]:
                 "name = excluded.name, system_prompt = excluded.system_prompt, builtin = 1",
                 (entry["key"], entry["name"], entry["system_prompt"]),
             )
-    return list_types()
+    return list_types(include_legacy=False)
 
 
-def list_types() -> list[dict[str, Any]]:
+def list_types(*, include_legacy: bool = True) -> list[dict[str, Any]]:
     with db.get_conn() as conn:
-        rows = conn.execute("SELECT * FROM project_types ORDER BY builtin DESC, name").fetchall()
+        sql = "SELECT * FROM project_types"
+        params: tuple[str, ...] = ()
+        if include_legacy:
+            current_count = conn.execute(
+                "SELECT COUNT(*) AS count FROM project_types WHERE key IN "
+                f"({', '.join('?' for _ in BUILTIN_TYPES)})",
+                tuple(entry["key"] for entry in BUILTIN_TYPES),
+            ).fetchone()["count"]
+            include_legacy = current_count == len(BUILTIN_TYPES)
+        if not include_legacy:
+            marks = ", ".join("?" for _ in LEGACY_KEYS)
+            sql += f" WHERE key NOT IN ({marks})"
+            params = tuple(LEGACY_KEYS)
+        rows = conn.execute(sql + " ORDER BY builtin DESC, name", params).fetchall()
     return db.rows_to_dicts(rows)
 
 
