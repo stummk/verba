@@ -13,7 +13,7 @@ import json
 import re
 import shutil
 import unicodedata
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, BinaryIO
 
 from .. import config, db
@@ -211,7 +211,7 @@ def import_paths(project: dict[str, Any], paths: list[str]) -> list[dict[str, An
 def save_upload(project: dict[str, Any], filename: str, stream: BinaryIO) -> dict[str, Any]:
     audio_dir = project_dir(project) / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
-    safe_name = Path(filename).name  # strip any client-sent directory parts
+    safe_name = PureWindowsPath(filename).name
     target = unique_target(audio_dir, safe_name)
     with open(target, "wb") as out:
         shutil.copyfileobj(stream, out)
