@@ -17,6 +17,9 @@ env:
 jobs:
   windows-installer:
     runs-on: windows-latest
+    env:
+      WINDOWS_CODESIGN_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CODESIGN_CERTIFICATE_BASE64 }}
+      WINDOWS_CODESIGN_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_CERTIFICATE_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -36,11 +39,8 @@ jobs:
         run: pyinstaller packaging/verba.spec --noconfirm
 
       - name: Sign application
-        if: ${{ secrets.WINDOWS_CODESIGN_CERTIFICATE_BASE64 != '' }}
+        if: ${{ env.WINDOWS_CODESIGN_CERTIFICATE_BASE64 != '' }}
         shell: pwsh
-        env:
-          WINDOWS_CODESIGN_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CODESIGN_CERTIFICATE_BASE64 }}
-          WINDOWS_CODESIGN_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_CERTIFICATE_PASSWORD }}
         run: |
           $certificatePath = Join-Path $env:RUNNER_TEMP "verba-code-signing.pfx"
           [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:WINDOWS_CODESIGN_CERTIFICATE_BASE64))
@@ -60,11 +60,8 @@ jobs:
             /DAppVersion=${{ steps.version.outputs.version }} packaging\verba.iss
 
       - name: Sign installer
-        if: ${{ secrets.WINDOWS_CODESIGN_CERTIFICATE_BASE64 != '' }}
+        if: ${{ env.WINDOWS_CODESIGN_CERTIFICATE_BASE64 != '' }}
         shell: pwsh
-        env:
-          WINDOWS_CODESIGN_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CODESIGN_CERTIFICATE_BASE64 }}
-          WINDOWS_CODESIGN_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_CERTIFICATE_PASSWORD }}
         run: |
           $certificatePath = Join-Path $env:RUNNER_TEMP "verba-code-signing.pfx"
           [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:WINDOWS_CODESIGN_CERTIFICATE_BASE64))
