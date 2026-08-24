@@ -14,9 +14,9 @@ AppPublisher=Verba
 DefaultDirName={autopf}\Verba
 DefaultGroupName=Verba
 DisableProgramGroupPage=yes
-OutputDir=dist
+OutputDir=..\dist
 OutputBaseFilename=Verba-Setup-{#AppVersion}
-SetupIconFile=packaging\verba.ico
+SetupIconFile=verba.ico
 UninstallDisplayIcon={app}\Verba.exe
 Compression=lzma2
 SolidCompression=yes
@@ -33,7 +33,7 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-Source: "dist\verba\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
+Source: "..\dist\verba\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 
 [Icons]
 Name: "{group}\Verba"; Filename: "{app}\Verba.exe"
