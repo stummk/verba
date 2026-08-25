@@ -9,10 +9,15 @@ import { t } from "../i18n.js";
 let fabHandler = null;
 let types = [];
 let selected = null; // a type object, "new", or null
+let defaults = { output_prompt: "", structure: "paragraphs", structures: ["paragraphs"] };
+// both prompts of the type being edited, so switching the dropdown keeps
+// unsaved edits of the other one
+let draft = { system_prompt: "", output_prompt: "", structure: "paragraphs" };
+let promptKind = "system_prompt";
 
 export async function render(view) {
   types = await api.listTypes();
-  selected = null;
+  defaults = await api.typeDefaults().catch(() => defaults);
 
   view.replaceChildren(html`
     <h1>${t("types.title")}</h1>
@@ -44,8 +49,7 @@ export async function render(view) {
   };
   window.addEventListener("fab:click", fabHandler);
 
-  renderList();
-  renderDetail();
+  select(null);
 }
 
 function currentRoute() {
@@ -54,13 +58,19 @@ function currentRoute() {
 
 async function reload(keepId = null) {
   types = await api.listTypes();
-  selected = keepId === null ? null : (types.find((type) => type.id === keepId) ?? null);
-  renderList();
-  renderDetail();
+  select(keepId === null ? null : (types.find((type) => type.id === keepId) ?? null));
 }
 
 function select(target) {
   selected = target;
+  promptKind = "system_prompt";
+  const isNew = target === "new";
+  draft = {
+    system_prompt: isNew ? "" : (target?.system_prompt ?? ""),
+    // a new type starts from the default output prompt so it can be adapted
+    output_prompt: isNew ? defaults.output_prompt : (target?.output_prompt ?? ""),
+    structure: (isNew ? defaults.structure : target?.structure) || defaults.structure,
+  };
   renderList();
   renderDetail();
 }
@@ -107,17 +117,52 @@ function renderDetail() {
     </div>
     <label for="type-name">${t("types.name")}</label>
     <input id="type-name" maxlength="100" autocomplete="off">
-    <label for="type-prompt">${t("types.prompt")}</label>
-    <textarea id="type-prompt" class="type-prompt" maxlength="8000"></textarea>
-    <p class="hint">${t("types.promptHint")}</p>
+    <label for="type-structure">${t("types.structure")}</label>
+    <select id="type-structure"></select>
+    <p class="hint">${t("types.structureHint")}</p>
+    <label for="type-prompt-kind">${t("types.promptKind")}</label>
+    <select id="type-prompt-kind">
+      <option value="system_prompt">${t("types.promptCleanup")}</option>
+      <option value="output_prompt">${t("types.promptOutput")}</option>
+    </select>
+    <textarea id="type-prompt" class="type-prompt" maxlength="8000"
+      aria-label="${t("types.prompt")}"></textarea>
+    <p class="hint" id="type-prompt-hint"></p>
     <div class="actions">
       <button type="button" id="type-save">${t("common.save")}</button>
+      <button type="button" class="text-btn" id="type-prompt-default"
+        hidden>${t("types.promptUseDefault")}</button>
     </div>
   `);
 
   el("type-name").value = type?.name ?? "";
-  el("type-prompt").value = type?.system_prompt ?? "";
   el("types-back").onclick = () => select(null);
+
+  const structureSelect = el("type-structure");
+  structureSelect.replaceChildren(...defaults.structures.map((value) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = structureLabels()[value] ?? value;
+    return option;
+  }));
+  structureSelect.value = draft.structure;
+  structureSelect.onchange = () => { draft.structure = structureSelect.value; };
+
+  const kindSelect = el("type-prompt-kind");
+  const textarea = el("type-prompt");
+  kindSelect.value = promptKind;
+  kindSelect.onchange = () => {
+    draft[promptKind] = textarea.value; // keep the edits of the one we leave
+    promptKind = kindSelect.value;
+    showPrompt();
+  };
+  textarea.oninput = () => { draft[promptKind] = textarea.value; };
+  el("type-prompt-default").onclick = () => {
+    draft.output_prompt = defaults.output_prompt;
+    showPrompt();
+    textarea.focus();
+  };
+  showPrompt();
 
   if (!isNew) {
     el("type-delete-slot").append(iconButton("delete", t("common.delete"), async () => {
@@ -133,15 +178,20 @@ function renderDetail() {
 
   el("type-save").onclick = async () => {
     const name = el("type-name").value.trim();
-    const prompt = el("type-prompt").value.trim();
+    draft[promptKind] = textarea.value;
+    const settings = {
+      system_prompt: draft.system_prompt.trim(),
+      output_prompt: draft.output_prompt.trim(),
+      structure: draft.structure,
+    };
     if (!name) {
       el("type-name").focus();
       return;
     }
     try {
       const saved = isNew
-        ? await api.createType(name, prompt)
-        : await api.updateType(type.id, name, prompt);
+        ? await api.createType(name, settings)
+        : await api.updateType(type.id, name, settings);
       toast(t("types.saved"));
       await reload(saved?.id ?? type?.id ?? null);
     } catch (error) {
@@ -150,4 +200,28 @@ function renderDetail() {
   };
 
   if (isNew) el("type-name").focus();
+}
+
+// literal keys, so tests/test_pwa.py can verify them against the catalogs
+function structureLabels() {
+  return {
+    paragraphs: t("types.structureParagraphs"),
+    stanzas: t("types.structureStanzas"),
+    dialogue: t("types.structureDialogue"),
+    script: t("types.structureScript"),
+  };
+}
+
+function showPrompt() {
+  const textarea = el("type-prompt");
+  if (!textarea) return;
+  const isOutput = promptKind === "output_prompt";
+  textarea.value = draft[promptKind];
+  // an empty output prompt is valid — the default applies, so show it as the
+  // placeholder instead of leaving the field looking broken
+  textarea.placeholder = isOutput ? defaults.output_prompt : "";
+  el("type-prompt-hint").textContent = isOutput
+    ? t("types.promptOutputHint")
+    : t("types.promptHint");
+  el("type-prompt-default").hidden = !isOutput;
 }

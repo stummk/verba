@@ -20,12 +20,25 @@ _FILENAME_DATE = re.compile(
 )
 
 
+_ISO_DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+
+
 def format_display_date(value: str) -> str:
-    """Format an ISO date for display in a PDF header."""
-    try:
-        return date.fromisoformat(value).strftime("%d.%m.%Y")
-    except ValueError:
-        return value
+    """Format ISO dates for display in a PDF header.
+
+    The header's right-hand field is free text, so it may carry a place as
+    well ("München, 2024-08-17"). Every ISO date inside the value is
+    formatted; everything else is passed through untouched — a date the user
+    already wrote as "28.01.1933" therefore stays as it is.
+    """
+
+    def replace(match: re.Match[str]) -> str:
+        try:
+            return date.fromisoformat(match.group(0)).strftime("%d.%m.%Y")
+        except ValueError:
+            return match.group(0)  # e.g. 2024-13-45
+
+    return _ISO_DATE.sub(replace, value)
 
 
 def _parse_filename(stem: str) -> dict[str, str]:

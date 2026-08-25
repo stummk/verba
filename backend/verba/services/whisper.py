@@ -39,7 +39,7 @@ BUILTIN_MODELS = [
 
 _model_lock = threading.Lock()
 _model: Any = None
-_model_key: tuple[str, str, str] | None = None
+_model_key: tuple[str, str, str, str] | None = None  # name, device, compute, models dir
 _active_device: str = ""
 _cuda_broken = False  # set when CUDA libs turn out to be unusable at runtime
 
@@ -206,7 +206,10 @@ def get_model(model_override: str = "") -> Any:
     compute = settings.compute_type
     if device == "cpu" and compute == "auto":
         compute = "int8"
-    key = (model_name, device, compute)
+    # the directory is part of the identity: pointing the settings at another
+    # collection has to reload, even when the model name stayed the same
+    download_root = str(config.models_dir(config.get_settings()))
+    key = (model_name, device, compute, download_root)
 
     with _model_lock:
         if _model is not None and _model_key == key:
@@ -215,7 +218,6 @@ def get_model(model_override: str = "") -> Any:
         from faster_whisper import WhisperModel
 
         model_ref = _resolve_model_ref(model_name)
-        download_root = str(config.models_dir(config.get_settings()))
         attempts: list[tuple[str, str]] = [(device, compute)]
         if device in ("auto", "cuda"):
             attempts.append(("cpu", "int8"))  # fallback if CUDA libs are missing

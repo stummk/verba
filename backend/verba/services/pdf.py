@@ -27,38 +27,64 @@ from .metadata import format_display_date
 
 logger = logging.getLogger(__name__)
 
-# Types whose text is spoken by several roles — structured from segments
-# (which carry speakers) instead of the flattened cleanup text.
-DIALOGUE_TYPES = {"interview", "roleplay"}
-STANZA_TYPES = {"song", "poem"}
+# How a transcript type is laid out. Chosen per type (project_types.structure)
+# instead of being wired to fixed type keys, so custom types can pick one too:
+#
+# paragraphs  running text — the default
+# stanzas     line-preserving verses (song, poem)
+# dialogue    spoken by several roles: built from the segments (which carry the
+#             speakers) instead of the flattened cleanup text
+# script      dialogue, plus character names set in capitals (play, roleplay)
+STRUCTURES = ("paragraphs", "stanzas", "dialogue", "script")
+DEFAULT_STRUCTURE = "paragraphs"
+DIALOGUE_STRUCTURES = {"dialogue", "script"}
+
+
+def normalize_structure(value: str | None) -> str:
+    """Fall back to the default for anything unknown (or a project without a
+    type), so the export never depends on a valid value being stored."""
+    return value if value in STRUCTURES else DEFAULT_STRUCTURE
+
 
 BLOCK_KINDS = {"heading", "paragraph", "stanza", "dialogue", "list", "separator"}
 
-STRUCTURE_SYSTEM_PROMPT = (
-    "You structure a transcript for PDF export. Reply only with a JSON array of blocks "
-    "without commentary or Markdown fences. Allowed blocks:\n"
+# The block contract every output prompt has to honour — `_parse_blocks()`
+# below is what actually enforces it. Transcript types may replace the prose
+# around it (`project_types.output_prompt`); an answer that cannot be parsed
+# always falls back to rule-based structuring, so a broken prompt degrades the
+# export instead of breaking it.
+BLOCK_CONTRACT = (
+    "Reply only with a JSON array of blocks without commentary or Markdown fences. "
+    "Allowed blocks:\n"
     '{"kind": "heading", "text": "..."} - subheading\n'
     '{"kind": "paragraph", "text": "..."} - paragraph\n'
     '{"kind": "stanza", "lines": ["..."]} - stanza (poem/song), one line at a time\n'
     '{"kind": "dialogue", "speaker": "...", "text": "..."} - spoken contribution\n'
     '{"kind": "list", "title": "...", "items": ["..."]} - list (e.g. decisions, to-dos)\n'
-    '{"kind": "separator"} - separator between sections\n'
-    "Reproduce the full text; do not summarize or omit anything unless the transcript "
-    "type context explicitly requires it."
+    '{"kind": "separator"} - separator between sections'
+)
+
+# Applies whenever a transcript type defines no output prompt of its own. New
+# types are pre-filled with it, so it can be adapted instead of guessed at.
+DEFAULT_OUTPUT_PROMPT = (
+    "You structure a transcript for PDF export. "
+    + BLOCK_CONTRACT
+    + "\nReproduce the full text; do not summarize or omit anything unless the "
+    "transcript type context explicitly requires it."
 )
 
 
 # ── stage 1: structure ────────────────────────────────────────────────
 
 
-def _base_text(file_id: int, type_key: str, language: str) -> str:
+def _base_text(file_id: int, structure: str, language: str) -> str:
     """The text a structure is built from, best variant first."""
     if language:
         text = pipeline.get_text(file_id, "translation", language)
         if text is None:
             raise RuntimeError(f"No translation ({language}) available")
         return text["content"]
-    if type_key in DIALOGUE_TYPES:
+    if structure in DIALOGUE_STRUCTURES:
         segments = transcripts.list_segments(file_id)
         if segments:
             lines = []
@@ -121,16 +147,15 @@ def _parse_blocks(raw: str) -> list[dict[str, Any]] | None:
     return blocks or None
 
 
-def _structure_rule_based(text: str, type_key: str) -> list[dict[str, Any]]:
+def _structure_rule_based(text: str, structure: str) -> list[dict[str, Any]]:
     """Deterministic fallback: paragraphs, stanzas or speaker turns from plain text."""
-    type_key = {"lied": "song", "gedicht": "poem", "protokoll": "protocol"}.get(type_key, type_key)
     paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
-    if type_key in STANZA_TYPES:
+    if structure == "stanzas":
         return [
             {"kind": "stanza", "lines": [line.strip() for line in p.splitlines() if line.strip()]}
             for p in paragraphs
         ]
-    if type_key in DIALOGUE_TYPES:
+    if structure in DIALOGUE_STRUCTURES:
         blocks: list[dict[str, Any]] = []
         for paragraph in paragraphs:
             for line in paragraph.splitlines():
@@ -145,16 +170,28 @@ def _structure_rule_based(text: str, type_key: str) -> list[dict[str, Any]]:
     return [{"kind": "paragraph", "text": p} for p in paragraphs]
 
 
+def output_system_prompt(output_prompt: str, type_prompt: str) -> str:
+    """System prompt for the structure stage.
+
+    The transcript type's output prompt replaces the format instruction; an
+    empty one falls back to the default. Its cleanup prompt is appended as
+    context either way — it describes what the material is.
+    """
+    system_prompt = output_prompt.strip() or DEFAULT_OUTPUT_PROMPT
+    if type_prompt:
+        system_prompt += "\n\nContext of the transcription type:\n" + type_prompt
+    return system_prompt
+
+
 def _structure_llm(
     text: str,
+    output_prompt: str,
     type_prompt: str,
     cancel: threading.Event,
     report: Callable[[int, str], None],
     progress_range: tuple[int, int],
 ) -> list[dict[str, Any]] | None:
-    system_prompt = STRUCTURE_SYSTEM_PROMPT
-    if type_prompt:
-        system_prompt += "\n\nContext of the transcription type:\n" + type_prompt
+    system_prompt = output_system_prompt(output_prompt, type_prompt)
     chunks = pipeline._chunk_text(text)
     blocks: list[dict[str, Any]] = []
     lo, hi = progress_range
@@ -185,16 +222,24 @@ def build_document(
     progress_range: tuple[int, int] = (0, 100),
 ) -> dict[str, Any]:
     """Stage 1 for one file: title/date from metadata plus structured blocks."""
-    type_key = project.get("type_key") or ""
-    text = _base_text(file_row["id"], type_key, language)
+    # only whether a type is assigned matters here — everything type-specific
+    # comes from its own fields (structure, output prompt), never from its key
+    has_type = bool(project.get("type_key"))
+    structure = normalize_structure(project.get("type_structure"))
+    text = _base_text(file_row["id"], structure, language)
 
     blocks: list[dict[str, Any]] | None = None
-    if type_key and llm.llm_location() != "none":
+    if has_type and llm.llm_location() != "none":
         blocks = _structure_llm(
-            text, project.get("type_prompt") or "", cancel, report, progress_range
+            text,
+            project.get("type_output_prompt") or "",
+            project.get("type_prompt") or "",
+            cancel,
+            report,
+            progress_range,
         )
     if blocks is None:
-        blocks = _structure_rule_based(text, type_key)
+        blocks = _structure_rule_based(text, structure)
 
     return {
         "title": file_row.get("title") or Path(file_row["rel_path"]).stem,
@@ -245,16 +290,37 @@ def _sanitize_for(family: str, text: str) -> str:
     return text
 
 
+# Vertical spacing in mm, in one place so the layout stays tunable.
+GAP_AFTER_HEADER = 1.0  # header line → first block
+GAP_BETWEEN_SECTIONS = 5.0  # one file → the next in a folder export
+GAP_BEFORE_HEADING = 1.5
+GAP_AFTER_HEADING = 0.5
+GAP_AFTER_PARAGRAPH = 1.5
+GAP_AFTER_STANZA = 2.0
+GAP_AFTER_DIALOGUE = 1.0
+GAP_AFTER_LIST = 1.5
+GAP_AFTER_SEPARATOR = 2.0
+GAP_AROUND_DIVIDER = 2.0  # the "---" between language versions of one file
+
+
 class _Renderer:
     """Deterministic layout of structure blocks according to the type template."""
 
-    def __init__(self, pdf: Any, family: str, type_key: str) -> None:
+    def __init__(self, pdf: Any, family: str, structure: str) -> None:
         self.pdf = pdf
         self.family = family
-        self.type_key = type_key
+        self.structure = structure
 
     def _text(self, value: str) -> str:
         return _sanitize_for(self.family, value)
+
+    def divider(self) -> None:
+        """Separates the language versions of one file in a combined PDF."""
+        pdf = self.pdf
+        pdf.ln(GAP_AROUND_DIVIDER)
+        pdf.set_font(self.family, "", 11)
+        pdf.cell(0, 6, self._text("---"), align="C", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(GAP_AROUND_DIVIDER)
 
     def _write(self, height: float, value: str) -> None:
         """Full-width wrapped text; cursor continues at the left margin."""
@@ -262,57 +328,66 @@ class _Renderer:
 
     def section(self, doc: dict[str, Any]) -> None:
         """Render one file's optional header and its blocks."""
-        pdf = self.pdf
         left = doc.get("header_left") or ""
         middle = doc.get("header_middle") or ""
         right = doc.get("header_right") or ""
         if left or middle or right:
-            page_width = pdf.w - pdf.l_margin - pdf.r_margin
-            pdf.set_font(self.family, "B", 11)
-            pdf.cell(page_width * 0.45, 7, self._text(left), align="L")
-            pdf.set_font(self.family, "", 11)
-            pdf.cell(
-                page_width * 0.30,
-                7,
-                self._text(f"({middle})" if middle else ""),
-                align="C",
-            )
-            pdf.set_font(self.family, "B", 11)
-            pdf.cell(
-                page_width * 0.25,
-                7,
-                self._text(right),
-                align="R",
-                new_x="LMARGIN",
-                new_y="NEXT",
-            )
-            pdf.ln(4)
+            self._header_line(left, middle, right)
         for block in doc["blocks"]:
             self._block(block)
+
+    def _header_line(self, left: str, middle: str, right: str) -> None:
+        """One line: title, the addition right behind it, the date flush right.
+
+        The cells are only as wide as their text, so the addition sits a
+        single space behind the title instead of in a column of its own; the
+        date cell takes whatever is left of the line.
+        """
+        pdf = self.pdf
+        page_width = pdf.w - pdf.l_margin - pdf.r_margin
+        addition = ""
+        if middle:
+            addition = f" ({middle})" if left else f"({middle})"
+
+        pdf.set_font(self.family, "B", 11)
+        title_width = pdf.get_string_width(self._text(left)) if left else 0
+        pdf.set_font(self.family, "", 11)
+        addition_width = pdf.get_string_width(self._text(addition)) if addition else 0
+        rest = max(page_width - title_width - addition_width, 0)
+
+        if left:
+            pdf.set_font(self.family, "B", 11)
+            pdf.cell(title_width, 7, self._text(left), align="L")
+        if addition:
+            pdf.set_font(self.family, "", 11)
+            pdf.cell(addition_width, 7, self._text(addition), align="L")
+        pdf.set_font(self.family, "B", 11)
+        pdf.cell(rest, 7, self._text(right), align="R", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(GAP_AFTER_HEADER)
 
     def _block(self, block: dict[str, Any]) -> None:
         pdf = self.pdf
         kind = block["kind"]
         if kind == "heading":
-            pdf.ln(2)
+            pdf.ln(GAP_BEFORE_HEADING)
             pdf.set_font(self.family, "B", 12)
             self._write(7, block["text"])
-            pdf.ln(1)
+            pdf.ln(GAP_AFTER_HEADING)
         elif kind == "stanza":
             pdf.set_font(self.family, "", 11)
             for line in block["lines"]:
                 self._write(6, line)
-            pdf.ln(4)
+            pdf.ln(GAP_AFTER_STANZA)
         elif kind == "dialogue":
             speaker = block.get("speaker") or ""
-            if self.type_key == "roleplay":
+            if self.structure == "script":
                 speaker = speaker.upper()
             if speaker:
                 pdf.set_font(self.family, "B", 11)
                 self._write(6, speaker)
             pdf.set_font(self.family, "", 11)
             self._write(6, block["text"])
-            pdf.ln(2)
+            pdf.ln(GAP_AFTER_DIALOGUE)
         elif kind == "list":
             if block.get("title"):
                 pdf.set_font(self.family, "B", 11)
@@ -320,18 +395,18 @@ class _Renderer:
             pdf.set_font(self.family, "", 11)
             for item in block["items"]:
                 self._write(6, f"•  {item}")
-            pdf.ln(3)
+            pdf.ln(GAP_AFTER_LIST)
         elif kind == "separator":
             pdf.set_font(self.family, "", 11)
             pdf.cell(0, 8, self._text("*   *   *"), align="C", new_x="LMARGIN", new_y="NEXT")
-            pdf.ln(4)
+            pdf.ln(GAP_AFTER_SEPARATOR)
         else:  # paragraph
             pdf.set_font(self.family, "", 11)
             self._write(6, block["text"])
-            pdf.ln(3)
+            pdf.ln(GAP_AFTER_PARAGRAPH)
 
 
-def render_pdf(docs: list[dict[str, Any]], type_key: str, target: Path) -> None:
+def render_pdf(docs: list[dict[str, Any]], structure: str, target: Path) -> None:
     """Stage 2: render one or many file sections into a single PDF.
 
     Multiple sections flow continuously, separated by spacing only — no table
@@ -348,10 +423,15 @@ def render_pdf(docs: list[dict[str, Any]], type_key: str, target: Path) -> None:
     family = _setup_fonts(pdf)
     pdf.set_title(_sanitize_for(family, docs[0]["title"]) if docs else "Verba")
     pdf.add_page()
-    renderer = _Renderer(pdf, family, type_key)
+    renderer = _Renderer(pdf, family, normalize_structure(structure))
     for index, doc in enumerate(docs):
         if index:
-            pdf.ln(14)
+            # a language version of the same file gets the divider, the next
+            # file only the section gap
+            if doc.get("divider"):
+                renderer.divider()
+            else:
+                pdf.ln(GAP_BETWEEN_SECTIONS)
         renderer.section(doc)
     target.parent.mkdir(parents=True, exist_ok=True)
     pdf.output(str(target))
@@ -364,8 +444,21 @@ def exports_dir(project: dict[str, Any]) -> Path:
     return workspace.project_dir(project) / "exports"
 
 
-def export_name(stem: str, language: str) -> str:
+def export_name(stem: str, language: str, combined: bool = False) -> str:
+    """File name of an export. `all` marks a combined multi-language PDF —
+    not a language code, so it cannot collide with one."""
+    if combined:
+        return f"{stem}.all.pdf"
     return f"{stem}.{language}.pdf" if language else f"{stem}.pdf"
+
+
+def translation_languages(file_id: int) -> list[str]:
+    """Languages a file has a stored translation for, alphabetically."""
+    return sorted(
+        text["language"]
+        for text in pipeline.list_texts(file_id)
+        if text["kind"] == "translation" and text["language"]
+    )
 
 
 def list_exports(project: dict[str, Any]) -> list[dict[str, Any]]:
@@ -379,16 +472,59 @@ def list_exports(project: dict[str, Any]) -> list[dict[str, Any]]:
     return entries
 
 
+def _file_documents(
+    file_row: dict[str, Any],
+    project: dict[str, Any],
+    languages: list[str],
+    cancel: threading.Event,
+    report: Callable[[int, str], None],
+    progress_range: tuple[int, int],
+) -> list[dict[str, Any]]:
+    """One document per requested language version of a single file.
+
+    With more than one version the first is the original and the rest follow
+    it in the same PDF: they carry a divider instead of the file header, which
+    would otherwise repeat identically (title, addition and place/date are
+    metadata of the file, not of the language).
+    """
+    docs: list[dict[str, Any]] = []
+    lo, hi = progress_range
+    span = max(hi - lo, 1)
+    for index, language in enumerate(languages):
+        if cancel.is_set():
+            raise JobCancelled()
+        start = lo + span * index // len(languages)
+        end = lo + span * (index + 1) // len(languages)
+        doc = build_document(file_row, project, language, cancel, report, (start, end))
+        if index:
+            doc.update(
+                {"header_left": "", "header_middle": "", "header_right": "", "divider": True}
+            )
+        docs.append(doc)
+    return docs
+
+
 def handle_export_job(
     job: dict[str, Any], cancel: threading.Event, report: Callable[[int, str], None]
 ) -> None:
     """Job handler: export one file or a whole project as PDF.
 
-    Payload: {"scope": "file"|"project", "file_id"?, "project_id"?, "language": ""}
+    Payload: {"scope": "file"|"project", "file_id"?, "project_id"?,
+              "language": "", "combine": false}
+
+    `combine` puts the original and every stored translation into one PDF,
+    each version separated by a divider line; otherwise one version is
+    exported on its own.
     """
     payload = job["payload"]
     scope = payload.get("scope", "file")
     language = payload.get("language", "")
+    combine = bool(payload.get("combine"))
+
+    def languages_for(file_id: int) -> list[str]:
+        if not combine:
+            return [language]
+        return ["", *translation_languages(file_id)]
 
     if scope == "project":
         project = workspace.get_project(int(payload["project_id"]))
@@ -404,8 +540,12 @@ def handle_export_job(
             lo = 90 * index // len(files)
             hi = 90 * (index + 1) // len(files)
             report(lo, f"File {index + 1}/{len(files)}")
-            docs.append(build_document(file_row, project, language, cancel, report, (lo, hi)))
-        target = exports_dir(project) / export_name(project["slug"], language)
+            docs.extend(
+                _file_documents(
+                    file_row, project, languages_for(file_row["id"]), cancel, report, (lo, hi)
+                )
+            )
+        target = exports_dir(project) / export_name(project["slug"], language, combine)
     else:
         file_row = workspace.get_file(int(payload["file_id"]))
         if file_row is None:
@@ -413,28 +553,45 @@ def handle_export_job(
         project = workspace.get_project(file_row["project_id"])
         if project is None:
             raise RuntimeError("Transcript no longer exists")
-        docs = [build_document(file_row, project, language, cancel, report, (0, 90))]
-        target = exports_dir(project) / export_name(Path(file_row["rel_path"]).stem, language)
+        docs = _file_documents(
+            file_row, project, languages_for(file_row["id"]), cancel, report, (0, 90)
+        )
+        stem = Path(file_row["rel_path"]).stem
+        target = exports_dir(project) / export_name(stem, language, combine)
 
     report(95, "Generating PDF")
-    render_pdf(docs, project.get("type_key") or "", target)
+    render_pdf(docs, project.get("type_structure") or "", target)
     report(100, f"Export fertig: {target.name}")
 
 
-def enqueue_file_export(file_row: dict[str, Any], language: str, session_id: str) -> dict[str, Any]:
+def enqueue_file_export(
+    file_row: dict[str, Any], language: str, session_id: str, combine: bool = False
+) -> dict[str, Any]:
     return job_queue.enqueue(
         "export_pdf",
-        payload={"scope": "file", "file_id": file_row["id"], "language": language},
+        payload={
+            "scope": "file",
+            "file_id": file_row["id"],
+            "language": language,
+            "combine": combine,
+        },
         file_id=file_row["id"],
         project_id=file_row["project_id"],
         session_id=session_id,
     )
 
 
-def enqueue_project_export(project_id: int, language: str, session_id: str) -> dict[str, Any]:
+def enqueue_project_export(
+    project_id: int, language: str, session_id: str, combine: bool = False
+) -> dict[str, Any]:
     return job_queue.enqueue(
         "export_pdf",
-        payload={"scope": "project", "project_id": project_id, "language": language},
+        payload={
+            "scope": "project",
+            "project_id": project_id,
+            "language": language,
+            "combine": combine,
+        },
         project_id=project_id,
         session_id=session_id,
     )

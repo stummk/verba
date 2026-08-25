@@ -82,10 +82,9 @@ export const api = {
 
   // project types
   listTypes: () => request("GET", "/api/types"),
-  createType: (name, systemPrompt) =>
-    request("POST", "/api/types", { name, system_prompt: systemPrompt }),
-  updateType: (id, name, systemPrompt) =>
-    request("PUT", `/api/types/${id}`, { name, system_prompt: systemPrompt }),
+  typeDefaults: () => request("GET", "/api/types/defaults"),
+  createType: (name, settings) => request("POST", "/api/types", { name, ...settings }),
+  updateType: (id, name, settings) => request("PUT", `/api/types/${id}`, { name, ...settings }),
   deleteType: (id) => request("DELETE", `/api/types/${id}`),
   restoreTypes: () => request("POST", "/api/types/restore-defaults"),
 
@@ -96,10 +95,12 @@ export const api = {
   getTexts: (fileId) => request("GET", `/api/files/${fileId}/texts`),
 
   // PDF export
-  exportFile: (fileId, language = "") =>
-    request("POST", `/api/files/${fileId}/export`, { language }),
-  exportProject: (projectId, language = "") =>
-    request("POST", `/api/projects/${projectId}/export`, { language }),
+  exportFile: (fileId, options = {}) =>
+    request("POST", `/api/files/${fileId}/export`, { language: "", combine: false, ...options }),
+  exportProject: (projectId, options = {}) =>
+    request("POST", `/api/projects/${projectId}/export`, {
+      language: "", combine: false, ...options,
+    }),
   listExports: (projectId) => request("GET", `/api/projects/${projectId}/exports`),
   deleteExport: (projectId, name) =>
     request("DELETE", `/api/projects/${projectId}/exports/${encodeURIComponent(name)}`),

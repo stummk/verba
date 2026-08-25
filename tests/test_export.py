@@ -84,13 +84,13 @@ def test_rule_based_paragraphs():
 
 
 def test_rule_based_stanzas_for_poems():
-    blocks = pdf._structure_rule_based("Zeile 1\nZeile 2\n\nZeile 3", "gedicht")
+    blocks = pdf._structure_rule_based("Zeile 1\nZeile 2\n\nZeile 3", "stanzas")
     assert blocks[0] == {"kind": "stanza", "lines": ["Zeile 1", "Zeile 2"]}
     assert blocks[1] == {"kind": "stanza", "lines": ["Zeile 3"]}
 
 
 def test_rule_based_dialogue_from_speaker_lines():
-    blocks = pdf._structure_rule_based("Anna: Hallo.\nOhne Sprecher.", "interview")
+    blocks = pdf._structure_rule_based("Anna: Hallo.\nOhne Sprecher.", "dialogue")
     assert blocks[0] == {"kind": "dialogue", "speaker": "Anna", "text": "Hallo."}
     assert blocks[1] == {"kind": "paragraph", "text": "Ohne Sprecher."}
 
@@ -104,12 +104,15 @@ def test_base_text_prefers_cleanup(data_env, tmp_path):
     assert pdf._base_text(file_row["id"], "", "") == "Bereinigt."
 
 
-def test_base_text_dialogue_types_use_segment_speakers(data_env, tmp_path):
+def test_base_text_dialogue_structures_use_segment_speakers(data_env, tmp_path):
     file_row, _project = make_done_file(
         tmp_path, type_key="interview", segments=(("Anna", "Hallo."), ("Ben", "Hi."))
     )
     pipeline.save_text(file_row["id"], "cleanup", "ohne sprecher")
-    assert pdf._base_text(file_row["id"], "interview", "") == "Anna: Hallo.\nBen: Hi."
+    assert pdf._base_text(file_row["id"], "dialogue", "") == "Anna: Hallo.\nBen: Hi."
+    assert pdf._base_text(file_row["id"], "script", "") == "Anna: Hallo.\nBen: Hi."
+    # every other structure works from the cleaned-up text
+    assert pdf._base_text(file_row["id"], "paragraphs", "") == "ohne sprecher"
 
 
 def test_base_text_missing_translation_raises(data_env, tmp_path):
@@ -198,10 +201,10 @@ ALL_KINDS_DOC = {
 }
 
 
-@pytest.mark.parametrize("type_key", ["", "lied", "interview", "protokoll"])
-def test_render_pdf_all_block_kinds(tmp_path, type_key):
+@pytest.mark.parametrize("structure", ["", "paragraphs", "stanzas", "dialogue", "script"])
+def test_render_pdf_all_block_kinds(tmp_path, structure):
     target = tmp_path / "out.pdf"
-    pdf.render_pdf([ALL_KINDS_DOC], type_key, target)
+    pdf.render_pdf([ALL_KINDS_DOC], structure, target)
     assert target.read_bytes().startswith(b"%PDF")
 
 

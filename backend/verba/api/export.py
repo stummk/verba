@@ -12,9 +12,14 @@ router = APIRouter(prefix="/api", tags=["export"])
 
 
 class ExportOptions(BaseModel):
-    """language empty = original text (cleanup, else transcript)."""
+    """language empty = original text (cleanup, else transcript).
+
+    combine ignores `language` and puts the original plus every stored
+    translation into one PDF, separated by a divider line.
+    """
 
     language: str = Field(default="", max_length=10)
+    combine: bool = False
 
 
 def _project_or_404(project_id: int) -> dict:
@@ -35,7 +40,10 @@ def export_file(
         raise HTTPException(status_code=404, detail="File not found")
     if file_row["status"] != "done":
         raise HTTPException(status_code=409, detail="File has not been transcribed yet")
-    return pdf.enqueue_file_export(file_row, (body or ExportOptions()).language, x_session_id)
+    options = body or ExportOptions()
+    return pdf.enqueue_file_export(
+        file_row, options.language, x_session_id, combine=options.combine
+    )
 
 
 @router.post("/projects/{project_id}/export")
@@ -47,8 +55,9 @@ def export_project(
     project = _project_or_404(project_id)
     if not any(f["status"] == "done" for f in workspace.list_files(project_id)):
         raise HTTPException(status_code=422, detail="No transcribed files available")
+    options = body or ExportOptions()
     return pdf.enqueue_project_export(
-        project["id"], (body or ExportOptions()).language, x_session_id
+        project["id"], options.language, x_session_id, combine=options.combine
     )
 
 

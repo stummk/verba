@@ -74,16 +74,46 @@ MP3-Tags sowie aus Dateinamen nach dem Schema `JJJJMMTT_Titel` (z. B.
 
 Sechs Standardtypen werden mitgeliefert: **Lied**, **Interview/Dialog**,
 **Rede**,  **Protokoll** (Gesprächsprotokoll mit
-Zusammenfassung und To-dos), **Gedicht** und **Rollenspiel**. Jeder Typ trägt
-einen System-Prompt, der der KI sagt, wie Transkripte dieses Typs aufzubereiten
-sind.
+Zusammenfassung und To-dos), **Gedicht** und **Rollenspiel**.
+
+Jeder Typ legt eine **Gliederung** fest und trägt **zwei Prompts**, zwischen
+denen im Editor ein Dropdown umschaltet.
+
+Die **Gliederung** bestimmt, woraus der PDF-Export aufbaut und wie er ohne KI
+gliedert:
+
+- **Absätze** — Fließtext aus dem bereinigten Text (Standard).
+- **Strophen** — Zeilenumbrüche bleiben erhalten (Lied, Gedicht).
+- **Dialog** — baut auf den Segmenten mit ihren Sprechern auf statt auf dem
+  zusammengeführten Text, jeder Beitrag mit Sprechernamen (Interview).
+- **Drehbuch** — wie Dialog, Rollennamen zusätzlich in Großbuchstaben
+  (Rollenspiel, Theaterstück).
+
+Damit kann auch ein selbst angelegter Typ auf die Sprecher-Segmente
+zugreifen — das war vorher fest an die Standardtypen gebunden.
+
+Die beiden Prompts:
+
+- **Bereinigungsprompt** — sagt der KI, wie das Transkript selbst aufbereitet
+  wird (Absätze, Sprecher, Füllwörter, Strophen …).
+- **Ausgabeformat-Prompt** — sagt der KI, wie der aufbereitete Text für den
+  **PDF-Export** in Blöcke gegliedert wird: Absätze, Überschriften, Strophen,
+  Dialogbeiträge, Listen (z. B. Beschlüsse und To-dos) und Trenner. Die
+  Standardtypen bringen dafür einen passenden Prompt mit — beim Lied etwa
+  Strophenblöcke, beim Protokoll Listen für Beschlüsse und To-dos.
+
+Bleibt der Ausgabeformat-Prompt leer, greift der Standardprompt; er steht dann
+als Platzhalter im Feld, und „Standard einsetzen" holt ihn zum Bearbeiten
+zurück. Ein **neuer Typ** ist damit schon vorbelegt, sodass er nur noch
+angepasst werden muss. Kann die KI die Vorgabe nicht auswerten, fällt der
+Export auf die regelbasierte Gliederung zurück — ein PDF entsteht immer.
 
 Typen werden im eigenen Tab **Typen** (Hauptnavigation) verwaltet: die Liste
-zur Auswahl und daneben der Editor für Name und System-Prompt — auf dem
+zur Auswahl und daneben der Editor für Name, Gliederung und Prompts — auf dem
 Smartphone nacheinander als Liste und Detailansicht. Der **+**-Knopf legt
 einen neuen Typ an; auch Standardtypen lassen sich bearbeiten und löschen.
 „Standardtypen wiederherstellen" bringt gelöschte oder veränderte Standards
-zurück.
+zurück (beide Prompts).
 
 ## Audio importieren
 
@@ -176,10 +206,17 @@ transkribierten Datei öffnet den Editor — einen
     ersetzt exakt die betroffenen Segmente
   - **Auf Auswahl kürzen / Auswahl entfernen** — Audio-Schnitt per ffmpeg;
     das Ergebnis entsteht als *neue* Datei im Transkript, das Original bleibt erhalten
-- Im Bereich **PDF-Header** im Editor lassen sich pro Datei ein linker Text, ein
-  mittiger Zusatz und ein rechtes Prefix bearbeiten. Titel und Aufnahmedatum werden
-  automatisch vorgeschlagen, der mittlere Zusatz erscheint im PDF in Klammern. Wenn
-  alle drei Felder leer sind, gibt es für die Datei keine Kopfzeile.
+- Im Bereich **PDF-Header** im Editor lassen sich pro Datei ein Titel, ein Zusatz
+  und ein Feld für Ort/Datum bearbeiten. Die Kopfzeile lautet dann
+  `Titel (Zusatz)` links und Ort/Datum rechts: der Zusatz steht in Klammern
+  direkt hinter dem Titel, mit einem Leerzeichen dazwischen. Titel und
+  Aufnahmedatum werden automatisch vorgeschlagen. Leere Felder hinterlassen
+  keine Spur — kein leeres Klammerpaar, und bei allen drei leeren Feldern gar
+  keine Kopfzeile.
+- Das rechte Feld ist **freier Text** und nimmt auch einen Ort auf, etwa
+  `München, 28.01.1933`. Ein Datum in der Form `JJJJ-MM-TT` wird beim Export
+  als `TT.MM.JJJJ` ausgegeben — auch mitten im Text; alles andere bleibt
+  unverändert stehen.
 - Dateinamen können optional als `Datum_Dateisprache_Zielsprache_Titel_Zusatz` aufgebaut
   sein. Dadurch werden Sprache, optionale Übersetzung sowie die Headerfelder automatisch
   vorbelegt.
@@ -193,6 +230,24 @@ sich direkt löschen, fehlende werden per Klick heruntergeladen. Faustregel:
 aber deutlich mehr Leistung. Eigene CTranslate2-Modelle können als Ordner ins
 Modellverzeichnis gelegt werden (Unterordner werden erkannt) und erscheinen in
 derselben Liste.
+
+**Ein eigenes Modellverzeichnis** (z. B. eine bestehende Sammlung unter
+`M:\Modelle\whisper`) wird unter **Einstellungen → Transkription** eingetragen
+und greift sofort, ohne Neustart: Verba liest das Verzeichnis bei jedem Aufruf
+neu von der Platte.
+
+- Jeder Unterordner mit einer `model.bin` wird gefunden — auch verschachtelt —
+  und erscheint als Modell mit seinem Ordnernamen.
+- Heißt ein Ordner genau wie ein Standardmodell (`large-v3`), gilt dieses
+  Modell als **installiert** und wird nicht erneut heruntergeladen. Dasselbe
+  gilt für den HuggingFace-Cache (`models--Systran--faster-whisper-…`), sofern
+  der Download vollständig ist.
+- Heißt der Ordner anders (`faster-whisper-large-v3`, `eigene/mein-finetune`),
+  erscheint er als eigenes Modell in der Liste und ist auswählbar — nur nicht
+  als Standardmodell markiert.
+- Ordner ohne `model.bin` und abgebrochene Downloads werden ignoriert.
+- Ein Pfad, den es noch nicht gibt, wird angelegt. Liegt er auf einem
+  Netzlaufwerk, das gerade nicht verbunden ist, bleibt die Liste leer.
 
 ## Sprachmodell (LLM) einrichten
 
@@ -215,6 +270,28 @@ PDF-Symbol in der Dateizeile oder in Schritt 3 der Aktionskarte mit
 **PDF-Export (alle)** für das ganze
 Transkript. Im Dialog wählst du die Textfassung: Original (bereinigter Text,
 sonst das rohe Transkript) oder eine vorhandene Übersetzung.
+
+Für Übersetzungen gibt es **zwei Wege**, im Dialog direkt unter „Original"
+wählbar:
+
+- **Eine Fassung pro PDF** — du wählst Original oder eine bestimmte Sprache.
+  Der Dateiname trägt die Sprache als Zusatz (`lied.pdf`, `lied.en.pdf`,
+  `lied.ru.pdf`), sodass alle Fassungen nebeneinander im Ordner `exports/`
+  liegen.
+- **„Original + alle Übersetzungen (ein PDF)"** — Original und jede hinterlegte
+  Übersetzung landen in **einem** Dokument, untereinander, jeweils durch eine
+  zentrierte Zeile `---` getrennt. Die Datei heißt `lied.all.pdf` und
+  überschreibt damit keinen Einzelexport. Beim Sammel-Export gilt das je Datei:
+  Kopfzeile und Original, dann `---` und die Übersetzungen, danach die nächste
+  Datei.
+
+Die angehängten Fassungen wiederholen die **Kopfzeile nicht** — sie wäre
+identisch, denn Titel, Zusatz und Ort/Datum sind Metadaten der Datei und werden
+nicht mitübersetzt. So markiert eine Kopfzeile eine neue Datei und `---` einen
+Sprachwechsel. Wählst du eine einzelne Sprache, für die noch keine Übersetzung
+hinterlegt ist, schlägt der Job mit einem Hinweis fehl statt still das Original
+zu exportieren; im kombinierten Modus werden einfach nur die vorhandenen
+Übersetzungen angehängt.
 
 Der Export läuft zweistufig: Mit konfiguriertem LLM strukturiert die KI den
 Text passend zum Transkripttyp (Strophen, Sprecherrollen, Protokoll mit

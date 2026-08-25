@@ -73,14 +73,45 @@ tags and from filenames following the `YYYYMMDD_Title` scheme (e.g.
 Six built-in types ship with the app: **Song** (song), **Interview/Dialog**,
 **Speech** (speech), **Protocol**
 (meeting minutes with summary and to-dos), **Poem** (poem) and
-**Role play** (role play). Each type carries a system prompt telling the AI
-how to process transcripts of that kind.
+**Role play** (role play).
+
+Each type sets a **layout** and carries **two prompts**, switched with a
+dropdown in the editor.
+
+The **layout** decides what the PDF export builds from and how it structures
+without AI:
+
+- **Paragraphs** — running text from the processed text (default).
+- **Stanzas** — line breaks are preserved (song, poem).
+- **Dialogue** — builds on the segments with their speakers instead of the
+  merged text, every turn with its speaker (interview).
+- **Script** — like dialogue, with character names additionally in capitals
+  (roleplay, play).
+
+This means a type you created yourself can use the speaker segments too —
+which used to be tied to the built-in types.
+
+The two prompts:
+
+- **Cleanup prompt** — tells the AI how the transcript itself is processed
+  (paragraphs, speakers, filler words, stanzas …).
+- **Output-format prompt** — tells the AI how the processed text is split into
+  blocks for the **PDF export**: paragraphs, headings, stanzas, dialogue
+  turns, lists (e.g. decisions and to-dos) and separators. The built-in types
+  ship a fitting one — stanza blocks for a song, lists for decisions and
+  to-dos in minutes.
+
+If the output-format prompt is left empty, the default applies; it then shows
+as the field's placeholder, and "Insert default" brings it back for editing. A
+**new type** starts out pre-filled with it, so it only needs adapting. If the
+AI cannot follow the instruction, the export falls back to rule-based
+structuring — a PDF is always produced.
 
 Types are managed in their own **Types** tab (main navigation): the list for
-selection next to the editor for name and system prompt — on the phone as a
+selection next to the editor for name, layout and prompts — on the phone as a
 list and a detail view, one at a time. The **+** button creates a new type;
 built-in types can be edited and deleted too. "Restore default types" brings
-deleted or modified defaults back.
+deleted or modified defaults back (both prompts).
 
 ## Importing audio
 
@@ -168,10 +199,16 @@ transcript and AI texts:
     replaces exactly the affected segments
   - **Trim to selection / Remove selection** — audio cutting via ffmpeg;
     the result becomes a *new* file in the transcript, the original is kept
-- The editor's **PDF header** section stores a left text, a centered addition,
-  and a right prefix per file. The title and recording date are suggested
-  automatically, and the centered addition is enclosed in parentheses in the PDF;
-  when all three fields are empty, no header is rendered.
+- The editor's **PDF header** section stores a title, an addition and a
+  place/date field per file. The header line then reads `Title (addition)` on
+  the left and the place/date on the right: the addition goes in parentheses
+  directly behind the title, separated by a single space. Title and recording
+  date are suggested automatically. Empty fields leave no trace — no empty
+  pair of parentheses, and no header at all when all three are empty.
+- The right-hand field is **free text** and takes a place as well, e.g.
+  `Munich, 28.01.1933`. A date written as `YYYY-MM-DD` is rendered as
+  `DD.MM.YYYY` on export — even in the middle of the text; everything else is
+  left as it is.
 - File names may optionally follow `date_source-language_target-language_title_addition`;
   this pre-fills the language, optional translation target, and header fields.
 
@@ -183,6 +220,24 @@ deleted right there, missing ones are downloaded with one click. Rule of
 thumb: `small` is a good start; `large-v3` gives the best quality but needs
 much more power. Custom CTranslate2 models can be placed as folders in the
 models directory (subfolders are detected) and appear in the same list.
+
+**A model directory of your own** (e.g. an existing collection under
+`M:\Modelle\whisper`) is entered under **Settings → Transcription** and takes
+effect immediately, without a restart: Verba reads the directory from disk on
+every request.
+
+- Every subfolder holding a `model.bin` is found — nested ones too — and shows
+  up as a model under its folder name.
+- If a folder is named exactly like a built-in model (`large-v3`), that model
+  counts as **installed** and is not downloaded again. The same goes for the
+  HuggingFace cache (`models--Systran--faster-whisper-…`) as long as the
+  download is complete.
+- If the folder has a different name (`faster-whisper-large-v3`,
+  `eigene/my-finetune`), it shows up as a model of its own and can be selected
+  — it is just not marked as a built-in.
+- Folders without a `model.bin` and aborted downloads are ignored.
+- A path that does not exist yet is created. If it lives on a network drive
+  that is currently not connected, the list stays empty.
 
 ## Setting up a language model (LLM)
 
@@ -205,6 +260,27 @@ or with **PDF export (all)** in step 3 of the action card for the whole
 transcript. The dialog
 lets you pick the text version: original (cleaned text, else the raw
 transcript) or an existing translation.
+
+Translations offer **two ways**, selectable in the dialog right below
+"original":
+
+- **One version per PDF** — you pick the original or one specific language.
+  The file name carries the language as a suffix (`song.pdf`, `song.en.pdf`,
+  `song.ru.pdf`), so every version sits next to the others in the `exports/`
+  folder.
+- **"Original + all translations (one PDF)"** — the original and every stored
+  translation land in **one** document, one below the other, each separated by
+  a centred `---` line. The file is called `song.all.pdf` and therefore never
+  overwrites a single-version export. In a folder export this applies per
+  file: header and original, then `---` and the translations, then the next
+  file.
+
+The appended versions do **not** repeat the header — it would be identical,
+because title, addition and place/date are metadata of the file and are not
+translated along. A header therefore marks a new file, and `---` marks a
+language switch. Picking a single language that has no translation stored yet
+makes the job fail with a message instead of quietly exporting the original; in
+combined mode only the translations that exist are appended.
 
 The export runs in two stages: with an LLM configured the AI structures the
 text to match the transcript type (stanzas, speaker roles, minutes with

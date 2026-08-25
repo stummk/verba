@@ -67,7 +67,8 @@ def create_project(name: str, type_id: int | None = None) -> dict[str, Any]:
 def get_project(project_id: int) -> dict[str, Any] | None:
     with db.get_conn() as conn:
         row = conn.execute(
-            "SELECT p.*, t.key AS type_key, t.name AS type_name, t.system_prompt AS type_prompt "
+            "SELECT p.*, t.key AS type_key, t.name AS type_name, t.system_prompt AS type_prompt, "
+            "t.output_prompt AS type_output_prompt, t.structure AS type_structure "
             "FROM projects p LEFT JOIN project_types t ON t.id = p.type_id "
             "WHERE p.id = ?",
             (project_id,),

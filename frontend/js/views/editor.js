@@ -55,6 +55,7 @@ export async function render(view, _status, params) {
           <input id="header-right" value="${file.header_right ?? ""}" maxlength="500">
         </label>
       </div>
+      <p class="hint">${t("editor.pdfHeaderHint")}</p>
     </div>
 
     <div class="card">

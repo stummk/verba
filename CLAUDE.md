@@ -41,9 +41,13 @@ python -m ruff format --check backend/ tests/ run.py
     binary/GGUF download, managed llama-server), pipeline (cleanup/translation,
     derived_texts, auto-chaining after transcription via the project's
     auto_process switch), chunking (segment boundaries + overlap), metadata (tags/file name),
-    project_types (7 default types, seeding via meta table), pdf (two-stage
+    project_types (7 default types with cleanup prompt, output-format
+    prompt and layout; seeding + per-field backfill via meta table), pdf (two-stage
     PDF export: LLM- or rule-based structuring → deterministic
-    fpdf2 renderer per type template; compilation PDF without a table of contents;
+    fpdf2 renderer; the type's layout (paragraphs/stanzas/dialogue/script)
+    and output prompt drive both stages; compilation PDF without a table of
+    contents; optional combined export (original + translations in one PDF,
+    separated by a `---` divider);
     job kind `export_pdf` runs in the llm lane), vectorstore (global search index:
     small chunks with timestamps, FTS5 via DB triggers + sqlite-vec embeddings,
     hybrid query with RRF, auto-index after transcription/segment edit, reindex job

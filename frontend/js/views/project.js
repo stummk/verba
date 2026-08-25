@@ -11,6 +11,9 @@ import { on } from "../ws.js";
 const AUDIO_RE = /\.(mp3|wav|m4a|flac|ogg|opus|aac|wma|webm|mp4)$/i;
 
 let unsubscribers = [];
+// value of the extra "everything in one PDF" entry in the export dialog
+const COMBINED = "__combined__";
+
 let fabHandler = null;
 const fileJobs = new Map(); // file_id -> latest active job
 
@@ -511,10 +514,15 @@ export async function render(view, _status, params) {
       </div>
     `);
 
-    fillLanguageSelect(el("export-language"), {
+    const select = el("export-language");
+    fillLanguageSelect(select, {
       placeholder: t("export.original"),
       label: (name) => t("export.translated", { lang: name }),
     });
+    // one PDF holding the original and every stored translation — right
+    // below "original", not at the end of a hundred language entries
+    select.add(new Option(t("export.combined"), COMBINED), 1);
+    select.value = "";
 
     const close = () => host.replaceChildren();
     el("modal-close").onclick = close;
@@ -522,10 +530,13 @@ export async function render(view, _status, params) {
       if (event.target === event.currentTarget) close();
     };
     el("export-start").onclick = async () => {
-      const language = el("export-language").value;
+      const choice = el("export-language").value;
+      const options = choice === COMBINED
+        ? { combine: true }
+        : { language: choice };
       try {
-        if (fileId) await api.exportFile(fileId, language);
-        else await api.exportProject(forProject, language);
+        if (fileId) await api.exportFile(fileId, options);
+        else await api.exportProject(forProject, options);
         toast(t("export.started"));
         close();
       } catch (error) {
