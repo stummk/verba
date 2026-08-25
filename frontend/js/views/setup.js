@@ -62,6 +62,8 @@ export async function render(view) {
     if (!progress.running) {
       const fresh = await api.systemStatus();
       renderChecklist(fresh.checks);
+      // lets the shell bring the navigation back once setup is done
+      window.dispatchEvent(new CustomEvent("system:status", { detail: fresh }));
       if (fresh.ready && !progress.error) {
         toast(t("setup.completedToast"));
         setTimeout(() => { location.hash = "#/"; }, 1200);
@@ -75,7 +77,7 @@ export async function render(view) {
 
 function renderChecklist(checks) {
   const list = el("setup-checklist");
-  if (!list) return;
+  if (!list || !checks?.length) return;
   list.replaceChildren(
     ...checks.map((check) => {
       const item = document.createElement("li");
@@ -119,6 +121,8 @@ function applyProgress(progress) {
   } else {
     step.textContent = t("setup.done");
   }
+  // the backend ticks components off while it installs them
+  renderChecklist(progress.checks);
   log.textContent = (progress.log ?? []).join("\n");
   log.scrollTop = log.scrollHeight;
 }

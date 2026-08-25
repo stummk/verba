@@ -29,6 +29,8 @@ python -m ruff format --check backend/ tests/ run.py
   - `logging_setup.py` — log rotation (retention from settings)
   - `setup_check.py` — first-run checks + automatic installation (ffmpeg, pip groups)
   - `events.py` — EventHub: WebSocket broadcast to the UI (`publish()` is threadsafe)
+  - `lifecycle.py` — process lifetime: desktop mode stops when the last UI
+    WebSocket stays away (grace period for reloads); server mode keeps running
   - `core/jobs.py` — persistent JobQueue: two lanes (main/llm), FIFO per session,
     priority for small jobs, LLM-location scheduling (remote → parallel,
     local → phased batches with model swap), cancellation, requeue after restart

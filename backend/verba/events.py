@@ -31,6 +31,10 @@ class EventHub:
     def disconnect(self, ws: WebSocket) -> None:
         self._clients.discard(ws)
 
+    @property
+    def client_count(self) -> int:
+        return len(self._clients)
+
     async def broadcast(self, event_type: str, data: dict[str, Any] | None = None) -> None:
         message = json.dumps({"type": event_type, "data": data or {}}, ensure_ascii=False)
         dead: list[WebSocket] = []

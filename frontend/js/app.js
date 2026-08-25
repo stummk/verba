@@ -30,11 +30,19 @@ function parseHash() {
 }
 
 let systemStatus = null;
+// the very first run shows the wizard alone: no tabs to wander off into until
+// it is finished or skipped. Opening it again later is a normal view.
+let firstRunPending = false;
 
 async function navigate() {
   const parsed = parseHash();
   const route = routes[parsed.route] ? parsed.route : "dashboard";
   const config = routes[route];
+
+  if (route !== "setup") firstRunPending = false; // skipped or finished
+  const firstRun = firstRunPending && route === "setup";
+  el("main-nav").hidden = firstRun;
+  document.body.classList.toggle("nav-hidden", firstRun);
 
   document.querySelectorAll(".nav-item").forEach((link) => {
     link.classList.toggle(
@@ -62,14 +70,29 @@ async function navigate() {
   }
 }
 
+function showClosedNotice() {
+  document.body.classList.add("nav-hidden");
+  el("main-nav").hidden = true;
+  el("shutdown").hidden = true;
+  el("fab").hidden = true;
+  const card = document.createElement("div");
+  card.className = "card";
+  card.textContent = t("app.closedNotice");
+  el("view").replaceChildren(card);
+}
+
 function bindShell() {
   const indicator = el("ws-indicator");
   const engineStatus = el("engine-status");
   const shutdown = el("shutdown");
 
-  shutdown.onclick = () => {
+  shutdown.onclick = async () => {
     shutdown.disabled = true;
-    api.shutdown().catch(() => {});
+    await api.shutdown().catch(() => {});
+    // works when the browser was opened by us; otherwise the tab stays and
+    // says so, because the server behind it is gone either way
+    window.close();
+    setTimeout(showClosedNotice, 400);
   };
 
   let wasOffline = false;
@@ -108,6 +131,14 @@ function bindShell() {
     indicator.title = t("app.disconnected");
   });
 
+  // views (the setup wizard) publish a fresh status after they changed it
+  window.addEventListener("system:status", (event) => {
+    systemStatus = event.detail;
+    el("shutdown").hidden = !systemStatus.desktop_mode;
+    if (systemStatus.setup_completed) firstRunPending = false;
+    navigate();
+  });
+
   // FAB is context-sensitive: views listen for this event
   el("fab").onclick = () => window.dispatchEvent(new CustomEvent("fab:click"));
 }
@@ -126,19 +157,14 @@ async function init() {
   try {
     systemStatus = await api.systemStatus();
     el("shutdown").hidden = !systemStatus.desktop_mode;
-    if (!systemStatus.ready && !systemStatus.setup_completed && !location.hash) {
-      location.hash = "#/setup";
+    if (!systemStatus.ready && !systemStatus.setup_completed) {
+      firstRunPending = true;
+      if (!location.hash) location.hash = "#/setup";
     }
   } catch { /* connection indicator shows the state */ }
 
   window.addEventListener("hashchange", navigate);
   await navigate();
-
-  window.addEventListener("pagehide", () => {
-    if (systemStatus?.desktop_mode) {
-      navigator.sendBeacon("/api/system/shutdown");
-    }
-  });
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(() => {});

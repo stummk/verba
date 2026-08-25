@@ -52,32 +52,64 @@ def _frozen_data_dir() -> Path:
     return base / "verba"
 
 
+def runtime_site_packages() -> Path:
+    return data_dir() / "site-packages"
+
+
 def site_packages_repair_marker() -> Path:
     return data_dir() / "site-packages-repair"
 
 
-def ensure_runtime_site_packages() -> None:
-    """Frozen builds pip-install feature groups into <data>/site-packages;
-    make that directory importable (idempotent, no-op in source checkouts).
+def mark_site_packages_repair(names: list[str]) -> None:
+    """Record top-level packages a failed installation may have damaged.
 
-    A failed in-process installation can leave half-deleted packages behind
-    (Windows locks loaded .pyd files). setup_check leaves a repair marker in
-    that case; at the next start — before anything is imported and locked —
-    the directory is wiped so the setup can reinstall cleanly."""
+    Windows keeps loaded .pyd files locked, so a pip run that replaces such a
+    package can delete part of it and then fail. The named directories are
+    removed at the next start (before anything imports them again) so the
+    retry installs them cleanly — everything else stays in place, because
+    wiping the whole directory would also throw away the groups that already
+    work."""
+    unique = sorted({name for name in names if name and "/" not in name and "\\" not in name})
+    if not unique:
+        return
+    site_packages_repair_marker().write_text("\n".join(unique), encoding="utf-8")
+
+
+def repair_site_packages() -> None:
+    """Remove the packages a previous failed installation left damaged.
+
+    Call once at startup, before the runtime site-packages is imported from.
+    """
     if not FROZEN:
         return
-    target = data_dir() / "site-packages"
     marker = site_packages_repair_marker()
-    if marker.exists():
-        import shutil
+    if not marker.exists():
+        return
+    import shutil
 
-        logger.warning("repairing site-packages (a previous installation failed)")
-        try:
-            shutil.rmtree(target)
-        except OSError:
-            logger.exception("site-packages repair failed; will retry on next start")
-        else:
-            marker.unlink(missing_ok=True)
+    target = runtime_site_packages()
+    names = [line.strip() for line in marker.read_text(encoding="utf-8").splitlines()]
+    failed = False
+    for name in filter(None, names):
+        # a distribution owns its package dir plus siblings like numpy.libs
+        # and numpy-2.1.0.dist-info — glob covers all of them
+        for path in target.glob(f"{name}*"):
+            logger.warning("removing damaged package from site-packages: %s", path.name)
+            try:
+                shutil.rmtree(path) if path.is_dir() else path.unlink()
+            except OSError:
+                logger.exception("could not remove %s; will retry on next start", path)
+                failed = True
+    if not failed:
+        marker.unlink(missing_ok=True)
+
+
+def ensure_runtime_site_packages() -> None:
+    """Frozen builds pip-install feature groups into <data>/site-packages;
+    make that directory importable (idempotent, no-op in source checkouts)."""
+    if not FROZEN:
+        return
+    target = runtime_site_packages()
     target.mkdir(parents=True, exist_ok=True)
     if str(target) not in sys.path:
         sys.path.insert(0, str(target))

@@ -27,10 +27,12 @@ optionaler KI-Bereinigung/Übersetzung, PDF-Export, semantischer Suche und einer
 Beim ersten Start werden die Grundkomponenten automatisch eingerichtet; die
 Anwendung öffnet sich im Browser unter `http://127.0.0.1:8710`.
 
-Im Desktopmodus beendet der Button **Beenden** oben rechts den lokalen Verba-
-Prozess. Wenn das einzige Verba-Browserfenster geschlossen wird, beendet sich
-der Desktopserver ebenfalls automatisch. Im Servermodus bleibt Verba dagegen
-weiter aktiv.
+Im Desktopmodus schließt der Knopf **✕** oben rechts den Verba-Tab und
+beendet den lokalen Prozess. Auch ohne diesen Knopf beendet sich der
+Desktopserver: sobald der letzte Verba-Tab (oder der ganze Browser)
+geschlossen ist, hält er sich noch wenige Sekunden für ein Neuladen offen und
+beendet sich dann von selbst. Im Servermodus bleibt Verba dagegen weiter
+aktiv, bis der Dienst gestoppt wird.
 
 Verba ist eine **PWA**: Im Browser lässt sich die App „installieren" (Symbol in
 der Adressleiste bzw. „Zum Startbildschirm hinzufügen") und fühlt sich dann wie
@@ -40,8 +42,16 @@ Server wieder erreichbar ist, geht es automatisch weiter.
 ## Ersteinrichtung
 
 Beim ersten Aufruf prüft Verba das System (Python, ffmpeg, GPU,
-KI-Komponenten) und installiert Fehlendes automatisch — mit Live-Fortschritt.
-Die Einrichtung lässt sich später unter **Einstellungen** erneut aufrufen.
+KI-Komponenten) und installiert Fehlendes automatisch. Der Fortschritt läuft
+live mit: der Balken zeigt die gesamte Einrichtung, und jede Komponente
+bekommt ihren Haken, sobald sie installiert und geprüft ist. Solange die
+Ersteinrichtung läuft, sind die Navigationstabs ausgeblendet — sie erscheinen,
+sobald du die Einrichtung abschließt oder auf **Später einrichten** gehst. Die
+Einrichtung lässt sich später unter **Einstellungen** erneut aufrufen.
+
+Schlägt eine Installation fehl, bleiben die bereits fertigen Komponenten
+erhalten; ein Neustart von Verba und ein erneuter Versuch räumen nur das
+tatsächlich beschädigte Paket auf.
 
 ## Transkripte
 

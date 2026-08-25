@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import os
-import signal
 import threading
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from .. import __version__, setup_check
+from .. import __version__, lifecycle, setup_check
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -18,15 +16,11 @@ class SetupRunRequest(BaseModel):
     include_optional: bool = True
 
 
-def _stop_process() -> None:
-    os.kill(os.getpid(), signal.SIGTERM)
-
-
 @router.get("/status")
 def get_status() -> dict:
     status = setup_check.system_status()
     status["version"] = __version__
-    status["desktop_mode"] = os.environ.get("VERBA_DESKTOP_MODE") == "1"
+    status["desktop_mode"] = lifecycle.desktop_mode()
     return status
 
 
@@ -56,7 +50,7 @@ def run_setup(body: SetupRunRequest) -> dict:
 @router.post("/shutdown")
 def shutdown() -> dict:
     """Stop the local desktop process after the response has been sent."""
-    if os.environ.get("VERBA_DESKTOP_MODE") != "1":
+    if not lifecycle.desktop_mode():
         return {"stopped": False}
-    threading.Timer(0.1, _stop_process).start()
+    lifecycle.stop_process()
     return {"stopped": True}

@@ -98,22 +98,16 @@ def test_setup_run_endpoint_reports_started(client, monkeypatch):
 def test_feature_install_bootstraps_missing_pip(monkeypatch):
     calls = []
 
-    class FakeProcess:
-        stdout = iter(["Successfully installed example\n"])
-        returncode = 0
-
-        def wait(self):
-            return 0
-
+    monkeypatch.setattr(setup_check.config, "FROZEN", False)
     monkeypatch.setattr(setup_check, "find_spec", lambda name: None if name == "pip" else object())
     monkeypatch.setattr(
         setup_check.subprocess,
         "run",
         lambda command, **kwargs: calls.append((command, kwargs)),
     )
-    monkeypatch.setattr(setup_check.subprocess, "Popen", lambda *args, **kwargs: FakeProcess())
+    monkeypatch.setattr(setup_check, "_run_child", lambda command, on_line: (0, []))
 
-    setup_check._pip_install_subprocess(["example"], lambda line: None)
+    setup_check._pip_install(["example"], "Testgruppe")
 
     assert calls == [
         (
@@ -121,6 +115,19 @@ def test_feature_install_bootstraps_missing_pip(monkeypatch):
             {"check": True, "capture_output": True, "text": True},
         )
     ]
+
+
+def test_frozen_build_never_calls_ensurepip(monkeypatch):
+    """The bundled pip is always there; `python -m ensurepip` does not exist."""
+    monkeypatch.setattr(setup_check.config, "FROZEN", True)
+    monkeypatch.setattr(setup_check, "find_spec", lambda name: None)
+
+    def fail(*args, **kwargs):
+        raise AssertionError("ensurepip must not run in a frozen build")
+
+    monkeypatch.setattr(setup_check.subprocess, "run", fail)
+    monkeypatch.setattr(setup_check, "_run_child", lambda command, on_line: (0, []))
+    setup_check._pip_install(["example"], "Testgruppe")
 
 
 def test_shutdown_endpoint_is_disabled_outside_desktop_mode(client, monkeypatch):
