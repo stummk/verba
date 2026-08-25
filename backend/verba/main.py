@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, config, db
+from . import __version__, config, db, lifecycle
 from .api import apikeys as apikeys_api
 from .api import docs as docs_api
 from .api import export as export_api
@@ -96,11 +96,18 @@ def create_app() -> FastAPI:
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket) -> None:
         await hub.connect(ws)
+        lifecycle.cancel_idle_watchdog()
         try:
             while True:
                 await ws.receive_text()  # keepalive pings from the client
         except WebSocketDisconnect:
+            pass
+        finally:
             hub.disconnect(ws)
+            if not hub.client_count:
+                # desktop mode follows its UI: closing the tab (or the whole
+                # browser) ends the process after a short grace period
+                lifecycle.arm_idle_watchdog()
 
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
     return app

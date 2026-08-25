@@ -27,9 +27,11 @@ transcription API.
 On first start the core components are set up automatically; the app opens in
 your browser at `http://127.0.0.1:8710`.
 
-In desktop mode, the **Exit** button in the top right stops the local Verba
-process. Closing the only Verba browser window also stops the desktop server
-automatically. In server mode, Verba continues running.
+In desktop mode, the **✕** button in the top right closes the Verba tab and
+stops the local process. It also stops without that button: once the last
+Verba tab (or the whole browser) is gone, it waits a few seconds for a reload
+and then exits by itself. In server mode, Verba keeps running until its
+service is stopped.
 
 Verba is a **PWA**: the browser can "install" the app (icon in the address bar
 or "Add to home screen"), after which it feels like a standalone app. The
@@ -39,8 +41,15 @@ again, everything resumes automatically.
 ## First-run setup
 
 On first launch Verba checks the system (Python, ffmpeg, GPU, AI
-components) and installs whatever is missing — with live progress. The setup
-can be reopened later from **Settings**.
+components) and installs whatever is missing. Progress is live: the bar covers
+the whole setup, and every component gets its tick as soon as it is installed
+and verified. While the first-run setup is in progress the navigation tabs are
+hidden — they appear once you finish the setup or choose **Set up later**. The
+setup can be reopened later from **Settings**.
+
+If an installation fails, the components that are already done stay
+installed; restarting Verba and trying again only cleans up the package that
+was actually damaged.
 
 ## Transcripts
 

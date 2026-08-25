@@ -59,7 +59,7 @@ def used_i18n_keys() -> set[str]:
         source = js_file.read_text(encoding="utf-8")
         keys.update(re.findall(r'\bt\(\s*"([a-zA-Z0-9_.]+)"', source))
     index = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    keys.update(re.findall(r'data-i18n="([a-zA-Z0-9_.]+)"', index))
+    keys.update(re.findall(r'data-i18n(?:-title)?="([a-zA-Z0-9_.]+)"', index))
     return keys
 
 

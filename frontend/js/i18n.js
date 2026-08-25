@@ -30,9 +30,15 @@ export function currentLanguage() {
   return lang;
 }
 
-// Translate static markup: <span data-i18n="nav.projects"></span>
+// Translate static markup: <span data-i18n="nav.projects"></span>, and
+// icon-only controls via <button data-i18n-title="app.shutdown">
 export function translateStatic(root = document) {
   root.querySelectorAll("[data-i18n]").forEach((node) => {
     node.textContent = t(node.dataset.i18n);
+  });
+  root.querySelectorAll("[data-i18n-title]").forEach((node) => {
+    const label = t(node.dataset.i18nTitle);
+    node.title = label;
+    node.setAttribute("aria-label", label);
   });
 }

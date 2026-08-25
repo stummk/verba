@@ -11,6 +11,9 @@ from verba import config
 @pytest.fixture(autouse=True)
 def isolated_data_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("VERBA_DATA_DIR", str(tmp_path / "data"))
+    # desktop mode ends the process when the last UI disconnects — never
+    # inherit it from the developer's shell into a test run
+    monkeypatch.delenv("VERBA_DESKTOP_MODE", raising=False)
     config.reset_cache()
     yield
     config.reset_cache()

@@ -47,6 +47,46 @@ def ensure_streams() -> None:
         sys.stderr = open(os.devnull, "w", encoding="utf-8")  # noqa: SIM115 — lives forever
 
 
+INTERNAL_PIP_FLAG = "--internal-pip"
+INTERNAL_IMPORT_FLAG = "--internal-import"
+
+
+def run_internal_task(argv: list[str]) -> int | None:
+    """Helper modes the setup runs in a child process; None = normal start.
+
+    A frozen build has no interpreter to call, so it re-invokes itself:
+    - `--internal-pip <pip args>` installs feature groups. Doing this in a
+      child process keeps the server process from ever loading the packages,
+      which matters on Windows where a loaded .pyd cannot be replaced.
+    - `--internal-import <module>` is the smoke test after an installation.
+    """
+    if len(argv) < 2 or argv[0] not in (INTERNAL_PIP_FLAG, INTERNAL_IMPORT_FLAG):
+        return None
+    ensure_streams()
+    if not FROZEN:
+        sys.path.insert(0, str(BACKEND_DIR))
+    from verba.config import ensure_runtime_site_packages
+
+    ensure_runtime_site_packages()
+
+    if argv[0] == INTERNAL_IMPORT_FLAG:
+        import importlib
+
+        importlib.import_module(argv[1])
+        return 0
+
+    # pip is bundled as a plain file tree, not as frozen modules: its vendored
+    # distlib resolves resources only through standard path-based importers
+    from verba.config import bundle_root
+
+    pip_lib = bundle_root() / "pip-lib"
+    if pip_lib.is_dir() and str(pip_lib) not in sys.path:
+        sys.path.insert(0, str(pip_lib))
+    from pip._internal.cli.main import main as pip_main
+
+    return int(pip_main(list(argv[1:])))
+
+
 def ensure_core_dependencies() -> None:
     if FROZEN:
         return  # bundled by PyInstaller
@@ -95,6 +135,11 @@ def open_browser_when_ready(url: str, health_url: str, timeout: float = 30.0) ->
 def main() -> None:
     ensure_streams()
     ensure_python_version()
+
+    internal = run_internal_task(sys.argv[1:])
+    if internal is not None:
+        sys.exit(internal)
+
     ensure_core_dependencies()
 
     parser = argparse.ArgumentParser(prog="verba", description="Start Verba")
@@ -110,8 +155,9 @@ def main() -> None:
 
     if not FROZEN:
         sys.path.insert(0, str(BACKEND_DIR))
-    from verba.config import ensure_runtime_site_packages, get_settings
+    from verba.config import ensure_runtime_site_packages, get_settings, repair_site_packages
 
+    repair_site_packages()  # before anything imports (and locks) from there
     ensure_runtime_site_packages()
 
     settings = get_settings()

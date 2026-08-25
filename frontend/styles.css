@@ -121,7 +121,12 @@ body {
   white-space: nowrap;
 }
 
-.top-bar-shutdown { margin-left: .5rem; }
+.top-bar-shutdown { margin-left: .25rem; }
+
+/* first-run setup hides the navigation — the explicit display on .nav-bar
+   would otherwise win over the [hidden] attribute */
+.nav-bar[hidden] { display: none; }
+body.nav-hidden { padding-bottom: 0; }
 .dot { width: .6rem; height: .6rem; border-radius: 50%; flex: none; }
 .dot.online { background: var(--md-success); }
 .dot.offline { background: var(--md-error); }
@@ -201,6 +206,7 @@ body {
 /* desktop: navigation rail + wider layout */
 @media (min-width: 52.5em) {
   body { padding-bottom: 0; padding-left: var(--nav-size); }
+  body.nav-hidden { padding-left: 0; }
   .nav-bar {
     top: 0; bottom: 0; right: auto;
     width: var(--nav-size);

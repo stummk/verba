@@ -243,6 +243,12 @@ Two consistency tests deserve special attention:
 - **Server binding**: desktop mode binds the full loopback
   (127.0.0.1 **and** ::1) so `localhost` works regardless of IPv4/IPv6
   resolution (`run.py:loopback_sockets`).
+- **Process lifetime** (`lifecycle.py`): desktop mode follows its UI. When the
+  last WebSocket client is gone, a watchdog waits `VERBA_IDLE_EXIT_SECONDS`
+  (default 6 s, `0` disables) and then stops the process — long enough for a
+  reload to reconnect, so closing the tab or the browser ends the app instead
+  of leaving it in the background. It only arms after a UI has connected, so
+  `--no-browser` starts are not killed. Server mode never self-exits.
 
 ## Packaging & Release
 
@@ -258,9 +264,15 @@ The build bundles core dependencies, frontend and user guide —
 
 - Runtime data lives per user (`%LOCALAPPDATA%\Verba` or
   `~/.local/share/verba`), never in the installation directory.
-- The first-run setup installs feature groups via bundled pip
-  (in-process, binary wheels only) into `<data>/site-packages`; `run.py`
-  puts that directory on `sys.path` at startup.
+- The first-run setup installs feature groups via bundled pip into
+  `<data>/site-packages` (binary wheels only); `run.py` puts that directory
+  on `sys.path` at startup. The installation runs in a **child process** —
+  the executable re-invokes itself with `--internal-pip` — and the smoke
+  test after it with `--internal-import`. The server process must never
+  import a feature group itself: Windows locks a loaded `.pyd`, and pip then
+  cannot replace shared dependencies (numpy under sentence-transformers)
+  when a later group is installed. `setup_check.group_installed()` therefore
+  only ever locates modules (`find_spec`).
 - Bundled resources (frontend/, docs/user/) are resolved through
   `config.bundle_root()`.
 
@@ -273,11 +285,13 @@ Four frozen-mode specifics the spec handles deliberately (do not remove):
 3. **The complete stdlib including submodules** as hidden imports: packages
    installed at runtime import arbitrary stdlib parts (fpdf2 →
    `timeit`, `unittest.mock`) that static analysis cannot see.
-4. **Repair marker:** if the in-process installation fails, loaded `.pyd`
-   files can leave half-deleted packages behind (Windows file locks).
-   `setup_check` then sets a marker; at the next start
-   `config.ensure_runtime_site_packages()` wipes the directory and the
-   setup reinstalls cleanly.
+4. **Repair marker:** a pip run that still hits a Windows file lock can
+   leave a half-deleted package behind. `setup_check` writes the affected
+   top-level names into a marker; at the next start
+   `config.repair_site_packages()` removes exactly those, before anything
+   imports from the directory, so the retry installs them cleanly. It must
+   stay targeted — wiping the whole directory would also throw away the
+   groups that already work.
 
 ### Windows Installer
 
