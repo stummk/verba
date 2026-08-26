@@ -6,6 +6,7 @@ import { api } from "../api.js";
 import { el, esc, formatDuration, html, raw, toast } from "../dom.js";
 import { t } from "../i18n.js";
 import { fillLanguageSelect } from "../languages.js";
+import { renderMarkdown } from "../markdown.js";
 
 export async function render(view) {
   const status = await api.searchStatus().catch(() => null);
@@ -168,9 +169,10 @@ export async function render(view) {
       card.className = "card";
       const heading = document.createElement("h2");
       heading.textContent = t("search.answerTitle");
-      const answer = document.createElement("p");
-      answer.className = "search-answer-text";
-      answer.textContent = data.answer;
+      const answer = document.createElement("div");
+      // markdown, but sanitised: model output never becomes raw markup
+      answer.className = "docs-content search-answer-text";
+      renderMarkdown(answer, data.answer);
       const sourcesTitle = document.createElement("p");
       sourcesTitle.className = "small muted";
       sourcesTitle.textContent = t("search.sources");

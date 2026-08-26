@@ -7,6 +7,10 @@
 #
 # Assumes Verba was installed to /opt/verba via deploy/install.sh
 # (which creates the virtualenv at /opt/verba/.venv).
+#
+# The bound address is printed on every start and captured by the journal:
+#   systemctl status verba          # last lines, including the address block
+#   journalctl -u verba | head -20  # the banner of the current start
 
 [Unit]
 Description=Verba transcription server
@@ -21,6 +25,9 @@ WorkingDirectory=/opt/verba
 ExecStart=/opt/verba/.venv/bin/python run.py --server --port 8710
 Restart=on-failure
 RestartSec=5
+
+# unbuffered stdout, so the address block reaches the journal immediately
+Environment=PYTHONUNBUFFERED=1
 
 # Runtime data (settings, database, models, logs) lives under /opt/verba/data.
 Environment=VERBA_DATA_DIR=/opt/verba/data

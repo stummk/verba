@@ -496,18 +496,24 @@ details.advanced .form-grid { margin-top: .25rem; }
 .docs-intro { margin-bottom: .5rem; }
 .docs-intro > :last-child { margin-bottom: 0; }
 
-/* quick navigation: one chip per section, click opens and scrolls there */
-.docs-toc { display: flex; flex-wrap: wrap; gap: .4rem; margin: .75rem 0 .5rem; }
-.docs-toc button {
+/* ask the guide: one question, one answer — no chat transcript */
+.docs-ask textarea { width: 100%; resize: vertical; }
+.docs-ask .actions { margin-top: .5rem; }
+/* the answer is markdown (lists, code, tables), rendered like the guide itself */
+.docs-answer-text {
   background: var(--md-surface-container);
-  color: var(--md-on-surface-variant);
-  font-size: .82rem;
-  font-weight: 500;
-  padding: .4rem .85rem;
-  border-radius: var(--shape-lg);
+  border-radius: var(--shape-md);
+  padding: .35rem .9rem .6rem;
 }
-.docs-toc button:hover { background: var(--md-surface-container-high); }
-.docs-actions { display: flex; gap: .5rem; margin-bottom: .75rem; }
+.docs-answer-text > :first-child { margin-top: .5rem; }
+.docs-answer-text > :last-child { margin-bottom: .5rem; }
+
+/* section heading icon, in front of the title */
+.docs-section-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--md-primary);
+}
 
 /* collapsible sections — several can be open at the same time */
 .docs-section { padding: 0; margin-bottom: .5rem; scroll-margin-top: calc(var(--top-bar-h) + .5rem); }
@@ -969,7 +975,9 @@ dialog textarea {
 .search-hit:hover { background: var(--md-surface-container-high); }
 .search-hit-meta { margin-bottom: .35rem; }
 .search-hit-text { margin: 0; font-size: .92rem; white-space: pre-wrap; }
-.search-answer-text { white-space: pre-wrap; }
+/* the RAG answer is markdown (lists, emphasis), rendered like the guide */
+.search-answer-text > :first-child { margin-top: .25rem; }
+.search-answer-text > :last-child { margin-bottom: .75rem; }
 
 /* ── phase 5.6: system info (settings) ─────────────────────────────── */
 .info-list { margin: 0; }
@@ -1031,3 +1039,42 @@ dialog textarea {
   filter: brightness(1.08);
 }
 .col-actions { white-space: nowrap; }
+
+/* ── first-run wizard: five steps, each skippable ─────────────────── */
+.wizard-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem .75rem;
+  list-style: none;
+  margin: 0 0 .9rem;
+  padding: 0;
+}
+.wizard-step {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .82rem;
+  color: var(--md-on-surface-variant);
+}
+.wizard-step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: var(--md-surface-container-high);
+  font-size: .75rem;
+  font-weight: 600;
+}
+.wizard-step.active { color: var(--md-on-surface); font-weight: 600; }
+.wizard-step.active .wizard-step-number { background: var(--md-primary); color: var(--md-on-primary); }
+.wizard-step.done .wizard-step-number {
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+.wizard-actions { align-items: center; flex-wrap: wrap; }
+@media (max-width: 30em) {
+  .wizard-step-label { display: none; }
+}
+.hint.warn, .small.warn { color: var(--md-error); }

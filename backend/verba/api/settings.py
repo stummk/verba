@@ -2,15 +2,21 @@
 
 The LLM API key is never returned in clear text: GET masks it, and PUT keeps
 the stored key when the masked placeholder is sent back unchanged.
+
+Two settings have consequences beyond the file they are stored in, so PUT
+acts on them: a new embedding model invalidates every stored vector (full
+reindex), and a new workspaces directory has to take the existing project
+folders with it (move job). Both are reported back in the response.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, ValidationError
 
 from .. import config
-from ..services import llm, vectorstore
+from ..core.jobs import job_queue
+from ..services import llm, vectorstore, workspace
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -29,8 +35,33 @@ def get_settings() -> dict:
     return _masked(config.get_settings())
 
 
+@router.get("/paths")
+def get_paths() -> dict:
+    """The directories in use — the settings form shows the effective values.
+
+    A configured path is stored absolute (see config.normalize_dir), so what
+    is shown here is exactly where the data goes.
+    """
+    settings = config.get_settings()
+    return {
+        "data_dir": str(config.data_dir()),
+        "workspaces_dir": str(config.workspaces_root(settings)),
+        "workspaces_default": str(config.default_workspaces_dir()),
+        "workspaces_configured": bool(settings.general.workspaces_dir),
+        "models_dir": str(config.models_dir(settings)),
+        "embeddings_dir": str(config.embeddings_dir(settings)),
+        "embeddings_default": str(config.default_embeddings_dir()),
+        "llm_models_dir": str(config.llm_models_dir(settings)),
+        "llm_models_default": str(config.default_llm_models_dir()),
+        "logs_dir": str(config.logs_dir()),
+        "project_count": len(workspace.list_projects()),
+    }
+
+
 @router.put("")
-def update_settings(body: dict) -> dict:
+def update_settings(
+    body: dict, x_session_id: str = Header(default="", alias="X-Session-Id")
+) -> dict:
     current = config.get_settings()
     try:
         updated = config.Settings.model_validate(body)
@@ -42,11 +73,37 @@ def update_settings(body: dict) -> dict:
     # setup state is owned by the backend, not the settings form
     updated.setup = current.setup
 
+    old_root = config.workspaces_root(current)
+    new_root = config.workspaces_root(updated)
+    move = None
+    if new_root != old_root:
+        # refuse before storing anything: a name collision in the target is
+        # the one case that cannot be resolved without asking the user
+        plan = workspace.move_plan(new_root)
+        if plan["conflicts"]:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Im Zielverzeichnis existieren bereits Ordner mit gleichem Namen: "
+                    + ", ".join(plan["conflicts"])
+                ),
+            )
+        move = {"root": str(new_root), "projects": len(plan["moves"])}
+
     config.save_settings(updated)
     # a changed embedding model invalidates every stored vector → full reindex
-    if updated.search.embedding_model != current.search.embedding_model and vectorstore.available():
-        vectorstore.enqueue_reindex()
-    return _masked(updated)
+    reindex = (
+        updated.search.embedding_model != current.search.embedding_model and vectorstore.available()
+    )
+    if reindex:
+        vectorstore.enqueue_reindex(session_id=x_session_id)
+    if move and move["projects"]:
+        job_queue.enqueue("move_workspace", payload={"root": move["root"]}, session_id=x_session_id)
+
+    data = _masked(updated)
+    data["workspace_move"] = move
+    data["reindex_started"] = reindex
+    return data
 
 
 class LLMTestRequest(BaseModel):

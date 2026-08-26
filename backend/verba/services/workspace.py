@@ -10,16 +10,22 @@ Layout: <workspaces>/<slug>/
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shutil
+import threading
 import unicodedata
+from collections.abc import Callable
 from pathlib import Path, PureWindowsPath
 from typing import Any, BinaryIO
 
 from .. import config, db
+from ..core.jobs import JobCancelled
 from ..events import hub
 from .media import is_audio_file, probe_duration
 from .metadata import extract_metadata, format_display_date
+
+logger = logging.getLogger(__name__)
 
 WORKSPACE_SUBDIRS = ("audio", "transcripts", "exports")
 
@@ -271,3 +277,93 @@ def set_file_status(
             (status, error, duration, language, language, file_id),
         )
     emit_file_update(file_id)
+
+
+# ── moving the workspaces root ────────────────────────────────────────
+
+
+def _target_dir(root: Path, project: dict[str, Any]) -> Path:
+    return root / project["slug"]
+
+
+def move_plan(new_root: Path) -> dict[str, Any]:
+    """What a move of the workspaces root would do, without doing it.
+
+    Called before the setting is stored so the user gets a clear refusal
+    instead of a half-moved workspace: a name collision in the target
+    directory is the one case that cannot be resolved automatically.
+    """
+    projects = list_projects()
+    moves: list[dict[str, str]] = []
+    conflicts: list[str] = []
+    for project in projects:
+        source = Path(project["workspace"])
+        target = _target_dir(new_root, project)
+        if source == target:
+            continue
+        if target.exists() and any(target.iterdir()):
+            conflicts.append(str(target))
+            continue
+        moves.append({"slug": project["slug"], "source": str(source), "target": str(target)})
+    return {"root": str(new_root), "moves": moves, "conflicts": conflicts}
+
+
+def move_workspaces(
+    new_root: Path,
+    cancel: threading.Event | None = None,
+    report: Callable[[int, str], None] | None = None,
+) -> int:
+    """Move every project folder into `new_root` and repoint the database.
+
+    Files are tracked relative to their project folder, so moving the folder
+    and rewriting the one absolute path per project is the whole migration —
+    audio, transcripts and exports travel with it. A project whose folder has
+    gone missing is only repointed (and recreated empty), because there is
+    nothing to move.
+    """
+    new_root.mkdir(parents=True, exist_ok=True)
+    plan = move_plan(new_root)
+    if plan["conflicts"]:
+        raise RuntimeError(
+            "Im Zielverzeichnis existieren bereits Ordner mit gleichem Namen: "
+            + ", ".join(plan["conflicts"])
+        )
+
+    moves = plan["moves"]
+    for index, move in enumerate(moves):
+        if cancel is not None and cancel.is_set():
+            raise JobCancelled()
+        if report is not None:
+            report(100 * index // max(len(moves), 1), f"Verschiebe {move['slug']} ...")
+        source = Path(move["source"])
+        target = Path(move["target"])
+        if source.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists():  # empty leftover — move() would nest inside it
+                target.rmdir()
+            shutil.move(str(source), str(target))
+        else:
+            logger.warning("workspace folder %s is missing, recreating it at %s", source, target)
+            for subdir in WORKSPACE_SUBDIRS:
+                (target / subdir).mkdir(parents=True, exist_ok=True)
+        with db.get_conn() as conn:
+            conn.execute(
+                "UPDATE projects SET workspace = ? WHERE slug = ?", (str(target), move["slug"])
+            )
+    if report is not None:
+        report(100, f"{len(moves)} Arbeitsbereich(e) verschoben nach {new_root}")
+    return len(moves)
+
+
+def handle_move_workspace_job(
+    job: dict[str, Any], cancel: threading.Event, report: Callable[[int, str], None]
+) -> None:
+    """Job handler: move all project folders to the configured root.
+
+    Runs in the main lane, so it never overlaps a transcription that is
+    reading from the folders it moves. Payload: {"root": "<absolute path>"}.
+    """
+    root = job["payload"].get("root", "")
+    target = Path(root) if root else config.workspaces_dir(config.get_settings())
+    report(0, f"Verschiebe Arbeitsbereiche nach {target} ...")
+    move_workspaces(target, cancel, report)

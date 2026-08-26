@@ -15,6 +15,7 @@ on sys.path here, before anything imports from it.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import subprocess
 import sys
@@ -40,11 +41,21 @@ def ensure_python_version() -> None:
 def ensure_streams() -> None:
     """Windowed PyInstaller builds run without stdout/stderr — give the stdlib
     something writable so prints and logging handlers never crash. File logs
-    (data/logs/) stay the real diagnostic channel."""
+    (data/logs/) stay the real diagnostic channel.
+
+    Existing streams are switched to replacement characters: a console
+    codepage like cp1252 encodes neither box drawing nor every possible path,
+    and a console message must never be what ends the process.
+    """
     if sys.stdout is None:
         sys.stdout = open(os.devnull, "w", encoding="utf-8")  # noqa: SIM115 — lives forever
     if sys.stderr is None:
         sys.stderr = open(os.devnull, "w", encoding="utf-8")  # noqa: SIM115 — lives forever
+    for stream in (sys.stdout, sys.stderr):
+        # not every stream is a reconfigurable text stream — then there is
+        # nothing to fix and nothing to complain about
+        with contextlib.suppress(AttributeError, ValueError, OSError):
+            stream.reconfigure(errors="replace")
 
 
 INTERNAL_PIP_FLAG = "--internal-pip"
@@ -118,6 +129,101 @@ def loopback_sockets(port: int) -> list:
     return sockets
 
 
+def bind_sockets(host: str, port: int) -> list:
+    """Bind the listening socket(s) before the banner is printed.
+
+    Two reasons to do it here instead of leaving it to uvicorn: the banner
+    must not promise an address that a port conflict then denies, and an
+    occupied port deserves one clear sentence instead of a traceback.
+    """
+    import socket
+
+    if host == "127.0.0.1":
+        sockets = loopback_sockets(port)
+        # IPv6-only success means someone else holds the port on IPv4 — most
+        # likely a second Verba, which would then share the SQLite database
+        # and the job queue with the first one. Refuse instead.
+        if not any(sock.family == socket.AF_INET for sock in sockets):
+            for sock in sockets:
+                sock.close()
+            sys.exit(
+                f"Port {port} is already in use on 127.0.0.1 - "
+                "is Verba already running? Use --port to pick another one."
+            )
+        return sockets
+
+    family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    sock = socket.socket(family, socket.SOCK_STREAM)
+    if os.name != "nt":  # on Windows this would allow hijacking the port
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind((host, port))
+    except OSError as exc:
+        sock.close()
+        sys.exit(f"Cannot listen on {host}:{port} - {exc}")
+    return [sock]
+
+
+def local_addresses() -> list[str]:
+    """The machine's own non-loopback IP addresses, best effort.
+
+    Needed for the startup banner: with a wildcard bind (0.0.0.0) the port
+    alone tells an admin nothing about where the server can be reached, and on
+    a headless server there is no browser to try it out with.
+    """
+    import socket
+
+    found: list[str] = []
+
+    def remember(address: str) -> None:
+        if address and address not in found and not address.startswith(("127.", "::1", "fe80")):
+            found.append(address)
+
+    try:  # every address the hostname resolves to
+        for info in socket.getaddrinfo(socket.gethostname(), None, proto=socket.IPPROTO_TCP):
+            remember(info[4][0])
+    except OSError:
+        pass
+    try:
+        # the address of the default route: reveals the LAN IP even when the
+        # hostname does not resolve. UDP connect() sends nothing, it only
+        # picks a route — the target is the reserved documentation address.
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("192.0.2.1", 9))
+            remember(probe.getsockname()[0])
+    except OSError:
+        pass
+    return found
+
+
+def startup_banner(host: str, port: int, server_mode: bool, data_dir: str) -> str:
+    """The address block printed on start — the one thing an admin needs.
+
+    Shown by start.sh / start.bat and, in server mode, captured by systemd,
+    so `journalctl -u verba` / `systemctl status verba` answers "which port
+    is it on again?" without reading the unit file.
+    """
+    from verba import __version__
+
+    wildcard = host in ("0.0.0.0", "::")
+    # deliberately ASCII: this block has to survive every console codepage
+    lines = [f"Verba {__version__} - {'server mode' if server_mode else 'desktop mode'}"]
+    if wildcard:
+        lines.append(f"  listening on   http://{host}:{port}  (all interfaces)")
+        lines.append(f"  local          http://127.0.0.1:{port}")
+        for address in local_addresses():
+            shown = f"[{address}]" if ":" in address else address
+            lines.append(f"  network        http://{shown}:{port}")
+    elif host == "127.0.0.1":
+        lines.append(f"  listening on   http://localhost:{port}  (127.0.0.1 and [::1])")
+    else:
+        lines.append(f"  listening on   http://{host}:{port}")
+    lines.append(f"  data directory {data_dir}")
+    lines.append("  stop with Ctrl+C")
+    rule = "-" * max(len(line) for line in lines)
+    return "\n".join([rule, *lines, rule])
+
+
 def open_browser_when_ready(url: str, health_url: str, timeout: float = 30.0) -> None:
     import urllib.request
     import webbrowser
@@ -164,6 +270,13 @@ def main() -> None:
     host = args.host or ("0.0.0.0" if args.server else "127.0.0.1")
     port = args.port or settings.server.port
     os.environ["VERBA_DESKTOP_MODE"] = "0" if args.server else "1"
+    # the app logs this too, so the address also lands in the rotating file log
+    os.environ["VERBA_BIND"] = f"{host}:{port}"
+
+    from verba.config import data_dir
+
+    sockets = bind_sockets(host, port)
+    print(startup_banner(host, port, args.server, str(data_dir())), flush=True)
 
     if not args.server and not args.no_browser:
         browse_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
@@ -184,9 +297,9 @@ def main() -> None:
         log_config=None,  # logging is configured by the app itself (with rotation)
     )
     server = uvicorn.Server(config)
-    # default desktop binding: serve IPv4 and IPv6 loopback simultaneously
-    sockets = loopback_sockets(port) if host == "127.0.0.1" else []
-    server.run(sockets=sockets or None)
+    # the sockets are already bound (see bind_sockets): desktop mode serves
+    # the IPv4 and IPv6 loopback simultaneously
+    server.run(sockets=sockets)
 
 
 if __name__ == "__main__":

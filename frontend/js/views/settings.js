@@ -2,6 +2,7 @@
 
 import { api } from "../api.js";
 import { el, html, toast } from "../dom.js";
+import { fillEmbeddingSelect } from "../embeddings.js";
 import { iconButton } from "../icons.js";
 import { SUPPORTED_LANGUAGES, currentLanguage, t } from "../i18n.js";
 import { fillLanguageSelect } from "../languages.js";
@@ -10,7 +11,7 @@ import { on } from "../ws.js";
 let unsubscribe = null;
 
 export async function render(view) {
-  const settings = await api.getSettings();
+  let settings = await api.getSettings();
 
   view.replaceChildren(html`
     <h1>${t("settings.title")}</h1>
@@ -109,6 +110,12 @@ export async function render(view) {
               <select id="llm-local-model"></select>
               <p class="hint">${t("settings.llmLocalModelHint")}</p>
             </div>
+            <div>
+              <label for="llm-models-dir">${t("settings.llmModelsDir")}</label>
+              <input id="llm-models-dir" value="${settings.llm.models_dir ?? ""}">
+              <p class="hint">${t("settings.llmModelsDirHint")}</p>
+              <p class="hint" id="llm-models-dir-current"></p>
+            </div>
           </div>
         </div>
 
@@ -145,8 +152,15 @@ export async function render(view) {
         <div class="form-grid">
           <div>
             <label for="search-embedding-model">${t("settings.embeddingModel")}</label>
-            <input id="search-embedding-model" value="${settings.search?.embedding_model ?? ""}">
+            <select id="search-embedding-model"></select>
             <p class="hint">${t("settings.embeddingModelHint")}</p>
+          </div>
+          <div>
+            <label for="search-embeddings-dir">${t("settings.embeddingsDir")}</label>
+            <input id="search-embeddings-dir"
+                   value="${settings.search?.embeddings_dir ?? ""}">
+            <p class="hint">${t("settings.embeddingsDirHint")}</p>
+            <p class="hint" id="search-embedding-cache"></p>
           </div>
           <div>
             <label>&nbsp;</label>
@@ -184,6 +198,8 @@ export async function render(view) {
             <label for="general-workspaces">${t("settings.workspacesDir")}</label>
             <input id="general-workspaces" value="${settings.general.workspaces_dir}"
                    placeholder="${t("settings.workspacesDirPlaceholder")}">
+            <p class="hint" id="workspaces-hint"></p>
+            <p class="hint">${t("settings.workspacesMoveHint")}</p>
           </div>
           <div>
             <label for="server-port">${t("settings.port")}</label>
@@ -297,7 +313,9 @@ export async function render(view) {
     refreshModels(),
     refreshLlmSection(),
     refreshSystemInfo(),
+    refreshEmbeddingModels(settings.search?.embedding_model),
     refreshSearchStatus(),
+    refreshPaths(),
     refreshApiKeys(),
   ]);
 
@@ -344,13 +362,15 @@ export async function render(view) {
         mode: currentMode(),
         base_url: el("llm-base-url").value.trim(),
         api_key: el("llm-api-key").value,
+        models_dir: el("llm-models-dir").value.trim(),
         model:
           currentMode() === "local"
             ? el("llm-local-model").value
             : el("llm-model").value.trim(),
       },
       search: {
-        embedding_model: el("search-embedding-model").value.trim(),
+        embedding_model: el("search-embedding-model").value,
+        embeddings_dir: el("search-embeddings-dir").value.trim(),
       },
       general: {
         ...settings.general,
@@ -364,12 +384,26 @@ export async function render(view) {
       },
     };
     try {
-      await api.updateSettings(payload);
+      const saved = await api.updateSettings(payload);
       if (payload.general.ui_language !== previousLanguage) {
         location.reload(); // reload with the new catalog
         return;
       }
       toast(t("settings.saved"));
+      // both are background jobs — say so instead of leaving the user guessing
+      if (saved.workspace_move?.projects) {
+        toast(t("settings.workspaceMoveStarted", { count: saved.workspace_move.projects }));
+      }
+      if (saved.reindex_started) toast(t("settings.reindexStarted"));
+      // keep the settings only: the two job flags are not part of them
+      const { workspace_move: _move, reindex_started: _reindex, ...stored } = saved;
+      settings = stored;
+      await Promise.all([
+        refreshPaths(),
+        refreshSearchStatus(),
+        refreshEmbeddingModels(settings.search?.embedding_model),
+        refreshLlmSection(),
+      ]);
     } catch (error) {
       toast(t("settings.saveError", { message: error.message }));
     }
@@ -576,6 +610,40 @@ function updateLlmDownloadProgress(info) {
     : "";
 }
 
+// ── embedding models & effective paths ────────────────────────────────
+
+async function refreshEmbeddingModels(selected) {
+  const select = el("search-embedding-model");
+  if (!select) return;
+  try {
+    const catalog = await api.searchModels();
+    fillEmbeddingSelect(select, catalog, selected);
+    el("search-embedding-cache").textContent = t("settings.embeddingCacheHint", {
+      path: catalog.cache_dir,
+    });
+  } catch {
+    select.disabled = true;
+  }
+}
+
+async function refreshPaths() {
+  const host = el("workspaces-hint");
+  if (!host) return;
+  try {
+    const paths = await api.getPaths();
+    host.textContent = t("settings.workspacesCurrent", {
+      path: paths.workspaces_dir,
+      count: paths.project_count,
+    });
+    const llmDir = el("llm-models-dir-current");
+    if (llmDir) {
+      llmDir.textContent = t("settings.pathInUse", { path: paths.llm_models_dir });
+    }
+  } catch {
+    host.textContent = "";
+  }
+}
+
 // ── search index status ───────────────────────────────────────────────
 
 async function refreshSearchStatus() {
@@ -596,9 +664,11 @@ async function refreshSearchStatus() {
   const parts = [
     t("settings.searchStatus", { files: status.files_indexed, chunks: status.chunk_count }),
   ];
-  if (status.index_models.length) parts.push(status.index_models.join(", "));
+  if (status.configured_label) parts.push(status.configured_label);
   if (status.last_index) parts.push(t("settings.searchLastIndex", { date: status.last_index }));
+  if (status.model_mismatch) parts.push(t("settings.searchModelMismatch"));
   host.textContent = parts.join(" — ");
+  host.classList.toggle("warn", Boolean(status.model_mismatch));
 }
 
 // ── public API keys ───────────────────────────────────────────────────

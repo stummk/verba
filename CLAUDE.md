@@ -22,9 +22,15 @@ python -m ruff format --check backend/ tests/ run.py
 ## Structure (short version)
 
 - `run.py` — entry point; bootstraps core deps, desktop/server mode,
-  frozen support (PyInstaller: per-user data, `<data>/site-packages` on sys.path)
+  frozen support (PyInstaller: per-user data, `<data>/site-packages` on sys.path);
+  binds the listening socket itself and prints the address block (ASCII only —
+  a Windows console codepage cannot encode more), which systemd captures in
+  the journal
 - `backend/verba/` — entire backend
   - `config.py` — settings (pydantic) ↔ `data/settings.json`; path resolution
+    (configured directories are normalised to absolute paths; workspaces,
+    whisper models, embeddings and GGUF each have their own configurable
+    directory), curated `EMBEDDING_MODELS` catalog for the search
   - `db.py` — SQLite (`data/app.db`): projects, files, segments, jobs; short-lived connections
   - `logging_setup.py` — log rotation (retention from settings)
   - `setup_check.py` — first-run checks + automatic installation (ffmpeg, pip groups)
@@ -34,11 +40,14 @@ python -m ruff format --check backend/ tests/ run.py
   - `core/jobs.py` — persistent JobQueue: two lanes (main/llm), FIFO per session,
     priority for small jobs, LLM-location scheduling (remote → parallel,
     local → phased batches with model swap), cancellation, requeue after restart
-  - `services/` — workspace (project folders, import), whisper (model discovery,
+  - `services/` — workspace (project folders, import, moving the workspaces
+    root incl. DB repointing via job kind `move_workspace`), whisper (model discovery,
     CPU fallback for broken CUDA, range transcription), transcripts
     (segment CRUD + workspace JSON sync), audio (ffmpeg cutting), media (duration probe),
     llm (OpenAI-compatible client), llamacpp (local LLM: hardware probe,
-    binary/GGUF download, managed llama-server), pipeline (cleanup/translation,
+    binary/GGUF download into the configured directory — files already there
+    are loaded in place, `recommended` entries drive the hardware suggestion),
+    pipeline (cleanup/translation,
     derived_texts, auto-chaining after transcription via the project's
     auto_process switch), chunking (segment boundaries + overlap), metadata (tags/file name),
     project_types (7 default types with cleanup prompt, output-format
@@ -51,14 +60,25 @@ python -m ruff format --check backend/ tests/ run.py
     job kind `export_pdf` runs in the llm lane), vectorstore (global search index:
     small chunks with timestamps, FTS5 via DB triggers + sqlite-vec embeddings,
     hybrid query with RRF, auto-index after transcription/segment edit, reindex job
-    on model change), rag (LLM answer with mandatory sources from search hits),
+    on model change; the embedding model comes from the config catalog, its
+    query/passage prefixes are applied per model, and a model already lying in
+    the embeddings directory is loaded from disk instead of downloaded),
+    rag (LLM answer with mandatory
+    sources from search hits), docs_qa (single-shot questions about the user
+    guide: section ranking, character budget, budget halving on a context-length
+    error; only available with a configured LLM),
     public_api (public OpenAI-compatible API: key management with SHA-256 hashes,
     synchronous job bridge `api_transcribe` in the main lane, srt/vtt/verbose_json formatting)
-  - `api/` — REST routers (system, settings, projects, types, files, segments, jobs,
-    models, docs, export, search, apikeys, openai_compat → `/v1/audio/transcriptions`:
-    Bearer auth as soon as a key exists, otherwise open)
+  - `api/` — REST routers (system incl. `setup/complete` for the five-step wizard,
+    settings incl. `settings/paths` and the workspace-move/reindex side effects of
+    PUT, projects, types, files, segments, jobs, models, docs incl. `docs/ask`,
+    export, search incl. `search/models`, apikeys, openai_compat →
+    `/v1/audio/transcriptions`: Bearer auth as soon as a key exists, otherwise open)
   - `main.py` — app factory `create_app()`, mounts `frontend/` statically
 - `frontend/` — PWA, vanilla ES modules, hash routing; **no npm, no bundler**;
+  LLM output (help answers, RAG answers) goes through `js/markdown.js`:
+  marked does not sanitize, so the parsed fragment is filtered against an
+  allowlist — never `innerHTML` a model answer directly;
   `sw.js` caches the complete shell — add new frontend files to the SHELL list
   (`tests/test_pwa.py` enforces this)
 - `tests/` — pytest; `conftest.py` isolates `data/` via `VERBA_DATA_DIR`
@@ -97,7 +117,11 @@ python -m ruff format --check backend/ tests/ run.py
   fix any reported files before considering the change complete.
 - **Maintain the in-app docs:** user-visible feature changes belong in the
   user guide `docs/user/{de,en,ru}.md` (in the app under Settings →
-  Documentation) — always update all three languages.
+  Documentation) — always update all three languages. Every `## ` heading
+  carries a language-independent `{#slug}` marker: the UI picks the section
+  icon by it (`SECTION_ICONS` in `frontend/js/views/docs.js`) and hides the
+  marker. Keep the sections in the same order in all three files
+  (`tests/test_docs_qa.py` enforces it).
 
 ## Commit Messages
 

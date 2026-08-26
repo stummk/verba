@@ -25,6 +25,7 @@ import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from importlib.util import find_spec
+from pathlib import Path
 from typing import Any
 
 from .. import config, db
@@ -44,45 +45,112 @@ LAST_INDEX_KEY = "search_last_index"
 
 _model_lock = threading.Lock()
 _model: Any = None
-_model_name = ""
+# name plus embeddings directory: pointing the directory somewhere else has to
+# reload the model, not keep serving the one from the old path
+_model_key: tuple[str, str] | None = None
 
 
 def available() -> bool:
     return find_spec("sqlite_vec") is not None and find_spec("sentence_transformers") is not None
 
 
+class EmbeddingUnavailable(RuntimeError):
+    """The configured embedding model could not be loaded (or downloaded)."""
+
+
 # ── embedding model ───────────────────────────────────────────────────
 
 
+def local_model_dir(entry: config.EmbeddingModel) -> Path | None:
+    """A folder in the embeddings directory that already holds this model.
+
+    Two layouts count, because both turn up in practice: a plain folder (the
+    repo copied or cloned by hand, `bge-m3/` or `BAAI_bge-m3/`) and the
+    HuggingFace cache layout (`models--BAAI--bge-m3/snapshots/<rev>/`). A hit
+    is loaded from disk, so the model is never downloaded twice.
+    """
+    root = config.embeddings_dir()
+    org, _, repo = entry.name.partition("/")
+    plain = [
+        root / repo,
+        root / entry.name.replace("/", "_"),
+        root / entry.name.replace("/", "--"),
+    ]
+    for candidate in plain:
+        if (candidate / "config.json").is_file():
+            return candidate
+    cache = root / f"models--{org}--{repo}" / "snapshots"
+    if cache.is_dir():
+        for snapshot in sorted(cache.iterdir(), reverse=True):
+            if (snapshot / "config.json").is_file():
+                return snapshot
+    return None
+
+
+def model_present_locally(entry: config.EmbeddingModel) -> bool:
+    """Whether using this model needs a download first (settings UI)."""
+    return local_model_dir(entry) is not None
+
+
 def _load_model() -> Any:
-    """Lazy-load the configured sentence-transformers model (CPU)."""
-    global _model, _model_name
-    name = config.get_settings().search.embedding_model
+    """Lazy-load the configured sentence-transformers model (CPU).
+
+    The model is chosen from a curated catalog (config.EMBEDDING_MODELS). One
+    that already lies in the embeddings directory is loaded from there; only a
+    genuinely missing one is downloaded — the one moment this can fail without
+    a network, so the error says as much.
+    """
+    global _model, _model_key
+    entry = config.embedding_model(config.get_settings().search.embedding_model)
+    directory = config.embeddings_dir()
+    key = (entry.name, str(directory))
     with _model_lock:
-        if _model is not None and _model_name == name:
+        if _model is not None and _model_key == key:
             return _model
         hub.publish(
             "engine.status",
-            {"engine": "embeddings", "state": "loading", "detail": name},
+            {"engine": "embeddings", "state": "loading", "detail": entry.name},
         )
         from sentence_transformers import SentenceTransformer
 
-        _model = SentenceTransformer(name, cache_folder=str(config.embeddings_dir()), device="cpu")
-        _model_name = name
+        local = local_model_dir(entry)
+        try:
+            _model = SentenceTransformer(
+                str(local) if local else entry.name,
+                cache_folder=str(directory),
+                device="cpu",
+            )
+        except Exception as exc:  # noqa: BLE001 — network, disk and model errors alike
+            hub.publish("engine.status", {"engine": "embeddings", "state": "error", "detail": ""})
+            logger.exception("embedding model %s could not be loaded", entry.name)
+            raise EmbeddingUnavailable(
+                f"Das Embedding-Modell „{entry.label}“ konnte nicht geladen werden "
+                f"(wird beim ersten Gebrauch heruntergeladen, ca. {entry.size_mb} MB): {exc}"
+            ) from exc
+        _model_key = key
         hub.publish("engine.status", {"engine": "embeddings", "state": "idle", "detail": ""})
         return _model
 
 
 def unload_model() -> None:
-    global _model, _model_name
+    global _model, _model_key
     with _model_lock:
         _model = None
-        _model_name = ""
+        _model_key = None
 
 
-def _encode(texts: list[str]) -> list[list[float]]:
+def _encode(texts: list[str], kind: str = "passage") -> list[list[float]]:
+    """Embed texts; `kind` picks the model's query or passage prefix.
+
+    The E5 family is trained with those prefixes and loses noticeable quality
+    without them, while the sbert models define none — hence the catalog
+    carries them per model instead of hard-coding one convention.
+    """
+    entry = config.embedding_model(config.get_settings().search.embedding_model)
+    prefix = entry.query_prefix if kind == "query" else entry.passage_prefix
     model = _load_model()
-    return [list(map(float, row)) for row in model.encode(texts, normalize_embeddings=True)]
+    prepared = [f"{prefix}{text}" for text in texts] if prefix else texts
+    return [list(map(float, row)) for row in model.encode(prepared, normalize_embeddings=True)]
 
 
 # ── vec connection & table ────────────────────────────────────────────
@@ -160,7 +228,7 @@ def _chunk_rows(file_id: int) -> list[dict[str, Any]]:
 def index_file(file_id: int) -> int:
     """(Re-)index one file; returns the number of chunks written."""
     rows = _chunk_rows(file_id)
-    embeddings = _encode([r["text"] for r in rows]) if rows else []
+    embeddings = _encode([r["text"] for r in rows], "passage") if rows else []
     model_name = config.get_settings().search.embedding_model
 
     with _vec_conn() as conn:
@@ -237,7 +305,7 @@ def search(query: str, filters: dict[str, Any] | None = None, limit: int = 10) -
     filters = filters or {}
     candidates = max(40, limit * 4)
 
-    query_vector = _encode([query])[0]
+    query_vector = _encode([query], "query")[0]
     with _vec_conn() as conn:
         vec_ids: list[int] = []
         if _vec_table_exists(conn):
@@ -313,12 +381,16 @@ def status() -> dict[str, Any]:
             r["model"] for r in conn.execute("SELECT DISTINCT model FROM chunks WHERE model != ''")
         ]
         last_index = db.get_meta(conn, LAST_INDEX_KEY)
+    entry = config.embedding_model(config.get_settings().search.embedding_model)
     return {
         "available": available(),
         "files_indexed": row["files"],
         "chunk_count": row["chunks"],
         "index_models": models,
-        "configured_model": config.get_settings().search.embedding_model,
+        "configured_model": entry.name,
+        "configured_label": entry.label,
+        # a model change invalidates every vector: the UI offers a reindex
+        "model_mismatch": any(model != entry.name for model in models),
         "last_index": last_index,
     }
 

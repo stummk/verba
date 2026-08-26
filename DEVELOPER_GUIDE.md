@@ -128,18 +128,32 @@ Für Server- oder API-Entwicklung ohne automatisches Browserfenster:
 python run.py --server --host 127.0.0.1 --port 8710
 ```
 
+Beim Start schreibt Verba einen Adressblock in die Konsole (Modus, gebundene
+Adresse, im Servermodus zusätzlich die IP-Adressen des Rechners, Datenordner).
+Als systemd-Dienst landet derselbe Block im Journal, und die Adresse steht
+außerdem in der ersten Zeile des Anwendungsprotokolls.
+
 Danach ist die Anwendung unter `http://127.0.0.1:8710` erreichbar. Ist der
-Port belegt, verwende zum Beispiel `--port 8711`.
+Port belegt, meldet Verba das in einer Zeile und startet nicht — verwende dann
+zum Beispiel `--port 8711`.
 
 ### 6. Ersteinrichtung durchführen
 
-1. Öffne Verba im Browser.
-2. Starte unter **Einstellungen → Einrichtung** die benötigten Feature-Gruppen.
-3. Richte mindestens ein Whisper-Modell ein, wenn du Audio transkribieren
-  möchtest.
-4. Konfiguriere optional ein lokales oder OpenAI-kompatibles LLM für Bereinigung,
-  Übersetzung, Suche und intelligente PDF-Strukturierung.
-5. Importiere eine kurze Audiodatei und teste den vollständigen Ablauf.
+Der Assistent führt in fünf Schritten durch die Einrichtung; jeder Schritt
+lässt sich mit den Standardwerten überspringen, und **Später einrichten**
+verlässt ihn ganz (der Hinweis auf die unfertige Einrichtung bleibt dann).
+
+1. **Komponenten installieren** — fehlende Feature-Gruppen und ffmpeg.
+2. **Arbeitsbereich** — Verzeichnis für die Transkript-Ordner.
+3. **Transkription** — Whisper-Modell, Modellverzeichnis, Gerät, Sprache.
+4. **Sprachmodell** — optional lokal (llama.cpp) oder OpenAI-kompatibel; nötig
+   für Bereinigung, Übersetzung, Suchantworten, PDF-Struktur und die Fragen
+   zur Hilfe.
+5. **Suche** — Embedding-Modell aus dem Katalog.
+
+Erst das Abschließen des letzten Schritts setzt `setup.completed`
+(`POST /api/system/setup/complete`). Importiere danach eine kurze Audiodatei
+und teste den vollständigen Ablauf.
 
 Die Laufzeitdaten liegen während der Entwicklung unter `data/` und sind vom
 Quellcode getrennt. Tests überschreiben diesen Pfad über `VERBA_DATA_DIR` und
@@ -233,7 +247,28 @@ Two consistency tests deserve special attention:
 - **Search** (`services/vectorstore.py`): small chunks with timestamps,
   FTS5 (kept in sync by DB triggers) + sqlite-vec embeddings, fusion via RRF.
   Index consistency is automatic (after transcription, segment edit,
-  deletion, model change).
+  deletion, model change). The embedding model is a choice from
+  `config.EMBEDDING_MODELS` (multilingual, CPU-sized); its query/passage
+  prefixes are part of the catalog entry, and an unknown name in
+  `settings.json` falls back to the default instead of breaking the search.
+- **Workspace directory** (`services/workspace.py`): configured directories are
+  stored absolute (`config.normalize_dir`). Changing the workspaces root moves
+  every project folder there and rewrites the one absolute path per project —
+  as job kind `move_workspace` in the `main` lane, so it never runs while a
+  transcription reads from those folders. A name collision in the target is
+  refused before anything is stored or moved.
+- **Local LLM** (`services/llamacpp.py`): a curated GGUF catalog (Qwen3 and
+  Gemma 3, ordered by hardware need) plus a hardware probe that *recommends*
+  one of the `recommended` entries — it never picks for the user. The GGUF
+  directory is configurable; every `.gguf` in it is selectable and loaded in
+  place, so an existing collection needs no download and a model outside the
+  catalog works too.
+- **Documentation Q&A** (`services/docs_qa.py`): one question, one answer, no
+  history. Sections of `docs/user/<lang>.md` are ranked against the question,
+  the best few go into a character budget, and a context-length error from the
+  endpoint halves the budget and retries — the user gets an answer, not a
+  stack trace. Without a configured LLM the feature is absent, not disabled
+  (`GET /api/docs` reports `llm_available`).
 - **Public API** (`api/openai_compat.py`): OpenAI wire format,
   synchronous through the JobQueue; keys as SHA-256 hashes in `api_keys`.
 - **Frontend**: no dependencies beyond the checked-in vendor files

@@ -15,7 +15,7 @@ from verba.services import pipeline, rag, transcripts, vectorstore, workspace
 NO_CANCEL = threading.Event()
 
 
-def fake_encode(texts):
+def fake_encode(texts, kind="passage"):
     """Deterministic bag-of-words vectors — similar texts get similar vectors."""
     out = []
     for text in texts:
@@ -241,7 +241,7 @@ def test_ask_endpoint_requires_llm(client, monkeypatch):
 def test_model_change_triggers_reindex(client, monkeypatch):
     monkeypatch.setattr(vectorstore, "available", lambda: True)
     settings = client.get("/api/settings").json()
-    settings["search"]["embedding_model"] = "sentence-transformers/other-model"
+    settings["search"]["embedding_model"] = "intfloat/multilingual-e5-small"
     assert client.put("/api/settings", json=settings).status_code == 200
     jobs = client.get("/api/jobs").json()
     assert any(j["kind"] == "reindex_search" for j in jobs)

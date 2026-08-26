@@ -1,10 +1,33 @@
-// In-app documentation: the user guide as collapsible sections with a quick
-// navigation — several sections can stay open at the same time.
+// In-app documentation: the user guide as collapsible sections, each headed by
+// an icon, plus a question box that lets the configured LLM answer from the
+// guide itself. One question, one answer — every question starts a fresh
+// context, so nothing carries over from the previous one.
 
 import { marked } from "/vendor/marked.esm.js";
 import { api } from "../api.js";
-import { el, html } from "../dom.js";
+import { el, html, toast } from "../dom.js";
+import { iconSvg } from "../icons.js";
 import { currentLanguage, t } from "../i18n.js";
+import { renderMarkdown } from "../markdown.js";
+
+// The "{#slug}" marker on every "## " heading in docs/user/*.md is the same in
+// all three languages, so one icon map covers them all.
+const SECTION_ICONS = {
+  install: "download",
+  "first-run": "checklist",
+  transcripts: "folder",
+  types: "category",
+  import: "upload",
+  transcribe: "mic",
+  ai: "sparkle",
+  editor: "edit",
+  whisper: "memory",
+  llm: "cloud",
+  pdf: "pdf",
+  search: "search",
+  settings: "tune",
+  api: "key",
+};
 
 export async function render(view) {
   let docs;
@@ -19,16 +42,21 @@ export async function render(view) {
 
   view.replaceChildren(html`
     <p><a href="#/settings" class="muted small">${t("docs.back")}</a></p>
-    <div class="docs-content docs-intro" id="docs-intro"></div>
-    <nav class="docs-toc" id="docs-toc" aria-label="${t("docs.toc")}"></nav>
-    <div class="docs-actions">
-      <button type="button" class="text-btn small-btn" id="docs-expand">
-        ${t("docs.expandAll")}
-      </button>
-      <button type="button" class="text-btn small-btn" id="docs-collapse">
-        ${t("docs.collapseAll")}
-      </button>
+    <div class="card docs-ask" id="docs-ask" hidden>
+      <h2>${t("docs.askTitle")}</h2>
+      <p class="muted small">${t("docs.askIntro")}</p>
+      <textarea id="docs-question" rows="2" maxlength="1000"
+                placeholder="${t("docs.askPlaceholder")}"></textarea>
+      <div class="actions">
+        <button type="button" id="docs-ask-run">${t("docs.askRun")}</button>
+      </div>
+      <div id="docs-answer" hidden>
+        <h3 class="subhead">${t("docs.answerTitle")}</h3>
+        <div class="docs-content docs-answer-text" id="docs-answer-text"></div>
+        <p class="hint" id="docs-answer-sources"></p>
+      </div>
     </div>
+    <div class="docs-content docs-intro" id="docs-intro"></div>
     <div id="docs-sections"></div>
   `);
 
@@ -36,11 +64,14 @@ export async function render(view) {
   el("docs-intro").innerHTML = marked.parse(intro);
 
   const host = el("docs-sections");
-  const entries = sections.map(({ title, body }) => {
+  const entries = sections.map(({ title, slug, body }) => {
     const details = document.createElement("details");
     details.className = "card docs-section";
     const summary = document.createElement("summary");
-    summary.textContent = title;
+    const icon = document.createElement("span");
+    icon.className = "docs-section-icon";
+    icon.innerHTML = iconSvg(SECTION_ICONS[slug] ?? "article");
+    summary.append(icon, Object.assign(document.createElement("span"), { textContent: title }));
     const content = document.createElement("div");
     content.className = "docs-content";
     content.innerHTML = marked.parse(body);
@@ -49,25 +80,54 @@ export async function render(view) {
     return details;
   });
 
-  const toc = el("docs-toc");
-  entries.forEach((details, index) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = sections[index].title;
-    button.onclick = () => {
-      details.open = true;
-      details.scrollIntoView({ behavior: "smooth", block: "start" });
-    };
-    toc.append(button);
-  });
-
   if (entries.length) entries[0].open = true;
-  el("docs-expand").onclick = () => entries.forEach((d) => (d.open = true));
-  el("docs-collapse").onclick = () => entries.forEach((d) => (d.open = false));
+
+  // no LLM configured → no question box at all, rather than a dead button
+  if (docs.llm_available) bindAsk();
+}
+
+function bindAsk() {
+  const card = el("docs-ask");
+  const button = el("docs-ask-run");
+  const question = el("docs-question");
+  const answer = el("docs-answer");
+  const text = el("docs-answer-text");
+  const sources = el("docs-answer-sources");
+  card.hidden = false;
+
+  const ask = async () => {
+    const value = question.value.trim();
+    if (value.length < 3) return;
+    button.disabled = true;
+    answer.hidden = false;
+    text.textContent = t("docs.asking");
+    sources.textContent = "";
+    try {
+      const result = await api.docsAsk(value, currentLanguage());
+      // markdown, but sanitised: model output never becomes raw markup
+      if (result.answer) renderMarkdown(text, result.answer);
+      else text.textContent = t("docs.askEmpty");
+      const titles = (result.sections ?? []).map((section) => section.title).join(", ");
+      const used = titles ? t("docs.answerSources", { sections: titles }) : "";
+      sources.textContent = result.truncated ? `${used} ${t("docs.answerFiltered")}`.trim() : used;
+    } catch (error) {
+      answer.hidden = true;
+      toast(error.message);
+    } finally {
+      button.disabled = false;
+    }
+  };
+
+  button.onclick = ask;
+  question.onkeydown = (event) => {
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) ask();
+  };
 }
 
 // Split the markdown into the intro (before the first "## ") and one section
-// per "## " heading; fenced code blocks are ignored while scanning.
+// per "## " heading; fenced code blocks are ignored while scanning. A heading
+// may carry a "{#slug}" marker, which selects the icon and never shows up in
+// the rendered title.
 function splitSections(markdown) {
   const introLines = [];
   const sections = [];
@@ -76,7 +136,13 @@ function splitSections(markdown) {
   for (const line of markdown.split("\n")) {
     if (line.trimStart().startsWith("```")) inFence = !inFence;
     if (!inFence && line.startsWith("## ")) {
-      current = { title: line.slice(3).trim(), lines: [] };
+      const heading = line.slice(3).trim();
+      const marker = heading.match(/\s*\{#([a-z0-9-]+)\}$/);
+      current = {
+        title: marker ? heading.slice(0, marker.index).trim() : heading,
+        slug: marker ? marker[1] : "",
+        lines: [],
+      };
       sections.push(current);
       continue;
     }
@@ -84,6 +150,10 @@ function splitSections(markdown) {
   }
   return {
     intro: introLines.join("\n").trim(),
-    sections: sections.map((s) => ({ title: s.title, body: s.lines.join("\n").trim() })),
+    sections: sections.map((s) => ({
+      title: s.title,
+      slug: s.slug,
+      body: s.lines.join("\n").trim(),
+    })),
   };
 }

@@ -2,8 +2,11 @@
 
 One-click local setup, mirroring the ffmpeg approach:
 - the llama.cpp release binary is downloaded into <data>/tools/llama/
-- GGUF models are downloaded into <data>/models/llm/
-- a hardware probe (RAM/VRAM) picks a sensible default model + quantisation
+- GGUF models are downloaded into the configured models directory
+  (default <data>/models/llm) — any .gguf already lying there is used from
+  there, so an existing collection needs no second download
+- a hardware probe (RAM/VRAM) recommends a model + quantisation; the choice
+  itself stays with the user
 - `llama-server` runs as a managed subprocess speaking the OpenAI protocol,
   so the normal LLM client (services/llm.py) needs no special casing.
 
@@ -37,7 +40,13 @@ SERVER_PORT = 8711
 SERVER_STARTUP_TIMEOUT_S = 180  # first start loads the model from disk
 
 # Curated catalog: multilingual instruct models with large context, sized for
-# common hardware tiers. Downloaded from the official Qwen GGUF repositories.
+# common hardware tiers, ordered by the hardware they need. `recommended`
+# marks the line the hardware probe suggests — the others are equally usable
+# alternatives, and any .gguf placed in the models directory works too.
+#
+# Qwen3 comes from the official Qwen GGUF repositories. Google's own Gemma
+# GGUF repositories are gated (they answer 401 without an accepted licence
+# and a token), so the Gemma builds come from the unsloth mirrors.
 MODEL_CATALOG: list[dict[str, Any]] = [
     {
         "name": "Qwen3-1.7B-Q8_0",
@@ -45,6 +54,7 @@ MODEL_CATALOG: list[dict[str, Any]] = [
         "url": "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q8_0.gguf",
         "size_mb": 2100,
         "min_free_mb": 3500,
+        "recommended": True,
         "label": "Qwen3 1.7B (klein — ab 4 GB RAM/VRAM)",
     },
     {
@@ -53,7 +63,19 @@ MODEL_CATALOG: list[dict[str, Any]] = [
         "url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf",
         "size_mb": 2600,
         "min_free_mb": 5000,
-        "label": "Qwen3 4B (empfohlen — ab 6 GB RAM/VRAM)",
+        "recommended": True,
+        "label": "Qwen3 4B (ab 6 GB RAM/VRAM)",
+    },
+    {
+        "name": "gemma-3-4b-it-Q4_K_M",
+        "file": "gemma-3-4b-it-Q4_K_M.gguf",
+        "url": (
+            "https://huggingface.co/unsloth/gemma-3-4b-it-GGUF/resolve/main/"
+            "gemma-3-4b-it-Q4_K_M.gguf"
+        ),
+        "size_mb": 2400,
+        "min_free_mb": 5500,
+        "label": "Gemma 3 4B (Alternative zu Qwen3 4B)",
     },
     {
         "name": "Qwen3-8B-Q4_K_M",
@@ -61,7 +83,19 @@ MODEL_CATALOG: list[dict[str, Any]] = [
         "url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf",
         "size_mb": 5200,
         "min_free_mb": 9000,
-        "label": "Qwen3 8B (beste Qualität — ab 10 GB VRAM oder 20 GB RAM)",
+        "recommended": True,
+        "label": "Qwen3 8B (ab 10 GB VRAM oder 20 GB RAM)",
+    },
+    {
+        "name": "gemma-3-12b-it-Q4_K_M",
+        "file": "gemma-3-12b-it-Q4_K_M.gguf",
+        "url": (
+            "https://huggingface.co/unsloth/gemma-3-12b-it-GGUF/resolve/main/"
+            "gemma-3-12b-it-Q4_K_M.gguf"
+        ),
+        "size_mb": 7000,
+        "min_free_mb": 13000,
+        "label": "Gemma 3 12B (beste Qualität — ab 14 GB VRAM oder 28 GB RAM)",
     },
 ]
 
@@ -77,9 +111,8 @@ def binary_dir() -> Path:
 
 
 def llm_models_dir() -> Path:
-    path = config.data_dir() / "models" / "llm"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    """Where the GGUF files live — configurable, see config.llm_models_dir."""
+    return config.llm_models_dir()
 
 
 def server_binary() -> Path | None:
@@ -144,11 +177,16 @@ def probe_hardware() -> dict[str, Any]:
 
 
 def recommend_model(hardware: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Largest catalog model that fits the available VRAM (GPU) or half the RAM."""
+    """Largest fitting catalog model for the available VRAM (GPU) or half the RAM.
+
+    Only `recommended` entries are suggested, so adding an alternative of the
+    same size to the catalog does not silently change what new users get.
+    """
     hw = hardware or probe_hardware()
     budget_mb = hw["vram_mb"] if hw["vram_mb"] > 0 else hw["ram_mb"] // 2
     fitting = [m for m in MODEL_CATALOG if m["min_free_mb"] <= budget_mb]
-    return fitting[-1] if fitting else MODEL_CATALOG[0]
+    preferred = [m for m in fitting if m.get("recommended")]
+    return (preferred or fitting or [MODEL_CATALOG[0]])[-1]
 
 
 # ── binary installation ───────────────────────────────────────────────
@@ -449,4 +487,5 @@ def status() -> dict[str, Any]:
         "recommended": recommend_model(hardware),
         "catalog": MODEL_CATALOG,
         "installed": list_installed_models(),
+        "models_dir": str(llm_models_dir()),
     }

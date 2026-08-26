@@ -48,10 +48,13 @@ export const api = {
   shutdown: () => request("POST", "/api/system/shutdown"),
   runSetup: (includeOptional = true) =>
     request("POST", "/api/system/setup/run", { include_optional: includeOptional }),
+  completeSetup: () => request("POST", "/api/system/setup/complete"),
   getSettings: () => request("GET", "/api/settings"),
   updateSettings: (settings) => request("PUT", "/api/settings", settings),
+  getPaths: () => request("GET", "/api/settings/paths"),
   listModels: () => request("GET", "/api/models"),
   getDocs: (lang) => request("GET", `/api/docs?lang=${encodeURIComponent(lang)}`),
+  docsAsk: (question, lang) => request("POST", "/api/docs/ask", { question, lang }),
 
   // projects & files
   listProjects: () => request("GET", "/api/projects"),
@@ -127,6 +130,7 @@ export const api = {
   search: (options) => request("POST", "/api/search", options),
   searchAsk: (options) => request("POST", "/api/search/ask", options),
   searchStatus: () => request("GET", "/api/search/status"),
+  searchModels: () => request("GET", "/api/search/models"),
   searchReindex: () => request("POST", "/api/search/reindex"),
 
   // public API keys

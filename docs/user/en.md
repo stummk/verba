@@ -4,7 +4,7 @@ Verba turns audio recordings into editable text — fully local, with optional
 AI cleanup/translation, PDF export, semantic search and a public
 transcription API.
 
-## Installation & starting
+## Installation & starting {#install}
 
 **Ready-made packages** (project releases page):
 
@@ -27,6 +27,28 @@ transcription API.
 On first start the core components are set up automatically; the app opens in
 your browser at `http://127.0.0.1:8710`.
 
+**The address on start.** Every start prints what Verba listens on — in server
+mode including the machine's own IP addresses, so it is clear where to point
+another device:
+
+```
+------------------------------------------------------
+Verba 0.1.0 - server mode
+  listening on   http://0.0.0.0:8710  (all interfaces)
+  local          http://127.0.0.1:8710
+  network        http://192.168.1.50:8710
+  data directory /opt/verba/data
+  stop with Ctrl+C
+------------------------------------------------------
+```
+
+As a **service** (systemd) the same block goes to the journal:
+`systemctl status verba` shows it at the end, `journalctl -u verba` from the
+beginning. The address is also the first line of the application log
+(`data/logs/`), so it is available for a service that has been running for
+weeks. If the port is taken, Verba says exactly that and does not start —
+instead of a traceback.
+
 In desktop mode, the **✕** button in the top right closes the Verba tab and
 stops the local process. It also stops without that button: once the last
 Verba tab (or the whole browser) is gone, it waits a few seconds for a reload
@@ -38,23 +60,52 @@ or "Add to home screen"), after which it feels like a standalone app. The
 interface also loads without a connection; as soon as the server is reachable
 again, everything resumes automatically.
 
-## First-run setup
+## First-run setup {#first-run}
 
-On first launch Verba checks the system (Python, ffmpeg, GPU, AI
-components) and installs whatever is missing. Progress is live: the bar covers
-the whole setup, and every component gets its tick as soon as it is installed
-and verified. While the first-run setup is in progress the navigation tabs are
-hidden — they appear once you finish the setup or choose **Set up later**. The
-setup can be reopened later from **Settings**.
+The first-run setup walks through everything Verba needs, in five steps:
+
+1. **Install components** — Verba checks the system (Python, ffmpeg, GPU, AI
+   components) and installs whatever is missing. Progress is live: the bar
+   covers the whole setup, and every component gets its tick as soon as it is
+   installed and verified.
+2. **Workspace** — where Verba keeps the transcript folders (section
+   "Transcripts").
+3. **Transcription** — default model, models directory, device and recording
+   language (section "Whisper models").
+4. **Language model** — optional: off, local or an OpenAI-compatible endpoint
+   (section "Setting up a language model (LLM)").
+5. **Search** — the embedding model for the semantic search (section
+   "Search").
+
+Every step can be left out with **Skip this step**; its default then applies
+and can be changed in the settings at any time. **Set up later** leaves the
+wizard entirely — the reminder that the setup is unfinished then stays. While
+the first-run setup is in progress the navigation tabs are hidden; they appear
+once you finish or leave it. The setup can be reopened later from
+**Settings**.
 
 If an installation fails, the components that are already done stay
 installed; restarting Verba and trying again only cleans up the package that
 was actually damaged.
 
-## Transcripts
+## Transcripts {#transcripts}
 
 Every transcript gets its own **workspace folder** on disk with `audio/`
-(imported copies), `transcripts/` (JSON transcripts) and `exports/`.
+(imported copies), `transcripts/` (JSON transcripts) and `exports/`. All of
+them live inside the **workspace directory** from the settings (default:
+`workspaces` next to the application, or in the data directory of an
+installation). Absolute paths are what belongs there, network and removable
+drives included (`M:\Transcripts`); `~` and `%USERPROFILE%` are expanded, and
+a path pasted with quotes (as the Windows explorer copies it) is accepted. A
+relative path is turned into an absolute one right away and shown that way in
+the settings.
+
+If you change the directory later, **all existing transcript folders move
+along** — a background job moves them (seconds on the same drive; across
+drives it takes as long as copying does) and updates the references in the
+database. If the target directory already contains a folder of the same name,
+the change is refused and nothing is moved; rename or move that foreign folder
+yourself first.
 
 - New transcript: **+** button (bottom right). If you leave the name empty,
   today's date (`yyyymmdd`) is used.
@@ -68,7 +119,7 @@ On import Verba extracts **metadata** automatically: title and date from MP3
 tags and from filenames following the `YYYYMMDD_Title` scheme (e.g.
 `20240817_Title.mp3`).
 
-## Transcript types
+## Transcript types {#types}
 
 Six built-in types ship with the app: **Song** (song), **Interview/Dialog**,
 **Speech** (speech), **Protocol**
@@ -113,7 +164,7 @@ list and a detail view, one at a time. The **+** button creates a new type;
 built-in types can be edited and deleted too. "Restore default types" brings
 deleted or modified defaults back (both prompts).
 
-## Importing audio
+## Importing audio {#import}
 
 The action card in a transcript organises the workflow into three tabs:
 **1. Import audio → 2. Transcribe & process → 3. Export.** Tapping a tab
@@ -129,7 +180,7 @@ Three equivalent ways:
 Supported formats: mp3, wav, m4a, flac, ogg, opus, aac, wma, webm, mp4.
 Importing always copies — your original files stay untouched.
 
-## Transcribing
+## Transcribing {#transcribe}
 
 - **Single file:** microphone icon in the file row (finished files show a
   repeat icon for another run instead)
@@ -145,7 +196,7 @@ oversubscribed — even with several people working at once. Waiting files show
 their queue position; small jobs (re-transcribing a section, audio edits) jump
 ahead, and the order stays fair per user.
 
-## AI processing (cleanup & translation)
+## AI processing (cleanup & translation) {#ai}
 
 Once a language model is configured (section "Setting up a language model
 (LLM)"), transcribed files get a
@@ -174,7 +225,7 @@ same system, Verba works in phases: first all transcriptions, then — after a
 single model swap — all AI processing. Whisper and the LLM share the memory
 without thrashing each other.
 
-## Editor & timeline
+## Editor & timeline {#editor}
 
 Actions appear as icons with tooltips (hovering shows the description). The
 document icon ("Open in editor") on a transcribed file opens the editor — a
@@ -212,7 +263,7 @@ transcript and AI texts:
 - File names may optionally follow `date_source-language_target-language_title_addition`;
   this pre-fills the language, optional translation target, and header fields.
 
-## Whisper models
+## Whisper models {#whisper}
 
 In the **Settings → Transcription** section, **one list** shows every model
 with its status: installed models carry an "installed" badge and can be
@@ -239,7 +290,7 @@ every request.
 - A path that does not exist yet is created. If it lives on a network drive
   that is currently not connected, the list stays empty.
 
-## Setting up a language model (LLM)
+## Setting up a language model (LLM) {#llm}
 
 Under **Settings → AI processing (LLM)** a switch picks exactly **one** path —
 only its fields are shown:
@@ -247,13 +298,37 @@ only its fields are shown:
 - **Off** — cleanup/translation disabled; everything else works normally
 - **Local (llama.cpp)** — no external services at all: Verba shows the detected
   hardware (RAM, GPU/VRAM) with a model recommendation; one click installs
-  llama.cpp, another downloads the chosen Qwen3 model. The local LLM server
-  starts automatically on demand.
+  llama.cpp, another downloads the chosen model. The local LLM server starts
+  automatically on demand.
 - **OpenAI-compatible endpoint** — base URL, API key and model name (works with
   OpenAI, Ollama, LM Studio, vLLM and others); "Test connection" probes the
   endpoint and lists available models.
 
-## PDF export
+**Which local models?** Verba ships a vetted list of multilingual instruct
+models, ordered by the hardware they need:
+
+| Model | Download | Needs at least |
+| --- | --- | --- |
+| Qwen3 1.7B (Q8) | approx. 2.1 GB | 4 GB RAM/VRAM |
+| Qwen3 4B (Q4_K_M) | approx. 2.6 GB | 6 GB RAM/VRAM |
+| Gemma 3 4B (Q4_K_M) | approx. 2.4 GB | 6 GB RAM/VRAM |
+| Qwen3 8B (Q4_K_M) | approx. 5.2 GB | 10 GB VRAM / 20 GB RAM |
+| Gemma 3 12B (Q4_K_M) | approx. 7.0 GB | 14 GB VRAM / 28 GB RAM |
+
+The **star** marks the recommendation for your machine: Verba looks at the
+VRAM (or half the RAM without a GPU) and suggests the largest fitting model of
+the Qwen3 line. Nothing is decided automatically though — you download the
+model yourself and can pick another one at any time; the **local model** field
+shows which one the server uses.
+
+**Your own models and your own directory.** **GGUF directory** sets the folder
+the models live in (e.g. `F:\Models\llm`). Every `.gguf` file in it appears in
+the selection and is **loaded straight from there** — nothing is copied and
+nothing is downloaded twice. That is also how to use a model that is not in
+the list at all: drop the file into the folder, pick it under **local
+model**, done.
+
+## PDF export {#pdf}
 
 Transcribed files can be exported as PDF — via the PDF icon in the file row
 or with **PDF export (all)** in step 3 of the action card for the whole
@@ -294,7 +369,7 @@ section separated by spacing only — no table of contents and no extra titles.
 Finished PDFs appear in the **Exports (PDF)** card for download or deletion;
 in the workspace they live under `exports/`.
 
-## Search
+## Search {#search}
 
 The **Search** tab searches all transcripts at once — semantically (meaning
 counts; German questions also find English or Russian content) and via full
@@ -312,32 +387,66 @@ so honestly instead of guessing.
 
 New transcriptions and segment edits are indexed automatically; deleted files
 disappear from the index immediately. **Settings → Search** shows the index
-status, the embedding model (changing it automatically rebuilds the whole
-index) and a button for a manual rebuild. The search components are installed
-by the setup (feature group “Semantic search”).
+status, the embedding model and a button for a manual rebuild. The search
+components are installed by the setup (feature group “Semantic search”).
 
-## Settings
+**Embedding model.** The choice is a fixed list of vetted models — all
+multilingual (German queries find English and Russian content) and
+CPU-friendly:
+
+| Model | Size | Languages | Character |
+| --- | --- | --- | --- |
+| MiniLM multilingual (default) | approx. 0.5 GB | 50 | fast |
+| Multilingual E5 small | approx. 0.5 GB | 100 | balanced, a bit more precise |
+| mpnet multilingual | approx. 1.0 GB | 50 | thorough, slower |
+| BGE-M3 | approx. 2.3 GB | 100 | best quality, noticeably slower |
+
+**BGE-M3** is the pick when quality matters more than speed — it is the only
+model in the list whose download (approx. 2.3 GB) and CPU time you notice, and
+its 1024 dimensions make the index larger too. On weaker machines or with very
+many transcripts the default remains the better choice.
+
+The selected model is downloaded automatically on first use — that needs an
+internet connection once; after that the search works entirely offline. Where
+to is set by **models directory (embeddings)** (default:
+`<data>/models/embeddings`). If the model is already there it is **loaded from
+there instead of downloaded again** — both a plain folder (`bge-m3/`,
+`BAAI_bge-m3/`) and a moved HuggingFace cache
+(`models--BAAI--bge-m3/snapshots/…`) are recognised. Such models are marked
+"already on disk" in the pick list. Switching models invalidates every
+stored vector and therefore starts a full reindex automatically. If the status
+says the index came from another model, **Rebuild index** is all it takes.
+
+## Settings {#settings}
 
 The settings are organised into sections: on a phone — like in a native app —
 a list of sections appears first; tapping one opens it as its own page ("All
 settings" leads back). On desktop the section list sits as a sidebar next to
 the selected section.
 
-- **Interface:** language (German, English, Russian), documentation
+- **Interface:** language (German, English, Russian), documentation — the
+  guide appears there as sections with an icon, each one collapsible. With a
+  language model configured, **Ask about the guide** sits above it: type a
+  question and the AI answers from this guide alone. The answer is formatted
+  (paragraphs, lists, code) like the guide itself. Every question starts fresh
+  (not a chat), and below the answer you see which sections it is based on. Verba only sends the sections that match the question; if even that does
+  not fit the model's context, the selection is shrunk automatically instead
+  of showing an error. Without a language model the input box is not there.
 - **Transcription:** default model, models directory, device (GPU/CPU),
   compute precision, recording language — including the Whisper model
   management (download/delete) in the same section
-- **AI processing (LLM):** off / local / endpoint (section "Setting up a
-  language model (LLM)")
+- **AI processing (LLM):** off / local / endpoint, GGUF directory (section
+  "Setting up a language model (LLM)")
 - **Storage & logs:** workspace directory, server port, log level and
   retention (older logs are deleted automatically)
-- **Search:** index status, embedding model, rebuild index
+- **Search:** index status, embedding model (pick list), models directory,
+  rebuild index
 - **API:** keys for the public transcription API (section "Public API")
 - **System:** information about the machine Verba runs on — CPU (model and
   cores), memory (free/total), graphics card with VRAM, ffmpeg status — plus
   the app version
 
-## Public API
+## Public API {#api}
 
 Verba provides an OpenAI-compatible transcription API so external programs can
 transcribe audio files — scripts, other servers, or anything that speaks the

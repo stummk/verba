@@ -17,10 +17,11 @@ import os
 import platform
 import sys
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,22 @@ def ensure_runtime_site_packages() -> None:
         sys.path.insert(0, str(target))
 
 
+def normalize_dir(value: str) -> str:
+    """Absolute, expanded form of a configured directory ("" keeps the default).
+
+    Users type all of these: `M:\\Modelle\\whisper`, `~/verba`,
+    `%USERPROFILE%\\Verba`, a path pasted with quotes by the Windows explorer,
+    or a relative one — which would otherwise point at whatever the working
+    directory happens to be when the app is started, and therefore somewhere
+    else for the installed build than for a source checkout.
+    """
+    text = value.strip().strip('"')
+    if not text:
+        return ""
+    expanded = os.path.expandvars(os.path.expanduser(text))
+    return os.path.abspath(expanded)
+
+
 class ServerSettings(BaseModel):
     port: int = Field(default=8710, ge=1, le=65535)
 
@@ -131,23 +148,138 @@ class WhisperSettings(BaseModel):
     compute_type: Literal["auto", "int8", "int8_float16", "float16", "float32"] = "auto"
     language: str = ""  # empty = automatic detection; otherwise ISO code like "de"
 
+    @field_validator("models_dir")
+    @classmethod
+    def _absolute_models_dir(cls, value: str) -> str:
+        return normalize_dir(value)
+
 
 class LLMSettings(BaseModel):
     mode: Literal["none", "openai", "local"] = "none"
     base_url: str = ""  # OpenAI-compatible endpoint, e.g. http://localhost:8000/v1
     api_key: str = ""
     model: str = ""
+    # empty = <data>/models/llm; GGUF files already lying in the configured
+    # directory are used from there, never copied or downloaded again
+    models_dir: str = ""
+
+    @field_validator("models_dir")
+    @classmethod
+    def _absolute_models_dir(cls, value: str) -> str:
+        return normalize_dir(value)
+
+
+@dataclass(frozen=True)
+class EmbeddingModel:
+    """One selectable embedding model for the semantic search.
+
+    `query_prefix`/`passage_prefix` belong to the model contract: the E5
+    family is trained with them and loses a lot of quality without.
+    """
+
+    name: str
+    label: str
+    dim: int
+    size_mb: int
+    languages: int
+    speed: Literal["fast", "balanced", "quality"]
+    query_prefix: str = ""
+    passage_prefix: str = ""
+
+
+# A curated list instead of a free-text field: a mistyped model id would only
+# fail deep inside the first index run, and a monolingual one would silently
+# rank German queries against English text. All of them are multilingual and
+# run on the CPU; the first is the default, the last trades size and speed for
+# retrieval quality.
+EMBEDDING_MODELS: tuple[EmbeddingModel, ...] = (
+    EmbeddingModel(
+        name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        label="MiniLM multilingual (Standard)",
+        dim=384,
+        size_mb=470,
+        languages=50,
+        speed="fast",
+    ),
+    EmbeddingModel(
+        name="intfloat/multilingual-e5-small",
+        label="Multilingual E5 small",
+        dim=384,
+        size_mb=470,
+        languages=100,
+        speed="balanced",
+        query_prefix="query: ",
+        passage_prefix="passage: ",
+    ),
+    EmbeddingModel(
+        name="sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+        label="mpnet multilingual",
+        dim=768,
+        size_mb=1030,
+        languages=50,
+        speed="quality",
+    ),
+    # XLM-RoBERTa-large based: clearly the best multilingual retrieval of the
+    # four, and the only one whose download and CPU time you notice. Needs no
+    # prefixes (unlike the English BGE models, which expect an instruction),
+    # and its 1024 dimensions make the vector table correspondingly larger.
+    EmbeddingModel(
+        name="BAAI/bge-m3",
+        label="BGE-M3 (beste Qualität, groß)",
+        dim=1024,
+        size_mb=2270,
+        languages=100,
+        speed="quality",
+    ),
+)
+
+DEFAULT_EMBEDDING_MODEL = EMBEDDING_MODELS[0].name
+
+
+def embedding_model(name: str = "") -> EmbeddingModel:
+    """Catalog entry for a model name; the default for anything unknown."""
+    for entry in EMBEDDING_MODELS:
+        if entry.name == name:
+            return entry
+    return EMBEDDING_MODELS[0]
 
 
 class SearchSettings(BaseModel):
     # Multilingual, CPU-friendly default; German queries also match en/ru content.
-    embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    embedding_model: str = DEFAULT_EMBEDDING_MODEL
+    # empty = <data>/models/embeddings; a model already lying in the configured
+    # directory is loaded from there instead of being downloaded again
+    embeddings_dir: str = ""
+
+    @field_validator("embeddings_dir")
+    @classmethod
+    def _absolute_embeddings_dir(cls, value: str) -> str:
+        return normalize_dir(value)
+
+    @field_validator("embedding_model")
+    @classmethod
+    def _known_model(cls, value: str) -> str:
+        """Fall back to the default instead of failing on an unknown id.
+
+        Settings written by an older version (or by hand) may name a model
+        that is not in the catalog — the search must still start.
+        """
+        if any(entry.name == value for entry in EMBEDDING_MODELS):
+            return value
+        if value:
+            logger.warning("unknown embedding model %r, using the default", value)
+        return DEFAULT_EMBEDDING_MODEL
 
 
 class GeneralSettings(BaseModel):
     ui_language: str = "de"
     workspaces_dir: str = ""  # empty = <project root>/workspaces
     browse_roots: list[str] = Field(default_factory=list)  # empty = user home dir only
+
+    @field_validator("workspaces_dir")
+    @classmethod
+    def _absolute_workspaces_dir(cls, value: str) -> str:
+        return normalize_dir(value)
 
 
 class SetupState(BaseModel):
@@ -194,20 +326,56 @@ def models_dir(settings: Settings) -> Path:
     return path
 
 
-def workspaces_dir(settings: Settings) -> Path:
+def default_workspaces_dir() -> Path:
+    """Where projects live when no directory is configured."""
+    return data_dir() / "workspaces" if FROZEN else PROJECT_ROOT / "workspaces"
+
+
+def workspaces_root(settings: Settings) -> Path:
+    """The configured workspaces directory — without creating it."""
     if settings.general.workspaces_dir:
-        path = Path(settings.general.workspaces_dir)
-    elif FROZEN:
-        path = data_dir() / "workspaces"
-    else:
-        path = PROJECT_ROOT / "workspaces"
+        return Path(settings.general.workspaces_dir)
+    return default_workspaces_dir()
+
+
+def workspaces_dir(settings: Settings) -> Path:
+    path = workspaces_root(settings)
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
-def embeddings_dir() -> Path:
-    """Cache directory for sentence-transformers downloads (kept under data/)."""
-    path = data_dir() / "models" / "embeddings"
+def default_embeddings_dir() -> Path:
+    return data_dir() / "models" / "embeddings"
+
+
+def embeddings_dir(settings: Settings | None = None) -> Path:
+    """Directory for the search embedding models.
+
+    Configurable, so a model that already sits somewhere on disk (a moved
+    HuggingFace cache, a folder copied from another machine) is reused
+    instead of downloaded a second time.
+    """
+    settings = settings or get_settings()
+    configured = settings.search.embeddings_dir
+    path = Path(configured) if configured else default_embeddings_dir()
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def default_llm_models_dir() -> Path:
+    return data_dir() / "models" / "llm"
+
+
+def llm_models_dir(settings: Settings | None = None) -> Path:
+    """Directory holding the GGUF files for the managed local LLM.
+
+    Same idea as the embeddings directory: point it at an existing collection
+    (`F:\\Models\\llm`) and those files are used from there — llama-server
+    loads them in place, nothing is copied.
+    """
+    settings = settings or get_settings()
+    configured = settings.llm.models_dir
+    path = Path(configured) if configured else default_llm_models_dir()
     path.mkdir(parents=True, exist_ok=True)
     return path
 

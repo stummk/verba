@@ -4,7 +4,7 @@ Verba wandelt Audioaufnahmen in bearbeitbaren Text um — vollständig lokal, mi
 optionaler KI-Bereinigung/Übersetzung, PDF-Export, semantischer Suche und einer
 öffentlichen Transkriptions-API.
 
-## Installation & Starten
+## Installation & Starten {#install}
 
 **Fertige Pakete** (Releases-Seite des Projekts):
 
@@ -27,6 +27,28 @@ optionaler KI-Bereinigung/Übersetzung, PDF-Export, semantischer Suche und einer
 Beim ersten Start werden die Grundkomponenten automatisch eingerichtet; die
 Anwendung öffnet sich im Browser unter `http://127.0.0.1:8710`.
 
+**Adresse beim Start.** Jeder Start schreibt in die Konsole, worauf Verba
+hört — im Servermodus mit allen IP-Adressen des Rechners, damit von einem
+anderen Gerät klar ist, wohin:
+
+```
+------------------------------------------------------
+Verba 0.1.0 - server mode
+  listening on   http://0.0.0.0:8710  (all interfaces)
+  local          http://127.0.0.1:8710
+  network        http://192.168.1.50:8710
+  data directory /opt/verba/data
+  stop with Ctrl+C
+------------------------------------------------------
+```
+
+Als **Dienst** (systemd) landet derselbe Block im Journal:
+`systemctl status verba` zeigt ihn am Ende, `journalctl -u verba` von Anfang
+an. Zusätzlich steht die Adresse in der ersten Zeile des Anwendungsprotokolls
+(`data/logs/`), also auch bei einem Dienst, der seit Wochen läuft. Ist der
+Port belegt, sagt Verba das in einer Zeile und startet nicht — statt mit
+einem Python-Stacktrace abzubrechen.
+
 Im Desktopmodus schließt der Knopf **✕** oben rechts den Verba-Tab und
 beendet den lokalen Prozess. Auch ohne diesen Knopf beendet sich der
 Desktopserver: sobald der letzte Verba-Tab (oder der ganze Browser)
@@ -39,24 +61,53 @@ der Adressleiste bzw. „Zum Startbildschirm hinzufügen") und fühlt sich dann 
 eine eigenständige App an. Die Oberfläche lädt auch ohne Verbindung; sobald der
 Server wieder erreichbar ist, geht es automatisch weiter.
 
-## Ersteinrichtung
+## Ersteinrichtung {#first-run}
 
-Beim ersten Aufruf prüft Verba das System (Python, ffmpeg, GPU,
-KI-Komponenten) und installiert Fehlendes automatisch. Der Fortschritt läuft
-live mit: der Balken zeigt die gesamte Einrichtung, und jede Komponente
-bekommt ihren Haken, sobald sie installiert und geprüft ist. Solange die
-Ersteinrichtung läuft, sind die Navigationstabs ausgeblendet — sie erscheinen,
-sobald du die Einrichtung abschließt oder auf **Später einrichten** gehst. Die
-Einrichtung lässt sich später unter **Einstellungen** erneut aufrufen.
+Die Ersteinrichtung führt in fünf Schritten durch alles, was Verba braucht:
+
+1. **Komponenten installieren** — Verba prüft das System (Python, ffmpeg, GPU,
+   KI-Komponenten) und installiert Fehlendes automatisch. Der Fortschritt läuft
+   live mit: der Balken zeigt die gesamte Einrichtung, und jede Komponente
+   bekommt ihren Haken, sobald sie installiert und geprüft ist.
+2. **Arbeitsbereich** — wohin Verba die Transkript-Ordner legt (Abschnitt
+   „Transkripte").
+3. **Transkription** — Standard-Modell, Modellverzeichnis, Gerät und
+   Aufnahmesprache (Abschnitt „Whisper-Modelle").
+4. **Sprachmodell** — optional: aus, lokal oder OpenAI-kompatibler Endpunkt
+   (Abschnitt „Sprachmodell (LLM) einrichten").
+5. **Suche** — Embedding-Modell für die semantische Suche (Abschnitt „Suche").
+
+Jeder Schritt lässt sich mit **Schritt überspringen** auslassen; dann gilt die
+Standardeinstellung, die später jederzeit in den Einstellungen änderbar ist.
+**Später einrichten** verlässt die Einrichtung ganz — der Hinweis, dass sie
+noch nicht abgeschlossen ist, bleibt dann bestehen. Solange die Ersteinrichtung
+läuft, sind die Navigationstabs ausgeblendet; sie erscheinen, sobald du die
+Einrichtung abschließt oder verlässt. Die Einrichtung lässt sich später unter
+**Einstellungen** erneut aufrufen.
 
 Schlägt eine Installation fehl, bleiben die bereits fertigen Komponenten
 erhalten; ein Neustart von Verba und ein erneuter Versuch räumen nur das
 tatsächlich beschädigte Paket auf.
 
-## Transkripte
+## Transkripte {#transcripts}
 
 Jedes Transkript bekommt einen eigenen **Workspace-Ordner** auf der Festplatte mit
 `audio/` (importierte Kopien), `transcripts/` (JSON-Transkripte) und `exports/`.
+Alle diese Ordner liegen im **Workspace-Verzeichnis** aus den Einstellungen
+(Standard: `workspaces` neben der Anwendung bzw. im Datenverzeichnis der
+Installation). Dort sind **absolute Pfade** erwünscht, auch auf Netz- oder
+Wechsellaufwerken (`M:\Transkripte`); `~` und `%USERPROFILE%` werden aufgelöst,
+und ein Pfad mit Anführungszeichen (wie ihn der Windows-Explorer kopiert) wird
+akzeptiert. Ein relativer Pfad wird sofort in einen absoluten umgewandelt und
+in den Einstellungen so angezeigt.
+
+Änderst du das Verzeichnis später, **wandern alle vorhandenen
+Transkript-Ordner mit** — ein Hintergrund-Job verschiebt sie (auf demselben
+Laufwerk in Sekunden, laufwerksübergreifend dauert es so lange wie das
+Kopieren) und zieht die Verweise in der Datenbank nach. Existiert im
+Zielverzeichnis schon ein Ordner mit gleichem Namen, wird der Wechsel abgelehnt
+und nichts verschoben; benenne oder verschiebe den fremden Ordner erst
+selbst.
 
 - Neues Transkript: **+**-Knopf (unten rechts). Ohne Namenseingabe wird das heutige
   Datum (`jjjjmmtt`) übernommen.
@@ -70,7 +121,7 @@ Beim Import liest Verba **Metadaten** automatisch aus: Titel und Datum aus
 MP3-Tags sowie aus Dateinamen nach dem Schema `JJJJMMTT_Titel` (z. B.
 `20240817_Titel.mp3`).
 
-## Transkripttypen
+## Transkripttypen {#types}
 
 Sechs Standardtypen werden mitgeliefert: **Lied**, **Interview/Dialog**,
 **Rede**,  **Protokoll** (Gesprächsprotokoll mit
@@ -115,7 +166,7 @@ einen neuen Typ an; auch Standardtypen lassen sich bearbeiten und löschen.
 „Standardtypen wiederherstellen" bringt gelöschte oder veränderte Standards
 zurück (beide Prompts).
 
-## Audio importieren
+## Audio importieren {#import}
 
 Die Aktionskarte im Transkript gliedert den Ablauf in drei Reiter:
 **1. Audio importieren → 2. Transkribieren & aufbereiten → 3. Exportieren.**
@@ -132,7 +183,7 @@ Drei Wege, alle gleichwertig:
 Unterstützte Formate: mp3, wav, m4a, flac, ogg, opus, aac, wma, webm, mp4.
 Importieren kopiert immer — die Originaldateien bleiben unangetastet.
 
-## Transkribieren
+## Transkribieren {#transcribe}
 
 - **Einzelne Datei:** Mikrofon-Symbol in der Dateizeile (fertige Dateien
   zeigen stattdessen ein Wiederholen-Symbol für einen erneuten Lauf)
@@ -149,7 +200,7 @@ arbeiten. Wartende Dateien zeigen ihre Position an; kleine Aufträge (Abschnitt
 neu transkribieren, Audio-Schnitt) werden bevorzugt eingeschoben, und die
 Reihenfolge bleibt fair pro Nutzer.
 
-## KI-Aufbereitung (Bereinigung & Übersetzung)
+## KI-Aufbereitung (Bereinigung & Übersetzung) {#ai}
 
 Sobald ein Sprachmodell konfiguriert ist (Abschnitt „Sprachmodell (LLM)
 einrichten"), erscheint bei
@@ -180,7 +231,7 @@ demselben System, arbeitet Verba phasenweise: erst alle Transkriptionen, dann �
 nach einmaligem Modellwechsel — alle KI-Aufbereitungen. So teilen sich Whisper
 und LLM den Speicher, ohne sich gegenseitig auszubremsen.
 
-## Editor & Timeline
+## Editor & Timeline {#editor}
 
 Aktionen erscheinen als Symbole mit Tooltip (Maus darüber halten zeigt die
 Beschreibung). Das Dokument-Symbol („Im Editor öffnen") bei einer fertig
@@ -221,7 +272,7 @@ transkribierten Datei öffnet den Editor — einen
   sein. Dadurch werden Sprache, optionale Übersetzung sowie die Headerfelder automatisch
   vorbelegt.
 
-## Whisper-Modelle
+## Whisper-Modelle {#whisper}
 
 Im Bereich **Einstellungen → Transkription** zeigt **eine Liste** alle Modelle
 mit ihrem Status: Installierte tragen die Markierung „installiert" und lassen
@@ -249,7 +300,7 @@ neu von der Platte.
 - Ein Pfad, den es noch nicht gibt, wird angelegt. Liegt er auf einem
   Netzlaufwerk, das gerade nicht verbunden ist, bleibt die Liste leer.
 
-## Sprachmodell (LLM) einrichten
+## Sprachmodell (LLM) einrichten {#llm}
 
 Unter **Einstellungen → KI-Aufbereitung (LLM)** wird mit einem Umschalter genau
 **ein** Weg gewählt — nur dessen Felder sind sichtbar:
@@ -257,13 +308,37 @@ Unter **Einstellungen → KI-Aufbereitung (LLM)** wird mit einem Umschalter gena
 - **Aus** — Bereinigung/Übersetzung deaktiviert, alles andere funktioniert normal
 - **Lokal (llama.cpp)** — komplett ohne externe Dienste: Verba zeigt die erkannte
   Hardware (RAM, GPU/VRAM) samt Modellempfehlung; ein Klick installiert llama.cpp,
-  ein weiterer lädt das gewünschte Qwen3-Modell. Der lokale LLM-Server startet
+  ein weiterer lädt das gewünschte Modell. Der lokale LLM-Server startet
   automatisch bei Bedarf.
 - **OpenAI-kompatibler Endpunkt** — Base URL, API-Schlüssel und Modellname
   (funktioniert mit OpenAI, Ollama, LM Studio, vLLM u. a.);
   „Verbindung testen" prüft den Endpunkt und listet verfügbare Modelle.
 
-## PDF-Export
+**Welche lokalen Modelle?** Verba bringt eine geprüfte Liste mehrsprachiger
+Instruct-Modelle mit, sortiert nach dem Hardwarebedarf:
+
+| Modell | Download | Braucht mindestens |
+| --- | --- | --- |
+| Qwen3 1.7B (Q8) | ca. 2,1 GB | 4 GB RAM/VRAM |
+| Qwen3 4B (Q4_K_M) | ca. 2,6 GB | 6 GB RAM/VRAM |
+| Gemma 3 4B (Q4_K_M) | ca. 2,4 GB | 6 GB RAM/VRAM |
+| Qwen3 8B (Q4_K_M) | ca. 5,2 GB | 10 GB VRAM / 20 GB RAM |
+| Gemma 3 12B (Q4_K_M) | ca. 7,0 GB | 14 GB VRAM / 28 GB RAM |
+
+Der **Stern** markiert die Empfehlung für deinen Rechner: Verba prüft VRAM
+(bzw. die Hälfte des RAM ohne GPU) und schlägt das größte passende Modell der
+Qwen3-Reihe vor. Entschieden wird aber nichts automatisch — du lädst das Modell
+selbst und kannst jederzeit ein anderes wählen; im Feld **Lokales Modell**
+steht, welches der Server benutzt.
+
+**Eigene Modelle und eigenes Verzeichnis.** Unter **GGUF-Verzeichnis** lässt
+sich der Ordner setzen, in dem die Modelle liegen (z. B. `F:\Models\llm`).
+Jede `.gguf`-Datei darin steht in der Auswahl und wird **direkt von dort
+geladen** — nichts wird kopiert und nichts erneut heruntergeladen. So lässt
+sich auch ein Modell verwenden, das gar nicht in der Liste steht: Datei in den
+Ordner legen, unter **Lokales Modell** auswählen, fertig.
+
+## PDF-Export {#pdf}
 
 Fertig transkribierte Dateien lassen sich als PDF exportieren — über das
 PDF-Symbol in der Dateizeile oder in Schritt 3 der Aktionskarte mit
@@ -305,7 +380,7 @@ Abschnitt, nur durch Abstand getrennt — ohne Inhaltsverzeichnis und ohne
 zusätzliche Titel. Fertige PDFs erscheinen in der Karte **Exporte (PDF)** zum
 Herunterladen oder Löschen; im Workspace liegen sie unter `exports/`.
 
-## Suche
+## Suche {#search}
 
 Der Tab **Suche** durchsucht alle Transkripte gleichzeitig — semantisch (die
 Bedeutung zählt; deutsche Fragen finden auch englische oder russische Inhalte)
@@ -323,34 +398,73 @@ es keine, sagt sie das ehrlich statt zu raten.
 
 Neue Transkriptionen und Segment-Änderungen werden automatisch indiziert,
 gelöschte Dateien sofort aus dem Index entfernt. Unter **Einstellungen →
-Suche** stehen der Index-Status, das Embedding-Modell (eine Änderung baut den
-Index automatisch komplett neu) und ein Knopf für den manuellen Neuaufbau.
-Die Suchkomponenten installiert die Einrichtung (Feature-Gruppe
-„Semantische Suche").
+Suche** stehen der Index-Status, das Embedding-Modell und ein Knopf für den
+manuellen Neuaufbau. Die Suchkomponenten installiert die Einrichtung
+(Feature-Gruppe „Semantische Suche").
 
-## Einstellungen
+**Embedding-Modell.** Zur Auswahl steht eine feste Liste geprüfter Modelle —
+alle mehrsprachig (deutsche Fragen finden englische und russische Inhalte) und
+CPU-tauglich:
+
+| Modell | Größe | Sprachen | Charakter |
+| --- | --- | --- | --- |
+| MiniLM multilingual (Standard) | ca. 0,5 GB | 50 | schnell |
+| Multilingual E5 small | ca. 0,5 GB | 100 | ausgewogen, etwas genauer |
+| mpnet multilingual | ca. 1,0 GB | 50 | gründlich, langsamer |
+| BGE-M3 | ca. 2,3 GB | 100 | beste Qualität, spürbar langsamer |
+
+**BGE-M3** ist die Empfehlung, wenn Qualität vor Geschwindigkeit geht — es ist
+das einzige Modell der Liste, bei dem Download (ca. 2,3 GB) und Rechenzeit auf
+der CPU auffallen; seine 1024 Dimensionen machen auch den Index größer. Auf
+schwächeren Rechnern oder bei sehr vielen Transkripten bleibt der Standard die
+bessere Wahl.
+
+Das gewählte Modell wird beim ersten Gebrauch automatisch heruntergeladen —
+dafür braucht es einmalig eine Internetverbindung; danach arbeitet die Suche
+vollständig offline. Wohin, bestimmt **Modellverzeichnis (Embeddings)**
+(Standard: `<Daten>/models/embeddings`). Liegt das Modell dort schon, wird es
+**von dort geladen statt erneut heruntergeladen** — erkannt werden sowohl ein
+einfacher Ordner (`bge-m3/`, `BAAI_bge-m3/`) als auch ein verschobener
+HuggingFace-Cache (`models--BAAI--bge-m3/snapshots/…`). In der Auswahlliste
+steht bei solchen Modellen „lokal vorhanden". Ein Wechsel
+macht alle gespeicherten Vektoren ungültig und startet deshalb automatisch
+einen kompletten Neuindex. Steht im Status „Index stammt von einem anderen
+Modell", genügt **Index neu aufbauen**.
+
+## Einstellungen {#settings}
 
 Die Einstellungen sind in Bereiche gegliedert: Auf dem Smartphone erscheint —
 wie in einer nativen App — zuerst eine Liste der Bereiche; ein Tipp öffnet den
 Bereich als eigene Seite („Alle Einstellungen" führt zurück). Auf dem Desktop
 steht die Bereichsliste als Seitenleiste neben dem gewählten Bereich.
 
-- **Oberfläche:** Sprache (Deutsch, Englisch, Russisch), Dokumentation
+- **Oberfläche:** Sprache (Deutsch, Englisch, Russisch), Dokumentation —
+  das Handbuch erscheint dort in Abschnitten mit Symbol, jeder Abschnitt lässt
+  sich auf- und zuklappen. Mit konfiguriertem Sprachmodell steht darüber
+  **Frage zur Hilfe**: eine Frage eingeben, und die KI antwortet
+  ausschließlich aus diesem Handbuch. Die Antwort wird formatiert dargestellt
+  (Absätze, Listen, Code) wie das Handbuch selbst. Jede Frage beginnt neu
+  (kein Chat), und unter der Antwort steht, auf welchen Abschnitten sie
+  beruht. Verba schickt
+  dabei nur die zur Frage passenden Abschnitte an das Modell; passt selbst das
+  nicht in dessen Kontext, wird die Auswahl automatisch verkleinert statt eine
+  Fehlermeldung zu zeigen. Ohne Sprachmodell gibt es das Eingabefeld nicht.
 - **Transkription:** Standard-Modell, Modellverzeichnis, Gerät (GPU/CPU),
   Rechengenauigkeit, Aufnahmesprache — inklusive der Whisper-Modellverwaltung
   (herunterladen/löschen) im selben Bereich
-- **KI-Aufbereitung (LLM):** Aus / Lokal / Endpunkt (Abschnitt „Sprachmodell
-  (LLM) einrichten")
+- **KI-Aufbereitung (LLM):** Aus / Lokal / Endpunkt, GGUF-Verzeichnis
+  (Abschnitt „Sprachmodell (LLM) einrichten")
 - **Speicherorte & Protokolle:** Workspace-Verzeichnis, Server-Port, Log-Level
   und Aufbewahrungsdauer (ältere Logs werden automatisch gelöscht)
-- **Suche:** Index-Status, Embedding-Modell, Index neu aufbauen
+- **Suche:** Index-Status, Embedding-Modell (Auswahlliste),
+  Modellverzeichnis, Index neu aufbauen
 - **API:** Schlüssel für die öffentliche Transkriptions-API (Abschnitt
   „Öffentliche API")
 - **System:** Informationen über den Rechner, auf dem Verba läuft — CPU
   (Modell und Kerne), Arbeitsspeicher (frei/gesamt), Grafikkarte samt VRAM,
   ffmpeg-Status — sowie die App-Version
 
-## Öffentliche API
+## Öffentliche API {#api}
 
 Verba stellt eine OpenAI-kompatible Transkriptions-API bereit, mit der externe
 Programme Audiodateien transkribieren können — Skripte, andere Server oder

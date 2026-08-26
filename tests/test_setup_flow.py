@@ -210,8 +210,43 @@ def _ok_check() -> setup_check.CheckResult:
     )
 
 
+def _missing_check() -> setup_check.CheckResult:
+    return setup_check.CheckResult(
+        id="ffmpeg", label="ffmpeg", ok=False, required=True, installable=True
+    )
+
+
 def _key_for(label: str) -> str:
     for group in setup_check.FEATURE_GROUPS:
         if group.label == label:
             return group.key
     raise AssertionError(f"unknown group label: {label}")
+
+
+# ── finishing the wizard ──────────────────────────────────────────────
+
+
+def test_the_wizard_can_finish_with_steps_skipped(client):
+    """Every step is skippable, so "completed" means the user reached the end."""
+    assert client.get("/api/system/status").json()["setup_completed"] is False
+
+    status = client.post("/api/system/setup/complete").json()
+
+    assert status["setup_completed"] is True
+    assert client.get("/api/system/status").json()["setup_completed"] is True
+    assert config.get_settings().setup.completed is True
+
+
+def test_completing_does_not_claim_components_are_installed(client, monkeypatch):
+    monkeypatch.setattr(setup_check, "check_ffmpeg", lambda: _missing_check())
+
+    status = client.post("/api/system/setup/complete").json()
+
+    assert status["setup_completed"] is True
+    assert status["ready"] is False  # honest about the skipped installation
+
+
+def test_only_finishing_completes_the_setup(client):
+    """Postponing the wizard keeps the reminder — nothing is written."""
+    client.get("/api/system/status")
+    assert config.get_settings().setup.completed is False

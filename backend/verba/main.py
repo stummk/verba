@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -34,6 +35,7 @@ from .services.project_types import seed_builtin_types
 from .services.public_api import handle_api_transcribe_job
 from .services.vectorstore import handle_index_file_job, handle_reindex_job
 from .services.whisper import handle_transcribe_job, handle_transcribe_range_job
+from .services.workspace import handle_move_workspace_job
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +55,17 @@ async def _lifespan(app: FastAPI):
     job_queue.register("index_file", handle_index_file_job)
     job_queue.register("reindex_search", handle_reindex_job)
     job_queue.register("api_transcribe", handle_api_transcribe_job)
+    job_queue.register("move_workspace", handle_move_workspace_job)
     job_queue.start()
-    logger.info("Verba %s started — data at %s", __version__, config.data_dir())
+    # run.py records the bound address here, so the log line answers "which
+    # port is it on?" for a service started long ago
+    bind = os.environ.get("VERBA_BIND", "")
+    logger.info(
+        "Verba %s started — listening on %s, data at %s",
+        __version__,
+        bind or "(address unknown)",
+        config.data_dir(),
+    )
     yield
     job_queue.stop()
     llamacpp.stop_server()
