@@ -191,6 +191,26 @@ Importing always copies — your original files stay untouched.
 - Tip: setting the recording language explicitly (instead of auto-detect)
   noticeably improves results
 
+**Where the progress is shown.** Every step reports which file it is working
+on and how far it has got:
+
+- **In the file row** (transcript view): a bar and a text, e.g.
+  `lied.mp3: 01:23` while transcribing (percent = position in the recording),
+  `Bereinigung 2/5` and `Übersetzung 1/3` during AI processing,
+  `Warteschlange: Position 3` while waiting. "Transcribe all" and "AI
+  processing (all)" create one job **per file**, so every row has its own bar.
+- **In the top bar**: a summary that keeps running while you switch views —
+  `KI-Aufbereitung — lied.mp3: Bereinigung 2/5 · 40 %`. With two jobs in
+  parallel (transcription and processing) both are named, further ones as
+  `+2 more`.
+- **In the transcript list**: a `3 running` marker on a transcript while
+  something is running there.
+- **As its own card**: jobs that belong to no single file — the PDF export of
+  a whole transcript, rebuilding the search index (Settings → Search), moving
+  the workspaces (Settings → Storage).
+- **In the editor**: separate bars for "re-transcribe section" and for the AI
+  processing of the open file.
+
 **Queue:** all jobs run through one central queue so the hardware is never
 oversubscribed — even with several people working at once. Waiting files show
 their queue position; small jobs (re-transcribing a section, audio edits) jump

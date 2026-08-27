@@ -16,6 +16,7 @@ const SHELL = [
   "/js/embeddings.js",
   "/js/i18n.js",
   "/js/icons.js",
+  "/js/jobs.js",
   "/js/languages.js",
   "/js/markdown.js",
   "/js/ws.js",

@@ -3,12 +3,22 @@
 import { api } from "../api.js";
 import { el, esc, html, raw, toast } from "../dom.js";
 import { t } from "../i18n.js";
+import { isActive } from "../jobs.js";
+import { on } from "../ws.js";
 
 let fabHandler = null;
+let unsubscribers = [];
 
 export async function render(view, systemStatus) {
-  const [projects, types] = await Promise.all([api.listProjects(), api.listTypes()]);
+  const [projects, types, jobs] = await Promise.all([
+    api.listProjects(),
+    api.listTypes(),
+    api.listJobs(true).catch(() => []),
+  ]);
   const ready = systemStatus?.ready ?? true;
+  // one entry per transcript with work in flight, so the list already says
+  // where something is running instead of making the user open every card
+  const activeJobs = new Map(jobs.filter(isActive).map((job) => [job.id, job]));
 
   view.replaceChildren(html`
     <h1>${t("dashboard.title")}</h1>
@@ -43,7 +53,23 @@ export async function render(view, systemStatus) {
     `);
   }
 
-  renderList(projects);
+  renderList(projects, activeJobs);
+
+  // live: a job that starts or finishes changes both the badge and the counts
+  unsubscribers.forEach((off) => off());
+  let refreshTimer = null;
+  unsubscribers = [
+    on("job.update", (job) => {
+      if (isActive(job)) activeJobs.set(job.id, job);
+      else activeJobs.delete(job.id);
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(async () => {
+        if (!el("project-list")) return; // the user navigated away
+        const fresh = await api.listProjects().catch(() => null);
+        renderList(fresh ?? projects, activeJobs);
+      }, 300);
+    }),
+  ];
 
   const dialog = el("create-dialog");
   el("create-cancel").onclick = () => dialog.close();
@@ -82,19 +108,34 @@ function parseRoute() {
   return location.hash.replace(/^#\/?/, "").split("/")[0] || "dashboard";
 }
 
-function renderList(projects) {
+function renderList(projects, activeJobs = new Map()) {
   const list = el("project-list");
+  if (!list) return;
   if (!projects.length) {
     list.replaceChildren(html`<div class="card"><p class="muted">${t("dashboard.empty")}</p></div>`);
     return;
+  }
+  const running = new Map();
+  for (const job of activeJobs.values()) {
+    if (job.project_id == null) continue;
+    running.set(job.project_id, (running.get(job.project_id) ?? 0) + 1);
   }
   list.replaceChildren(
     ...projects.map((project) => {
       const card = document.createElement("a");
       card.className = "card project-card";
       card.href = `#/project/${project.id}`;
+      const title = document.createElement("strong");
+      title.textContent = project.name;
+      const count = running.get(project.id);
+      if (count) {
+        const badge = document.createElement("span");
+        badge.className = "badge badge-running";
+        badge.textContent = t("dashboard.running", { count });
+        title.append(" ", badge);
+      }
       card.append(
-        Object.assign(document.createElement("strong"), { textContent: project.name }),
+        title,
         Object.assign(document.createElement("span"), {
           className: "muted small",
           textContent: t("dashboard.fileStats", {

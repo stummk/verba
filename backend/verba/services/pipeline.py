@@ -183,7 +183,10 @@ def cleanup_segments(
     for i, chunk in enumerate(chunks):
         if cancel.is_set():
             raise JobCancelled()
-        report(lo + (hi - lo) * i // max(1, len(chunks)), f"Bereinigung {i + 1}/{len(chunks)}")
+        report(
+            lo + (hi - lo) * i // max(1, len(chunks)),
+            f"Bereinigung {i + 1}/{len(chunks)}",
+        )
         user_content = chunk.own_text
         if chunk.context_text:
             user_content = (
@@ -237,7 +240,10 @@ def run_translation(
     for i, chunk in enumerate(chunks):
         if cancel.is_set():
             raise JobCancelled()
-        report(lo + (hi - lo) * i // max(1, len(chunks)), f"Translation {i + 1}/{len(chunks)}")
+        report(
+            lo + (hi - lo) * i // max(1, len(chunks)),
+            f"Übersetzung {i + 1}/{len(chunks)}",
+        )
         parts.append(
             llm.chat(
                 [
@@ -295,4 +301,4 @@ def handle_llm_process_job(
         else:
             raise RuntimeError(f"Unknown pipeline step: {step}")
 
-    report(100, "Processing completed")
+    report(100, "Aufbereitung abgeschlossen")

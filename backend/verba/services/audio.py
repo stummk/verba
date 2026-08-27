@@ -110,11 +110,13 @@ def handle_audio_edit_job(job: dict[str, Any], cancel, report) -> None:
     file_row = workspace.get_file(job["file_id"])
     if file_row is None:
         raise RuntimeError(f"File {job['file_id']} no longer exists")
-    report(10, f"{file_row['filename']}: {payload['op']} is running ...")
+    operations = {"cut": "schneide", "keep": "behalte Bereich", "silence": "stumm"}
+    action = operations.get(payload["op"], payload["op"])
+    report(10, f"{file_row['filename']}: {action} ...")
     new_row = apply_edit(
         file_row, payload["op"], float(payload["start_s"]), float(payload["end_s"])
     )
-    report(100, f"New file created: {new_row['filename']}")
+    report(100, f"Neue Datei erstellt: {new_row['filename']}")
 
 
 def apply_edit(file_row: dict[str, Any], op: str, start_s: float, end_s: float) -> dict[str, Any]:

@@ -436,7 +436,7 @@ def handle_index_file_job(
     job: dict[str, Any], cancel: threading.Event, report: Callable[[int, str], None]
 ) -> None:
     file_id = int(job["payload"]["file_id"])
-    report(10, "Indexing for search ...")
+    report(10, "Indiziere für die Suche ...")
     count = index_file(file_id)
     report(100, f"{count} Abschnitte indiziert")
 
@@ -457,6 +457,9 @@ def handle_reindex_job(
     for index, file_id in enumerate(file_ids):
         if cancel.is_set():
             raise JobCancelled()
-        report(100 * index // max(1, len(file_ids)), f"File {index + 1}/{len(file_ids)}")
+        report(
+            100 * index // max(1, len(file_ids)),
+            f"Datei {index + 1}/{len(file_ids)}",
+        )
         total_chunks += index_file(file_id)
-    report(100, f"Reindexed: {len(file_ids)} file(s), {total_chunks} chunks")
+    report(100, f"Neu indiziert: {len(file_ids)} Datei(en), {total_chunks} Abschnitte")

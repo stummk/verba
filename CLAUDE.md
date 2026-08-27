@@ -39,7 +39,9 @@ python -m ruff format --check backend/ tests/ run.py
     WebSocket stays away (grace period for reloads); server mode keeps running
   - `core/jobs.py` — persistent JobQueue: two lanes (main/llm), FIFO per session,
     priority for small jobs, LLM-location scheduling (remote → parallel,
-    local → phased batches with model swap), cancellation, requeue after restart
+    local → phased batches with model swap), cancellation, requeue after restart;
+    every job row is read through `JOB_SELECT`, which joins the file name so the
+    UI can say *which* file a step is running on
   - `services/` — workspace (project folders, import, moving the workspaces
     root incl. DB repointing via job kind `move_workspace`), whisper (model discovery,
     CPU fallback for broken CUDA, range transcription), transcripts
@@ -79,6 +81,8 @@ python -m ruff format --check backend/ tests/ run.py
   LLM output (help answers, RAG answers) goes through `js/markdown.js`:
   marked does not sanitize, so the parsed fragment is filtered against an
   allowlist — never `innerHTML` a model answer directly;
+  job progress is presented through `js/jobs.js` (step label from the i18n
+  catalog, status line, progress card for jobs without a file row);
   `sw.js` caches the complete shell — add new frontend files to the SHELL list
   (`tests/test_pwa.py` enforces this)
 - `tests/` — pytest; `conftest.py` isolates `data/` via `VERBA_DATA_DIR`
@@ -98,7 +102,9 @@ python -m ruff format --check backend/ tests/ run.py
   workspace directory. Never write into the repo.
 - Settings changes always go through the `config.py` models (validation), never raw JSON.
 - Status-relevant operations (jobs, setup, AI calls) report progress through the
-  EventHub (`events.py`) so the UI stays live.
+  EventHub (`events.py`) so the UI stays live. A job's `report()` message is
+  shown verbatim in the web UI: German, and naming the file whenever the
+  surrounding row does not (`tests/test_job_progress.py` guards the language).
 - Code, identifiers and comments in English. UI texts come from the i18n
   catalog (`frontend/i18n/`, de/en/ru, default German) — no hard-coded UI
   strings in new logic.

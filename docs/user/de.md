@@ -194,6 +194,28 @@ Importieren kopiert immer — die Originaldateien bleiben unangetastet.
 - Tipp: Die Aufnahmesprache fest einzustellen (statt automatischer Erkennung)
   verbessert das Ergebnis deutlich
 
+**Wo der Fortschritt zu sehen ist.** Jeder Schritt meldet, an welcher Datei er
+arbeitet und wie weit er ist:
+
+- **In der Dateizeile** (Transkript-Ansicht): Balken und Text, z. B.
+  `lied.mp3: 01:23` beim Transkribieren (Prozent = Position in der Aufnahme),
+  `Bereinigung 2/5` und `Übersetzung 1/3` bei der KI-Aufbereitung,
+  `Warteschlange: Position 3` beim Warten. Auch „Alle transkribieren" und
+  „KI-Aufbereitung (alle)" legen einen Auftrag **pro Datei** an — jede Zeile
+  hat also ihren eigenen Balken.
+- **Oben in der Kopfzeile**: eine Zusammenfassung, die auch beim Wechsel der
+  Ansicht mitläuft — `KI-Aufbereitung — lied.mp3: Bereinigung 2/5 · 40 %`.
+  Laufen zwei Aufträge parallel (Transkription und Aufbereitung), stehen beide
+  dort, weitere als `+2 weitere`.
+- **In der Transkript-Liste**: ein Hinweis `3 aktiv` am Transkript, solange
+  dort etwas läuft.
+- **Als eigene Karte**: Aufträge, die zu keiner einzelnen Datei gehören —
+  PDF-Export eines ganzen Transkripts, Neuaufbau des Suchindex
+  (Einstellungen → Suche), Verschieben der Arbeitsbereiche
+  (Einstellungen → Speicherorte).
+- **Im Editor**: eigene Balken für „Abschnitt neu transkribieren" und für die
+  KI-Aufbereitung der offenen Datei.
+
 **Warteschlange:** Alle Aufträge laufen über eine zentrale Warteschlange, damit
 die Hardware nie überlastet wird — auch wenn mehrere Personen gleichzeitig
 arbeiten. Wartende Dateien zeigen ihre Position an; kleine Aufträge (Abschnitt

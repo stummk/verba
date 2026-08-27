@@ -281,7 +281,7 @@ def _with_cpu_fallback(run: Callable[[], Any], report: Callable[[int, str], None
         logger.warning("CUDA not usable (%s) — falling back to CPU permanently", exc)
         _cuda_broken = True
         unload_model()
-        report(0, "GPU libraries are unavailable — retrying on CPU ...")
+        report(0, "GPU-Bibliotheken nicht verfügbar — weiter auf der CPU ...")
         return run()
 
 

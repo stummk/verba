@@ -5,10 +5,12 @@ import { el, html, toast } from "../dom.js";
 import { fillEmbeddingSelect } from "../embeddings.js";
 import { iconButton } from "../icons.js";
 import { SUPPORTED_LANGUAGES, currentLanguage, t } from "../i18n.js";
+import { jobCardHost } from "../jobs.js";
 import { fillLanguageSelect } from "../languages.js";
 import { on } from "../ws.js";
 
 let unsubscribe = null;
+let unsubscribers = [];
 
 export async function render(view) {
   let settings = await api.getSettings();
@@ -149,6 +151,7 @@ export async function render(view) {
         <h2>${t("settings.searchTitle")}</h2>
         <p class="muted small">${t("settings.searchIntro")}</p>
         <p class="small" id="search-status"></p>
+        <div id="search-jobs" hidden></div>
         <div class="form-grid">
           <div>
             <label for="search-embedding-model">${t("settings.embeddingModel")}</label>
@@ -193,6 +196,7 @@ export async function render(view) {
 
       <div class="card" id="card-storage">
         <h2>${t("settings.storage")}</h2>
+        <div id="storage-jobs" hidden></div>
         <div class="form-grid">
           <div>
             <label for="general-workspaces">${t("settings.workspacesDir")}</label>
@@ -318,6 +322,31 @@ export async function render(view) {
     refreshPaths(),
     refreshApiKeys(),
   ]);
+
+  // reindex and workspace move run in the background — show them where they
+  // were started instead of only in the top bar
+  const searchJobs = jobCardHost(el("search-jobs"), {
+    filter: (job) => job.kind === "reindex_search",
+    onCancel: (job) => api.cancelJob(job.id).catch((error) => toast(error.message)),
+  });
+  const storageJobs = jobCardHost(el("storage-jobs"), {
+    filter: (job) => job.kind === "move_workspace",
+    onCancel: (job) => api.cancelJob(job.id).catch((error) => toast(error.message)),
+  });
+  for (const job of await api.listJobs(true).catch(() => [])) {
+    searchJobs.apply(job);
+    storageJobs.apply(job);
+  }
+
+  unsubscribers.forEach((off) => off());
+  unsubscribers = [
+    on("job.update", async (job) => {
+      searchJobs.apply(job);
+      storageJobs.apply(job);
+      if (job.kind === "reindex_search" && job.status === "done") await refreshSearchStatus();
+      if (job.kind === "move_workspace" && job.status === "done") await refreshPaths();
+    }),
+  ];
 
   unsubscribe?.();
   unsubscribe = on("model.download", async (info) => {

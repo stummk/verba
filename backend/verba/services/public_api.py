@@ -131,7 +131,7 @@ def handle_api_transcribe_job(job: dict[str, Any], cancel, report) -> None:
                 result["segments"], payload.get("type_prompt", ""), "", cancel, report, (99, 99)
             )
         _store_result(job["id"], {**result, "text": text})
-        report(100, "Transcription completed")
+        report(100, "Transkription abgeschlossen")
     finally:
         audio_path.unlink(missing_ok=True)
 

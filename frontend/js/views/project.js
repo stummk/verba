@@ -5,6 +5,7 @@ import { api } from "../api.js";
 import { el, esc, formatDuration, html, raw, toast } from "../dom.js";
 import { iconButton, iconSvg } from "../icons.js";
 import { t } from "../i18n.js";
+import { jobCardHost } from "../jobs.js";
 import { fillLanguageSelect } from "../languages.js";
 import { on } from "../ws.js";
 
@@ -99,6 +100,7 @@ export async function render(view, _status, params) {
         </div>
       </div>
     </div>
+    <div id="project-jobs" hidden></div>
     <div class="card">
       <table class="filetable">
         <thead><tr>
@@ -229,6 +231,12 @@ export async function render(view, _status, params) {
   el("auto-language").onchange = saveAutoSettings;
 
   unsubscribers.forEach((off) => off());
+  // jobs of the whole transcript (PDF export of all files) have no file row to
+  // live in — they get their own card instead of only a line in the top bar
+  const projectJobs = jobCardHost(el("project-jobs"), {
+    filter: (job) => job.project_id === projectId && job.file_id == null,
+    onCancel: (job) => api.cancelJob(job.id).catch((error) => toast(error.message)),
+  });
   const jobEventsSeen = new Set(); // file_ids updated live while the snapshot loads
   unsubscribers = [
     on("file.update", (fileRow) => {
@@ -237,6 +245,7 @@ export async function render(view, _status, params) {
       renderRows(files);
     }),
     on("job.update", (job) => {
+      projectJobs.apply(job);
       if (job.kind === "export_pdf" && job.status === "done") {
         toast(t("export.done"));
         refreshExports();
@@ -259,6 +268,7 @@ export async function render(view, _status, params) {
   // the jobs snapshot is taken only after subscribing, so no job.update can
   // fall between snapshot and subscription; WS events that arrived first win
   for (const job of await api.listJobs(true).catch(() => [])) {
+    projectJobs.apply(job);
     if (job.file_id != null && !jobEventsSeen.has(job.file_id)) {
       fileJobs.set(job.file_id, job);
     }
@@ -387,8 +397,20 @@ export async function render(view, _status, params) {
     const tr = el("file-rows")?.querySelector(`tr[data-file-id="${job.file_id}"]`);
     if (!tr) return;
     const bar = tr.querySelector(".progressbar > div");
+    // A row only carries a bar while it has a job. AI processing leaves the
+    // file status at "done", so no file.update rebuilds the row — without
+    // this the cleanup of a finished file would run without any bar at all.
+    if (!bar) {
+      const active = job.status === "queued" || job.status === "running";
+      if (active) renderRows(files);
+      return;
+    }
+    if (!fileJobs.has(job.file_id)) {
+      renderRows(files); // the job ended: drop bar and cancel button again
+      return;
+    }
+    bar.style.width = `${job.progress}%`;
     const message = tr.querySelector(".job-message");
-    if (bar) bar.style.width = `${job.progress}%`;
     if (message) message.textContent = job.message ?? "";
   }
 

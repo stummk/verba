@@ -539,7 +539,7 @@ def handle_export_job(
                 raise JobCancelled()
             lo = 90 * index // len(files)
             hi = 90 * (index + 1) // len(files)
-            report(lo, f"File {index + 1}/{len(files)}")
+            report(lo, f"Datei {index + 1}/{len(files)}: {file_row['filename']}")
             docs.extend(
                 _file_documents(
                     file_row, project, languages_for(file_row["id"]), cancel, report, (lo, hi)
@@ -559,7 +559,7 @@ def handle_export_job(
         stem = Path(file_row["rel_path"]).stem
         target = exports_dir(project) / export_name(stem, language, combine)
 
-    report(95, "Generating PDF")
+    report(95, "Erzeuge PDF ...")
     render_pdf(docs, project.get("type_structure") or "", target)
     report(100, f"Export fertig: {target.name}")
 

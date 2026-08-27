@@ -357,6 +357,8 @@ details.advanced .form-grid { margin-top: .25rem; }
 .badge-pending { background: var(--md-surface-container-high); color: var(--md-on-surface-variant); }
 .badge-transcribing { background: var(--md-primary-container); color: var(--md-on-primary-container); }
 .badge-done { background: var(--md-success-container); color: var(--md-success); }
+.badge-running { background: var(--md-primary-container); color: var(--md-on-primary-container); }
+.badge-queued { background: var(--md-surface-container-high); color: var(--md-on-surface-variant); }
 .badge-failed { background: var(--md-error-container); color: var(--md-error); }
 
 /* progress */
@@ -1078,3 +1080,8 @@ dialog textarea {
   .wizard-step-label { display: none; }
 }
 .hint.warn, .small.warn { color: var(--md-error); }
+
+/* ── background jobs without a row of their own ───────────────────── */
+.job-card { margin-bottom: .6rem; }
+.job-card-head { display: flex; align-items: center; gap: .5rem; margin-bottom: .4rem; }
+.job-card .job-message { margin-top: .35rem; }

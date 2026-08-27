@@ -47,6 +47,10 @@ DEFAULT_PRIORITIES = {"transcribe_range": 1, "audio_edit": 1}
 
 LANES = ("main", "llm")
 
+# The UI has to say *which file* a step is running on, so every job row is read
+# with its file name attached instead of leaving the frontend to look it up.
+JOB_SELECT = "SELECT j.*, f.filename FROM jobs j LEFT JOIN files f ON f.id = j.file_id"
+
 
 def lane_for_kind(kind: str) -> str:
     return "llm" if kind in LLM_KINDS else "main"
@@ -146,14 +150,14 @@ class JobQueue:
 
     def get(self, job_id: int) -> dict[str, Any] | None:
         with db.get_conn() as conn:
-            row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+            row = conn.execute(f"{JOB_SELECT} WHERE j.id = ?", (job_id,)).fetchone()
         return db.row_to_dict(row)
 
     def list_jobs(self, active_only: bool = False, limit: int = 100) -> list[dict[str, Any]]:
-        query = "SELECT * FROM jobs"
+        query = JOB_SELECT
         if active_only:
-            query += " WHERE status IN ('queued', 'running')"
-        query += " ORDER BY id DESC LIMIT ?"
+            query += " WHERE j.status IN ('queued', 'running')"
+        query += " ORDER BY j.id DESC LIMIT ?"
         with db.get_conn() as conn:
             rows = conn.execute(query, (limit,)).fetchall()
         return db.rows_to_dicts(rows)
@@ -164,8 +168,8 @@ class JobQueue:
         with db.get_conn() as conn:
             for lane in LANES:
                 rows = conn.execute(
-                    "SELECT * FROM jobs WHERE status IN ('queued', 'running') "
-                    "ORDER BY (status = 'running') DESC, priority DESC, id ASC"
+                    f"{JOB_SELECT} WHERE j.status IN ('queued', 'running') "
+                    "ORDER BY (j.status = 'running') DESC, j.priority DESC, j.id ASC"
                 ).fetchall()
                 jobs = [dict(r) for r in rows if lane_for_kind(r["kind"]) == lane]
                 for position, job in enumerate(jobs):

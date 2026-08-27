@@ -3,6 +3,7 @@
 import { api } from "./api.js";
 import { el } from "./dom.js";
 import { initI18n, t } from "./i18n.js";
+import { isActive, jobStatusLine } from "./jobs.js";
 import * as ws from "./ws.js";
 import * as dashboard from "./views/dashboard.js";
 import * as docs from "./views/docs.js";
@@ -23,6 +24,14 @@ const routes = {
   setup: { render: setup.render, title: "setup.title", fab: false },
   docs: { render: docs.render, title: "docs.title", fab: false },
 };
+
+// How many jobs the status line names before it summarises the rest.
+const MAX_STATUS_JOBS = 2;
+
+function byRunningFirst(a, b) {
+  if (a.status !== b.status) return a.status === "running" ? -1 : 1;
+  return a.id - b.id;
+}
 
 function parseHash() {
   const segments = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
@@ -102,27 +111,53 @@ function bindShell() {
     if (online && wasOffline) navigate(); // server is back — re-render the view
     wasOffline = !online;
   });
+  // The status line has three sources — setup, jobs, engines — which used to
+  // overwrite each other. They are kept apart and composed on every change,
+  // so two lanes running in parallel are both visible.
+  const runningJobs = new Map();
+  let setupLine = "";
+  let engineLine = "";
+
+  function renderStatus() {
+    const parts = [];
+    if (setupLine) parts.push(setupLine);
+    const jobs = [...runningJobs.values()].sort(byRunningFirst);
+    for (const job of jobs.slice(0, MAX_STATUS_JOBS)) parts.push(jobStatusLine(job));
+    if (jobs.length > MAX_STATUS_JOBS) {
+      parts.push(t("app.jobsMore", { count: jobs.length - MAX_STATUS_JOBS }));
+    }
+    // an engine message (loading a model, LLM busy) only matters while no job
+    // is telling the more specific story
+    if (!parts.length && engineLine) parts.push(engineLine);
+    const line = parts.join("   ·   ");
+    engineStatus.textContent = line;
+    engineStatus.title = line; // the bar truncates; the tooltip has it all
+  }
+
   ws.on("setup.progress", (progress) => {
-    engineStatus.textContent = progress.running
+    setupLine = progress.running
       ? t("app.setupProgress", {
         step: progress.step,
         detail: progress.detail || "",
         percent: progress.percent,
       })
       : "";
+    renderStatus();
   });
   ws.on("engine.status", ({ engine, state, detail }) => {
-    engineStatus.textContent = state === "idle" ? "" : `${engine}: ${detail || state}`;
+    engineLine = state === "idle" ? "" : `${t(`engine.${engine}`)}: ${detail || state}`;
+    renderStatus();
   });
   ws.on("job.update", (job) => {
-    if (job.status === "running") {
-      engineStatus.textContent = t("app.jobProgress", {
-        id: job.id, kind: job.kind, percent: job.progress,
-      });
-    } else {
-      engineStatus.textContent = "";
-    }
+    if (isActive(job)) runningJobs.set(job.id, job);
+    else runningJobs.delete(job.id);
+    renderStatus();
   });
+  // jobs that were already running when this tab opened (or a reload)
+  api.listJobs(true).then((jobs) => {
+    for (const job of jobs) runningJobs.set(job.id, job);
+    renderStatus();
+  }).catch(() => {});
 
   // browser-level offline/online transitions re-render the current view
   window.addEventListener("online", navigate);
