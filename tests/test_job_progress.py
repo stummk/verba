@@ -93,8 +93,11 @@ def test_the_listing_and_the_queue_overview_agree(env):
 def test_the_api_exposes_the_name(client, env):
     _, file_row = make_file(env)
     job_queue.enqueue("transcribe", payload={}, file_id=file_row["id"])
-    [job] = client.get("/api/jobs", params={"active": True}).json()
+    # the full listing, not the active one: with workers running the stubbed
+    # handler may well be finished before this assertion
+    [job] = client.get("/api/jobs").json()
     assert job["filename"] == "lied.mp3"
+    assert job["kind"] == "transcribe"
 
 
 # ── progress messages ─────────────────────────────────────────────────
@@ -161,12 +164,14 @@ def test_no_english_left_in_the_progress_messages():
     """These strings are shown in the web UI, so they belong in German."""
     from pathlib import Path
 
+    # relative to this file, not to the working directory pytest was called in
+    backend = Path(__file__).resolve().parents[1] / "backend" / "verba"
     english = re.compile(
         r'report\(\s*[^,]+,\s*f?"[^"]*\b(File|Processing|Transcription|Indexing|Generating'
         r"|Reindexed|is running|New file|unavailable)\b",
     )
     offenders = []
-    for path in Path("backend/verba").rglob("*.py"):
+    for path in backend.rglob("*.py"):
         for match in english.finditer(path.read_text(encoding="utf-8")):
             offenders.append(f"{path.name}: {match.group(0)[-60:]}")
     assert not offenders, offenders

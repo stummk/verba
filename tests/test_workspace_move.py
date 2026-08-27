@@ -8,6 +8,7 @@ refusal and that nothing is left behind.
 
 from __future__ import annotations
 
+import os
 import shutil
 import threading
 from pathlib import Path
@@ -54,11 +55,27 @@ def test_a_relative_path_is_stored_absolute():
     assert Path(stored).is_absolute()
 
 
-def test_quotes_and_variables_are_expanded(monkeypatch):
-    monkeypatch.setenv("VERBA_TEST_ROOT", str(Path.home() / "verba-root"))
-    quoted = '"%VERBA_TEST_ROOT%"'  # the Windows explorer copies paths with quotes
-    settings = config.Settings.model_validate({"general": {"workspaces_dir": quoted}})
+def test_quotes_from_a_pasted_path_are_stripped(tmp_path):
+    """The Windows explorer copies paths with quotes around them."""
+    settings = config.Settings.model_validate({"general": {"workspaces_dir": f'"{tmp_path}"'}})
+    assert settings.general.workspaces_dir == str(tmp_path)
+
+
+def test_a_home_shortcut_is_expanded():
+    settings = config.Settings.model_validate({"general": {"workspaces_dir": "~/verba-root"}})
     assert settings.general.workspaces_dir == str(Path.home() / "verba-root")
+
+
+def test_an_environment_variable_is_expanded(monkeypatch):
+    """Each platform with its own syntax — %VAR% is not expanded on POSIX,
+    $VAR is not expanded on Windows."""
+    target = Path.home() / "verba-root"
+    monkeypatch.setenv("VERBA_TEST_ROOT", str(target))
+    reference = "%VERBA_TEST_ROOT%" if os.name == "nt" else "$VERBA_TEST_ROOT"
+
+    settings = config.Settings.model_validate({"general": {"workspaces_dir": reference}})
+
+    assert settings.general.workspaces_dir == str(target)
 
 
 def test_an_empty_path_keeps_the_default():
