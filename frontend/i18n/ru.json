@@ -155,7 +155,6 @@
   "settings.llmTest": "Проверить соединение",
   "settings.llmTestOk": "Соединение ок — модели: {models}",
   "settings.llmTestFail": "Ошибка соединения: {error}",
-  "llmModels.hardware": "Система: {ram} ГБ ОЗУ, {gpu} — рекомендация: {recommended}",
   "llmModels.noGpu": "нет GPU NVIDIA",
   "llmModels.installBinary": "Установить",
   "llmModels.installStarted": "Загружается llama.cpp …",
@@ -337,5 +336,16 @@
   "engine.embeddings": "Эмбеддинги",
   "dashboard.running": "{count} в работе",
   "status.queued": "в очереди",
-  "app.jobQueuedPlain": "{step} — в очереди"
+  "app.jobQueuedPlain": "{step} — в очереди",
+  "models.fitOk": "подходит",
+  "models.fitTight": "с ограничениями",
+  "models.fitNo": "слишком большая",
+  "models.fitUnknown": "память неизвестна",
+  "models.hardware": "Эта система: {ram} ГБ ОЗУ, {gpu}",
+  "models.suggested": "Рекомендация: {model}",
+  "models.fitHint": "Оценка относится к этой машине — модели работают локально.",
+  "settings.modelFit": "На этой системе: {message}",
+  "settings.endpointLocalGpu": "Этот эндпоинт работает на этом компьютере ({ram} ГБ ОЗУ, {gpu}). Свободно сейчас: модели примерно до {vramBudget} ГБ на GPU или {ramBudget} ГБ в ОЗУ — это лишь оценка: этим сервером Verba не управляет.",
+  "settings.endpointLocal": "Этот эндпоинт работает на этом компьютере ({ram} ГБ ОЗУ, {gpu}). Свободно сейчас: модели примерно до {ramBudget} ГБ — это лишь оценка: этим сервером Verba не управляет.",
+  "models.hardwareRam": "Эта система: {ram} ГБ ОЗУ — поиск считает на процессоре."
 }

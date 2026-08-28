@@ -55,34 +55,6 @@ def test_system_info_shape(client):
     assert isinstance(data["ffmpeg"], bool)
 
 
-def test_gpu_info_parses_nvidia_smi(monkeypatch):
-    class FakeResult:
-        returncode = 0
-        stdout = "NVIDIA RTX A500 Laptop GPU, 4096, 3210\n"
-
-    monkeypatch.setattr(setup_check.subprocess, "run", lambda *a, **k: FakeResult())
-    info = setup_check._gpu_info()
-    assert info == {
-        "name": "NVIDIA RTX A500 Laptop GPU",
-        "vram_total_mb": 4096,
-        "vram_free_mb": 3210,
-    }
-
-
-def test_gpu_info_without_nvidia_smi(monkeypatch):
-    def raise_missing(*args, **kwargs):
-        raise OSError("not found")
-
-    monkeypatch.setattr(setup_check.subprocess, "run", raise_missing)
-    info = setup_check._gpu_info()
-    assert info == {"name": "", "vram_total_mb": 0, "vram_free_mb": 0}
-
-
-def test_memory_probe_returns_plausible_values():
-    total, available = setup_check._memory_mb()
-    assert total >= available >= 0
-
-
 def test_setup_run_endpoint_reports_started(client, monkeypatch):
     calls = {}
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from verba import config, db
-from verba.services import vectorstore
+from verba.services import hardware, vectorstore
 
 
 @pytest.fixture(autouse=True)
@@ -19,6 +19,28 @@ def clean_settings():
     config.save_settings(config.Settings())
     db.init_db()
     vectorstore.unload_model()
+
+
+@pytest.fixture(autouse=True)
+def enough_memory(monkeypatch):
+    """Loading a model is guarded by a memory check (services/hardware.py).
+
+    These tests are about paths and prefixes, not about hardware — so they run
+    against a fixed generous machine instead of whatever RAM the CI runner or
+    the developer's laptop happens to have free. The check itself is covered in
+    tests/test_hardware_fit.py.
+    """
+    monkeypatch.setattr(
+        hardware,
+        "probe",
+        lambda **kwargs: {
+            "ram_total_mb": 32768,
+            "ram_available_mb": 24576,
+            "gpu_name": "",
+            "vram_total_mb": 0,
+            "vram_free_mb": 0,
+        },
+    )
 
 
 # ── the catalog ───────────────────────────────────────────────────────

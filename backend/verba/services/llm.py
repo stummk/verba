@@ -64,9 +64,13 @@ def _resolve_endpoint(settings: config.Settings) -> tuple[str, str, str]:
             raise LLMNotConfigured("LLM endpoint (base URL) is not configured")
         return settings.llm.base_url.rstrip("/"), settings.llm.api_key, settings.llm.model
     if settings.llm.mode == "local":
-        from . import llamacpp
+        from . import hardware, llamacpp
 
-        base_url = llamacpp.ensure_running()
+        try:
+            base_url = llamacpp.ensure_running()
+        except hardware.InsufficientMemory as exc:
+            # not a bug but a machine limit: the caller shows this verbatim
+            raise LLMError(str(exc)) from exc
         return base_url.rstrip("/"), "", settings.llm.model or llamacpp.active_model_name()
     raise LLMNotConfigured("No LLM configured (mode: none)")
 

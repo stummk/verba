@@ -292,6 +292,33 @@ thumb: `small` is a good start; `large-v3` gives the best quality but needs
 much more power. Custom CTranslate2 models can be placed as folders in the
 models directory (subfolders are detected) and appear in the same list.
 
+**Does the model fit this machine?** Next to its status, every row carries a
+verdict for **this** system — Whisper always runs locally, so the numbers are
+your own RAM and your own graphics memory:
+
+- **suitable** (green) — enough free memory, the model runs comfortably
+- **limited** (orange) — it runs, but with a caveat: either the memory is
+  nearly full, or the model does not fit the graphics memory and therefore runs
+  on the CPU (noticeably slower)
+- **too large** (red) — this system does not have the memory; the hint names
+  the largest model that does fit here
+
+Hovering the verdict shows the whole sentence with the numbers (e.g. "needs
+about 2.3 GB, 3.9 GB of VRAM free"). The same recommendation for the machine as
+a whole stands above the list, and in the setup wizard (step 3) right below the
+model field.
+
+**When the memory really is not enough.** Verba does not crash:
+
+- A model that fits nowhere is refused **before** loading — the job fails with
+  a message, the application keeps running.
+- If it does not fit the graphics memory, the GPU attempt is skipped and the
+  model is loaded on the CPU straight away.
+- If the graphics memory only fills up mid-transcription, Verba switches to the
+  CPU and says so in the progress line.
+- If the RAM is full, the job ends with a message naming the free and the
+  required gigabytes.
+
 **A model directory of your own** (e.g. an existing collection under
 `M:\Modelle\whisper`) is entered under **Settings → Transcription** and takes
 effect immediately, without a restart: Verba reads the directory from disk on
@@ -324,6 +351,14 @@ only its fields are shown:
   OpenAI, Ollama, LM Studio, vLLM and others); "Test connection" probes the
   endpoint and lists available models.
 
+**An endpoint on your own machine.** If the base URL points at `localhost` or
+`127.0.0.1` (typical for Ollama or LM Studio), an **estimate** appears below the
+field: how much memory is free here right now and which model size is realistic
+with it. Deliberately an estimate and not a verdict like the ones for Verba's own
+models — which model that server loads and whether it uses the GPU is its own
+decision; Verba does not manage it. For an address on the network or in the
+cloud nothing is shown, because that is someone else's hardware.
+
 **Which local models?** Verba ships a vetted list of multilingual instruct
 models, ordered by the hardware they need:
 
@@ -337,7 +372,12 @@ models, ordered by the hardware they need:
 
 The **star** marks the recommendation for your machine: Verba looks at the
 VRAM (or half the RAM without a GPU) and suggests the largest fitting model of
-the Qwen3 line. Nothing is decided automatically though — you download the
+the Qwen3 line. On top of that, **every** row carries the same verdict as the
+Whisper models (suitable / limited / too large) — it applies to local models
+only, an OpenAI-compatible endpoint runs on someone else's hardware and is not
+rated. A model that does not fit the graphics memory stays in RAM instead of
+killing the server on startup; a model that fits nowhere means the server is
+not started at all, and says why. Nothing is decided automatically though — you download the
 model yourself and can pick another one at any time; the **local model** field
 shows which one the server uses.
 
@@ -420,6 +460,14 @@ CPU-friendly:
 | Multilingual E5 small | approx. 0.5 GB | 100 | balanced, a bit more precise |
 | mpnet multilingual | approx. 1.0 GB | 50 | thorough, slower |
 | BGE-M3 | approx. 2.3 GB | 100 | best quality, noticeably slower |
+
+**Does the model fit this machine?** As with the Whisper models, every entry
+carries a verdict for this system (suitable / limited / too large), and the full
+sentence with the numbers stands below the picker. Only the **RAM** is counted —
+the search always encodes on the CPU, so the graphics memory plays no part here.
+If the chosen model does not fit, the message names one that does; and a model
+that cannot fit is refused before loading instead of letting the index run fail
+mid-allocation.
 
 **BGE-M3** is the pick when quality matters more than speed — it is the only
 model in the list whose download (approx. 2.3 GB) and CPU time you notice, and

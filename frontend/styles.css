@@ -24,6 +24,8 @@
   --md-error-container: #ffdad6;
   --md-success: #256a4a;
   --md-success-container: #cdeeda;
+  --md-warning: #7a4b00;
+  --md-warning-container: #ffdfab;
   --md-inverse-surface: #303036;
   --md-inverse-on-surface: #f2f0f7;
   --md-scrim: rgba(0, 0, 0, 0.45);
@@ -66,6 +68,8 @@
     --md-error-container: #93000a;
     --md-success: #8fd6ae;
     --md-success-container: #1f5138;
+    --md-warning: #ffd08a;
+    --md-warning-container: #5a3a00;
     --md-inverse-surface: #e4e1e9;
     --md-inverse-on-surface: #303036;
     --elev-1: 0 .0625rem .125rem rgba(0,0,0,.4);
@@ -360,6 +364,16 @@ details.advanced .form-grid { margin-top: .25rem; }
 .badge-running { background: var(--md-primary-container); color: var(--md-on-primary-container); }
 .badge-queued { background: var(--md-surface-container-high); color: var(--md-on-surface-variant); }
 .badge-failed { background: var(--md-error-container); color: var(--md-error); }
+/* model suitability: does this machine have the memory for it? */
+.badge-fit-ok { background: var(--md-success-container); color: var(--md-success); }
+.badge-fit-tight { background: var(--md-warning-container); color: var(--md-warning); }
+.badge-fit-no { background: var(--md-error-container); color: var(--md-error); }
+.badge-fit-unknown { background: var(--md-surface-container-high); color: var(--md-on-surface-variant); }
+/* the same verdict as running text (wizard, hints) */
+.fit-ok { color: var(--md-success); }
+.fit-tight { color: var(--md-warning); }
+.fit-no { color: var(--md-error); }
+.fit-unknown { color: var(--md-on-surface-variant); }
 
 /* progress */
 .progressbar {

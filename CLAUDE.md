@@ -43,8 +43,13 @@ python -m ruff format --check backend/ tests/ run.py
     every job row is read through `JOB_SELECT`, which joins the file name so the
     UI can say *which* file a step is running on
   - `services/` — workspace (project folders, import, moving the workspaces
-    root incl. DB repointing via job kind `move_workspace`), whisper (model discovery,
-    CPU fallback for broken CUDA, range transcription), transcripts
+    root incl. DB repointing via job kind `move_workspace`),
+    hardware (the single RAM/VRAM probe — `setup_check`, whisper and llamacpp all
+    read it; per-model memory verdicts `ok`/`tight`/`no` in German for local
+    engines only, plus the OOM classifier that turns an allocation failure into
+    a message and a CPU retry), whisper (model discovery,
+    CPU fallback for broken CUDA and for a full VRAM, preflight refusal of a
+    model that fits nowhere, range transcription), transcripts
     (segment CRUD + workspace JSON sync), audio (ffmpeg cutting), media (duration probe),
     llm (OpenAI-compatible client), llamacpp (local LLM: hardware probe,
     binary/GGUF download into the configured directory — files already there

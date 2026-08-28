@@ -155,7 +155,6 @@
   "settings.llmTest": "Verbindung testen",
   "settings.llmTestOk": "Verbindung ok — Modelle: {models}",
   "settings.llmTestFail": "Verbindung fehlgeschlagen: {error}",
-  "llmModels.hardware": "System: {ram} GB RAM, {gpu} — Empfehlung: {recommended}",
   "llmModels.noGpu": "keine NVIDIA-GPU",
   "llmModels.installBinary": "Installieren",
   "llmModels.installStarted": "llama.cpp wird heruntergeladen …",
@@ -337,5 +336,16 @@
   "engine.embeddings": "Embeddings",
   "dashboard.running": "{count} aktiv",
   "status.queued": "wartet",
-  "app.jobQueuedPlain": "{step} — wartet"
+  "app.jobQueuedPlain": "{step} — wartet",
+  "models.fitOk": "geeignet",
+  "models.fitTight": "eingeschränkt",
+  "models.fitNo": "zu groß",
+  "models.fitUnknown": "Speicher unbekannt",
+  "models.hardware": "Dieses System: {ram} GB RAM, {gpu}",
+  "models.suggested": "Empfehlung: {model}",
+  "models.fitHint": "Die Angabe gilt für dieses System — Modelle laufen hier lokal.",
+  "settings.modelFit": "Für dieses System: {message}",
+  "settings.endpointLocalGpu": "Dieser Endpunkt läuft auf diesem Rechner ({ram} GB RAM, {gpu}). Aktuell frei: Modelle bis ca. {vramBudget} GB auf der GPU oder {ramBudget} GB im Arbeitsspeicher — nur eine Einschätzung: diesen Server verwaltet Verba nicht.",
+  "settings.endpointLocal": "Dieser Endpunkt läuft auf diesem Rechner ({ram} GB RAM, {gpu}). Aktuell frei: Modelle bis ca. {ramBudget} GB — nur eine Einschätzung: diesen Server verwaltet Verba nicht.",
+  "models.hardwareRam": "Dieses System: {ram} GB RAM — die Suche rechnet auf der CPU."
 }

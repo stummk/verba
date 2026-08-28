@@ -3,6 +3,7 @@
 import { api } from "../api.js";
 import { el, html, toast } from "../dom.js";
 import { fillEmbeddingSelect } from "../embeddings.js";
+import { applyFitHint, endpointEstimate, fitBadge, hardwareLine, isLocalEndpoint } from "../hardware.js";
 import { iconButton } from "../icons.js";
 import { SUPPORTED_LANGUAGES, currentLanguage, t } from "../i18n.js";
 import { jobCardHost } from "../jobs.js";
@@ -83,7 +84,9 @@ export async function render(view) {
         </div>
         <h3 class="subhead">${t("models.title")}</h3>
         <p class="muted small">${t("models.intro")}</p>
+        <p class="small" id="whisper-hardware"></p>
         <div id="model-list-host"></div>
+        <p class="hint">${t("models.fitHint")}</p>
       </div>
 
       <div class="card" id="card-ai">
@@ -127,6 +130,7 @@ export async function render(view) {
               <label for="llm-base-url">${t("settings.baseUrl")}</label>
               <input id="llm-base-url" value="${settings.llm.base_url}"
                      placeholder="https://api.openai.com/v1">
+              <p class="small" id="llm-endpoint-estimate"></p>
             </div>
             <div>
               <label for="llm-api-key">${t("settings.apiKey")}</label>
@@ -151,12 +155,14 @@ export async function render(view) {
         <h2>${t("settings.searchTitle")}</h2>
         <p class="muted small">${t("settings.searchIntro")}</p>
         <p class="small" id="search-status"></p>
+        <p class="small" id="search-hardware"></p>
         <div id="search-jobs" hidden></div>
         <div class="form-grid">
           <div>
             <label for="search-embedding-model">${t("settings.embeddingModel")}</label>
             <select id="search-embedding-model"></select>
             <p class="hint">${t("settings.embeddingModelHint")}</p>
+            <p class="small" id="search-embedding-fit"></p>
           </div>
           <div>
             <label for="search-embeddings-dir">${t("settings.embeddingsDir")}</label>
@@ -458,6 +464,14 @@ async function refreshModels() {
     datalist.replaceChildren(...names.map((name) => new Option("", name)));
   }
 
+  const hardware = el("whisper-hardware");
+  if (hardware && models.hardware) {
+    hardware.textContent = [
+      hardwareLine(models.hardware),
+      models.suggested ? t("models.suggested", { model: models.suggested }) : "",
+    ].filter(Boolean).join(" · ");
+  }
+
   const host = el("model-list-host");
   if (host) {
     const installed = new Set([...(models.installed ?? []), ...local]);
@@ -466,11 +480,12 @@ async function refreshModels() {
       installed: installed.has(name),
       downloading: downloading.has(name),
       custom: !builtin.includes(name),
+      fit: models.models?.[name],
     })));
   }
 }
 
-function modelRow(name, { installed, downloading, custom }) {
+function modelRow(name, { installed, downloading, custom, fit }) {
   const row = document.createElement("div");
   row.className = "model-row";
   row.append(Object.assign(document.createElement("span"), {
@@ -479,6 +494,9 @@ function modelRow(name, { installed, downloading, custom }) {
   const spacer = document.createElement("span");
   spacer.className = "spacer";
   row.append(spacer);
+
+  const fitting = fitBadge(fit);
+  if (fitting) row.append(fitting);
 
   if (downloading) {
     row.append(Object.assign(document.createElement("span"), {
@@ -523,16 +541,11 @@ async function refreshLlmSection() {
 
   const hardware = el("llm-hardware");
   if (hardware) {
-    const hw = status.hardware;
-    const gpu = hw.gpu_name
-      ? `${hw.gpu_name} (${Math.round(hw.vram_mb / 1024)} GB VRAM)`
-      : t("llmModels.noGpu");
-    hardware.textContent = t("llmModels.hardware", {
-      ram: Math.round(hw.ram_mb / 1024),
-      gpu,
-      recommended: status.recommended.label,
-    });
+    hardware.textContent = `${hardwareLine(status.hardware)} · ${
+      t("models.suggested", { model: status.recommended.label })}`;
   }
+
+  bindEndpointEstimate(status);
 
   const binaryHost = el("llm-binary");
   if (binaryHost) {
@@ -587,6 +600,8 @@ async function refreshLlmSection() {
         name.title = t("llmModels.recommended");
       }
       row.append(name, Object.assign(document.createElement("span"), { className: "spacer" }));
+      const fitting = fitBadge(entry.fit);
+      if (fitting) row.append(fitting);
       if (installedFiles.has(entry.file)) {
         row.append(Object.assign(document.createElement("span"), {
           className: "badge badge-done", textContent: t("models.installed"),
@@ -631,6 +646,23 @@ async function refreshLlmSection() {
   }
 }
 
+// An endpoint on 127.0.0.1 runs on this machine, so its memory is ours — but
+// the server is somebody else's program: what it loads and whether it uses the
+// GPU is unknown here. Hence an estimate that appears only for a local URL,
+// and no verdict badge.
+function bindEndpointEstimate(status) {
+  const field = el("llm-base-url");
+  const hint = el("llm-endpoint-estimate");
+  if (!field || !hint) return;
+  const show = () => {
+    hint.textContent = isLocalEndpoint(field.value.trim())
+      ? endpointEstimate(status.hardware, status.budget)
+      : "";
+  };
+  field.addEventListener("input", show);
+  show();
+}
+
 function updateLlmDownloadProgress(info) {
   const node = document.querySelector(`[data-llm-progress="${info.name}"]`);
   if (!node) return;
@@ -646,7 +678,9 @@ async function refreshEmbeddingModels(selected) {
   if (!select) return;
   try {
     const catalog = await api.searchModels();
-    fillEmbeddingSelect(select, catalog, selected);
+    fillEmbeddingSelect(select, catalog, selected, { hint: el("search-embedding-fit") });
+    const hardware = el("search-hardware");
+    if (hardware) hardware.textContent = hardwareLine(catalog.hardware, { cpuOnly: true });
     el("search-embedding-cache").textContent = t("settings.embeddingCacheHint", {
       path: catalog.cache_dir,
     });

@@ -5,8 +5,9 @@ One-click local setup, mirroring the ffmpeg approach:
 - GGUF models are downloaded into the configured models directory
   (default <data>/models/llm) — any .gguf already lying there is used from
   there, so an existing collection needs no second download
-- a hardware probe (RAM/VRAM) recommends a model + quantisation; the choice
-  itself stays with the user
+- a hardware probe (RAM/VRAM) recommends a model + quantisation and rates
+  every catalog entry ("runs / tight / too large", see services/hardware.py);
+  the choice itself stays with the user
 - `llama-server` runs as a managed subprocess speaking the OpenAI protocol,
   so the normal LLM client (services/llm.py) needs no special casing.
 
@@ -15,10 +16,8 @@ Progress is reported via "model.download" and "engine.status" events.
 
 from __future__ import annotations
 
-import ctypes
 import logging
 import platform
-import re
 import subprocess
 import threading
 import time
@@ -30,6 +29,7 @@ import httpx
 
 from .. import config
 from ..events import hub
+from . import hardware
 
 logger = logging.getLogger(__name__)
 
@@ -122,71 +122,37 @@ def server_binary() -> Path | None:
     return None
 
 
-# ── hardware probe ────────────────────────────────────────────────────
-
-
-def _total_ram_mb() -> int:
-    system = platform.system()
-    try:
-        if system == "Windows":
-
-            class MemoryStatusEx(ctypes.Structure):
-                _fields_ = [
-                    ("dwLength", ctypes.c_ulong),
-                    ("dwMemoryLoad", ctypes.c_ulong),
-                    ("ullTotalPhys", ctypes.c_ulonglong),
-                    ("ullAvailPhys", ctypes.c_ulonglong),
-                    ("ullTotalPageFile", ctypes.c_ulonglong),
-                    ("ullAvailPageFile", ctypes.c_ulonglong),
-                    ("ullTotalVirtual", ctypes.c_ulonglong),
-                    ("ullAvailVirtual", ctypes.c_ulonglong),
-                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
-                ]
-
-            status = MemoryStatusEx()
-            status.dwLength = ctypes.sizeof(MemoryStatusEx)
-            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status))
-            return int(status.ullTotalPhys // (1024 * 1024))
-        meminfo = Path("/proc/meminfo").read_text(encoding="utf-8")
-        match = re.search(r"MemTotal:\s+(\d+) kB", meminfo)
-        return int(match.group(1)) // 1024 if match else 0
-    except (OSError, AttributeError, ValueError):
-        return 0
-
-
-def _gpu_vram_mb() -> tuple[int, str]:
-    try:
-        out = subprocess.run(
-            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if out.returncode == 0 and out.stdout.strip():
-            name, vram = out.stdout.strip().splitlines()[0].rsplit(",", 1)
-            return int(vram.strip()), name.strip()
-    except (OSError, subprocess.TimeoutExpired, ValueError):
-        pass
-    return 0, ""
+# ── hardware probe & recommendation ───────────────────────────────────
 
 
 def probe_hardware() -> dict[str, Any]:
-    ram_mb = _total_ram_mb()
-    vram_mb, gpu_name = _gpu_vram_mb()
-    return {"ram_mb": ram_mb, "vram_mb": vram_mb, "gpu_name": gpu_name}
+    """RAM/VRAM of this machine — see services/hardware.py."""
+    return hardware.probe()
 
 
-def recommend_model(hardware: dict[str, Any] | None = None) -> dict[str, Any]:
+def model_needs_mb(entry: dict[str, Any]) -> int:
+    """Memory this catalog entry needs while serving (weights + context)."""
+    return int(entry.get("min_free_mb") or hardware.gguf_requirement(entry.get("size_mb", 0)))
+
+
+def recommend_model(hw: dict[str, Any] | None = None) -> dict[str, Any]:
     """Largest fitting catalog model for the available VRAM (GPU) or half the RAM.
 
     Only `recommended` entries are suggested, so adding an alternative of the
-    same size to the catalog does not silently change what new users get.
+    same size to the catalog does not silently change what new users get. This
+    looks at the *total* memory (what the machine can do); whether it fits
+    right now is `fit_for()`.
     """
-    hw = hardware or probe_hardware()
-    budget_mb = hw["vram_mb"] if hw["vram_mb"] > 0 else hw["ram_mb"] // 2
+    hw = hw or probe_hardware()
+    budget_mb = hw["vram_total_mb"] if hw["vram_total_mb"] > 0 else hw["ram_total_mb"] // 2
     fitting = [m for m in MODEL_CATALOG if m["min_free_mb"] <= budget_mb]
     preferred = [m for m in fitting if m.get("recommended")]
     return (preferred or fitting or [MODEL_CATALOG[0]])[-1]
+
+
+def fit_for(entry: dict[str, Any], hw: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Verdict for one catalog entry: does this system run it, and where?"""
+    return hardware.check_llm_model(model_needs_mb(entry), hw=hw)
 
 
 # ── binary installation ───────────────────────────────────────────────
@@ -194,9 +160,10 @@ def recommend_model(hardware: dict[str, Any] | None = None) -> dict[str, Any]:
 
 def _pick_release_asset(assets: list[dict[str, Any]]) -> dict[str, Any] | None:
     system = platform.system()
-    vram_mb, _ = _gpu_vram_mb()
     if system == "Windows":
-        patterns = ["bin-win-cuda", "bin-win-cpu-x64"] if vram_mb else ["bin-win-cpu-x64"]
+        patterns = (
+            ["bin-win-cuda", "bin-win-cpu-x64"] if hardware.has_gpu() else ["bin-win-cpu-x64"]
+        )
     elif system == "Linux":
         patterns = ["bin-ubuntu-x64"]
     else:
@@ -399,8 +366,45 @@ def _pick_model_file() -> Path:
     return llm_models_dir() / installed[0]["file"]
 
 
+def file_needs_mb(model_file: Path) -> int:
+    """Memory the GGUF on disk needs — from the catalog, else from its size."""
+    entry = next((m for m in MODEL_CATALOG if m["file"] == model_file.name), None)
+    if entry is not None:
+        return model_needs_mb(entry)
+    try:
+        size_mb = model_file.stat().st_size // (1024 * 1024)
+    except OSError:
+        size_mb = 0
+    return hardware.gguf_requirement(size_mb)
+
+
+def _drain_stderr(process: subprocess.Popen) -> list[str]:
+    """Keep the last llama-server lines: they say *why* it died.
+
+    Without this the output went to DEVNULL and an OOM abort was
+    indistinguishable from any other crash.
+    """
+    tail: list[str] = []
+    if process.stderr is None:
+        return tail
+
+    def reader() -> None:
+        assert process.stderr is not None
+        for line in process.stderr:
+            tail.append(line.rstrip())
+            del tail[:-40]
+
+    threading.Thread(target=reader, daemon=True, name="llama-stderr").start()
+    return tail
+
+
 def ensure_running() -> str:
-    """Start llama-server if needed; returns the OpenAI-compatible base URL."""
+    """Start llama-server if needed; returns the OpenAI-compatible base URL.
+
+    Refuses before starting when the model cannot fit anywhere, and keeps the
+    layers in RAM when they do not fit into the free VRAM — offloading a model
+    that is too large is what made llama-server die on startup.
+    """
     global _server_process, _server_model
     with _server_lock:
         base_url = f"http://127.0.0.1:{SERVER_PORT}/v1"
@@ -412,7 +416,22 @@ def ensure_running() -> str:
             raise RuntimeError("llama.cpp ist nicht installiert — in den Einstellungen einrichten")
         model_file = _pick_model_file()
 
-        vram_mb, _ = _gpu_vram_mb()
+        needs_mb = file_needs_mb(model_file)
+        hw = hardware.probe(fresh=True)
+        verdict = hardware.check_llm_model(needs_mb, hw=hw)
+        if verdict["level"] == hardware.NO:
+            raise hardware.InsufficientMemory(
+                f"Das Modell '{model_file.name}' passt nicht in den Speicher. {verdict['message']}"
+            )
+        on_gpu = hardware.offload_to_gpu(needs_mb, hw)
+        if hardware.has_gpu(hw) and not on_gpu:
+            logger.info(
+                "%s (%d MB) does not fit the free VRAM (%d MB) — keeping it in RAM",
+                model_file.name,
+                needs_mb,
+                hw["vram_free_mb"],
+            )
+
         cmd = [
             str(binary),
             "-m",
@@ -424,7 +443,7 @@ def ensure_running() -> str:
             "--ctx-size",
             "16384",
             "-ngl",
-            "999" if vram_mb else "0",
+            "999" if on_gpu else "0",
         ]
         logger.info("starting llama-server: %s", " ".join(cmd))
         hub.publish(
@@ -435,15 +454,18 @@ def ensure_running() -> str:
             cmd,
             cwd=str(binary.parent),
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            errors="replace",
         )
         _server_model = model_file.stem
+        tail = _drain_stderr(_server_process)
 
         deadline = time.monotonic() + SERVER_STARTUP_TIMEOUT_S
         while time.monotonic() < deadline:
             if _server_process.poll() is not None:
                 _server_process = None
-                raise RuntimeError("llama-server wurde unerwartet beendet")
+                raise RuntimeError(_startup_failure(model_file, tail, on_gpu))
             try:
                 response = httpx.get(f"http://127.0.0.1:{SERVER_PORT}/health", timeout=2)
                 if response.status_code == 200:
@@ -458,6 +480,21 @@ def ensure_running() -> str:
 
         stop_server()
         raise RuntimeError("llama-server wurde nicht rechtzeitig bereit")
+
+
+def _startup_failure(model_file: Path, tail: list[str], on_gpu: bool) -> str:
+    """German explanation for a server that quit during startup."""
+    output = "\n".join(tail)
+    logger.error("llama-server exited during startup:\n%s", output or "(no output)")
+    if hardware.is_oom(output):
+        return (
+            f"Der lokale KI-Server konnte '{model_file.name}' nicht laden: "
+            + hardware.oom_message("gpu" if on_gpu else "cpu")
+            + " Bitte ein kleineres Modell wählen."
+        )
+    last = next((line for line in reversed(tail) if line.strip()), "")
+    detail = f" ({last})" if last else ""
+    return f"llama-server wurde unerwartet beendet{detail}"
 
 
 def stop_server() -> None:
@@ -478,14 +515,21 @@ def stop_server() -> None:
 
 
 def status() -> dict[str, Any]:
-    hardware = probe_hardware()
+    hw = probe_hardware()
+    catalog = [{**entry, "fit": fit_for(entry, hw)} for entry in MODEL_CATALOG]
+    installed = list_installed_models()
+    for model in installed:
+        model["fit"] = hardware.check_llm_model(hardware.gguf_requirement(model["size_mb"]), hw=hw)
     return {
         "binary_installed": server_binary() is not None,
         "server_running": _server_process is not None and _server_process.poll() is None,
         "active_model": _server_model,
-        "hardware": hardware,
-        "recommended": recommend_model(hardware),
-        "catalog": MODEL_CATALOG,
-        "installed": list_installed_models(),
+        "hardware": hw,
+        # what a model could occupy here — for an endpoint on localhost, which
+        # Verba does not manage (the UI shows it as an estimate, not a verdict)
+        "budget": hardware.model_budget(hw),
+        "recommended": recommend_model(hw),
+        "catalog": catalog,
+        "installed": installed,
         "models_dir": str(llm_models_dir()),
     }

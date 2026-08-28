@@ -155,7 +155,6 @@
   "settings.llmTest": "Test connection",
   "settings.llmTestOk": "Connection ok — models: {models}",
   "settings.llmTestFail": "Connection failed: {error}",
-  "llmModels.hardware": "System: {ram} GB RAM, {gpu} — recommendation: {recommended}",
   "llmModels.noGpu": "no NVIDIA GPU",
   "llmModels.installBinary": "Install",
   "llmModels.installStarted": "Downloading llama.cpp …",
@@ -337,5 +336,16 @@
   "engine.embeddings": "Embeddings",
   "dashboard.running": "{count} running",
   "status.queued": "waiting",
-  "app.jobQueuedPlain": "{step} — waiting"
+  "app.jobQueuedPlain": "{step} — waiting",
+  "models.fitOk": "suitable",
+  "models.fitTight": "limited",
+  "models.fitNo": "too large",
+  "models.fitUnknown": "memory unknown",
+  "models.hardware": "This system: {ram} GB RAM, {gpu}",
+  "models.suggested": "Recommendation: {model}",
+  "models.fitHint": "The rating is for this machine — these models run locally.",
+  "settings.modelFit": "On this system: {message}",
+  "settings.endpointLocalGpu": "This endpoint runs on this machine ({ram} GB RAM, {gpu}). Free right now: models up to about {vramBudget} GB on the GPU or {ramBudget} GB in RAM — an estimate only: Verba does not manage that server.",
+  "settings.endpointLocal": "This endpoint runs on this machine ({ram} GB RAM, {gpu}). Free right now: models up to about {ramBudget} GB — an estimate only: Verba does not manage that server.",
+  "models.hardwareRam": "This system: {ram} GB RAM — the search runs on the CPU."
 }

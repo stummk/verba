@@ -304,6 +304,33 @@ aber deutlich mehr Leistung. Eigene CTranslate2-Modelle können als Ordner ins
 Modellverzeichnis gelegt werden (Unterordner werden erkannt) und erscheinen in
 derselben Liste.
 
+**Passt das Modell auf diesen Rechner?** Jede Zeile trägt neben dem Status ein
+Urteil für **dieses** System — Whisper läuft immer lokal, gerechnet wird also
+mit dem eigenen RAM und dem eigenen Grafikspeicher:
+
+- **geeignet** (grün) — genug Speicher frei, das Modell läuft ohne Klimmzüge
+- **eingeschränkt** (orange) — es läuft, aber mit Einschränkung: entweder ist
+  der Speicher fast voll, oder das Modell passt nicht in den Grafikspeicher und
+  läuft deshalb auf der CPU (deutlich langsamer)
+- **zu groß** (rot) — dieses System hat den Speicher nicht; der Hinweis nennt
+  gleich das größte Modell, das hier passt
+
+Der Mauszeiger über dem Urteil zeigt den ganzen Satz mit den Zahlen (etwa
+„braucht ca. 2,3 GB, frei sind 3,9 GB VRAM"). Über der Liste steht dieselbe
+Empfehlung noch einmal für den Rechner als Ganzes; im Einrichtungsassistenten
+(Schritt 3) erscheint sie direkt unter dem Modellfeld.
+
+**Wenn der Speicher trotzdem nicht reicht.** Verba stürzt dabei nicht ab:
+
+- Ein Modell, das nirgends hineinpasst, wird **vor** dem Laden abgelehnt — der
+  Auftrag schlägt mit einer Meldung fehl, die Anwendung läuft weiter.
+- Passt es nicht in den Grafikspeicher, wird der GPU-Versuch übersprungen und
+  direkt auf der CPU geladen.
+- Läuft der Grafikspeicher erst mitten in der Transkription voll, wechselt
+  Verba auf die CPU und schreibt das in die Fortschrittszeile.
+- Ist der Arbeitsspeicher voll, endet der Auftrag mit einer Meldung, die die
+  freien und die benötigten Gigabyte nennt.
+
 **Ein eigenes Modellverzeichnis** (z. B. eine bestehende Sammlung unter
 `M:\Modelle\whisper`) wird unter **Einstellungen → Transkription** eingetragen
 und greift sofort, ohne Neustart: Verba liest das Verzeichnis bei jedem Aufruf
@@ -336,6 +363,14 @@ Unter **Einstellungen → KI-Aufbereitung (LLM)** wird mit einem Umschalter gena
   (funktioniert mit OpenAI, Ollama, LM Studio, vLLM u. a.);
   „Verbindung testen" prüft den Endpunkt und listet verfügbare Modelle.
 
+**Endpunkt auf dem eigenen Rechner.** Zeigt die Base URL auf `localhost` bzw.
+`127.0.0.1` (typisch für Ollama oder LM Studio), erscheint unter dem Feld eine
+**Einschätzung**: wie viel Speicher hier gerade frei ist und welche Modellgröße
+damit realistisch ist. Bewusst nur eine Einschätzung und kein Urteil wie bei den
+eigenen Modellen — welches Modell dieser Server lädt und ob er die GPU nutzt,
+entscheidet er selbst; Verba verwaltet ihn nicht. Bei einer Adresse im Netz oder
+in der Cloud steht dort nichts, denn dann ist es fremde Hardware.
+
 **Welche lokalen Modelle?** Verba bringt eine geprüfte Liste mehrsprachiger
 Instruct-Modelle mit, sortiert nach dem Hardwarebedarf:
 
@@ -349,7 +384,17 @@ Instruct-Modelle mit, sortiert nach dem Hardwarebedarf:
 
 Der **Stern** markiert die Empfehlung für deinen Rechner: Verba prüft VRAM
 (bzw. die Hälfte des RAM ohne GPU) und schlägt das größte passende Modell der
-Qwen3-Reihe vor. Entschieden wird aber nichts automatisch — du lädst das Modell
+Qwen3-Reihe vor. Zusätzlich trägt **jede** Zeile dasselbe Urteil wie bei den
+Whisper-Modellen (geeignet / eingeschränkt / zu groß) — es gilt nur für lokale
+Modelle, ein OpenAI-kompatibler Endpunkt läuft auf fremder Hardware und wird
+deshalb nicht bewertet. Passt ein Modell nicht in den Grafikspeicher, bleibt es
+im RAM statt den Server beim Start abzuschießen; passt es nirgends, startet der
+Server gar nicht erst und sagt, woran es liegt. Zusätzlich trägt **jede** Zeile dasselbe Urteil wie bei den
+Whisper-Modellen (geeignet / eingeschränkt / zu groß) — es gilt nur für lokale
+Modelle, ein OpenAI-kompatibler Endpunkt läuft auf fremder Hardware und wird
+deshalb nicht bewertet. Passt ein Modell nicht in den Grafikspeicher, bleibt es
+im RAM statt den Server beim Start abzuschießen; passt es nirgends, startet der
+Server gar nicht erst und sagt, woran es liegt. Entschieden wird aber nichts automatisch — du lädst das Modell
 selbst und kannst jederzeit ein anderes wählen; im Feld **Lokales Modell**
 steht, welches der Server benutzt.
 
@@ -434,6 +479,14 @@ CPU-tauglich:
 | Multilingual E5 small | ca. 0,5 GB | 100 | ausgewogen, etwas genauer |
 | mpnet multilingual | ca. 1,0 GB | 50 | gründlich, langsamer |
 | BGE-M3 | ca. 2,3 GB | 100 | beste Qualität, spürbar langsamer |
+
+**Passt das Modell auf diesen Rechner?** Wie bei den Whisper-Modellen trägt
+jeder Eintrag ein Urteil für dieses System (geeignet / eingeschränkt / zu groß);
+unter der Auswahl steht der ganze Satz mit den Zahlen. Gerechnet wird nur mit
+dem **Arbeitsspeicher** — die Suche rechnet immer auf der CPU, der
+Grafikspeicher spielt hier keine Rolle. Passt das gewählte Modell nicht, nennt
+die Meldung ein passendes; und ein Modell, das nicht hineinpasst, wird vor dem
+Laden abgelehnt statt den Indexlauf mitten im Speicher scheitern zu lassen.
 
 **BGE-M3** ist die Empfehlung, wenn Qualität vor Geschwindigkeit geht — es ist
 das einzige Modell der Liste, bei dem Download (ca. 2,3 GB) und Rechenzeit auf

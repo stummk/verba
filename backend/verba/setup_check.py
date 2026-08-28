@@ -39,6 +39,7 @@ import httpx
 
 from . import config
 from .events import hub
+from .services import hardware
 
 logger = logging.getLogger(__name__)
 
@@ -191,20 +192,13 @@ def check_ffmpeg() -> CheckResult:
 
 
 def check_gpu() -> CheckResult:
-    detail = "no NVIDIA GPU detected — transcription will run on the CPU"
-    ok = False
-    try:
-        out = subprocess.run(
-            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if out.returncode == 0 and out.stdout.strip():
-            detail = out.stdout.strip().splitlines()[0]
-            ok = True
-    except (OSError, subprocess.TimeoutExpired):
-        pass
+    gpu = hardware.gpu_info()
+    ok = bool(gpu["name"])
+    detail = (
+        f"{gpu['name']}, {gpu['vram_total_mb']} MiB"
+        if ok
+        else "no NVIDIA GPU detected — transcription will run on the CPU"
+    )
     return CheckResult(
         id="gpu", label="GPU (optional)", ok=ok, required=False, installable=False, detail=detail
     )
@@ -265,71 +259,9 @@ def _cpu_model() -> str:
     return platform.processor()
 
 
-def _memory_mb() -> tuple[int, int]:
-    """(total, available) physical RAM in MB; (0, 0) if unknown."""
-    try:
-        if platform.system() == "Windows":
-            import ctypes
-
-            class MemoryStatusEx(ctypes.Structure):
-                _fields_ = [
-                    ("dwLength", ctypes.c_ulong),
-                    ("dwMemoryLoad", ctypes.c_ulong),
-                    ("ullTotalPhys", ctypes.c_ulonglong),
-                    ("ullAvailPhys", ctypes.c_ulonglong),
-                    ("ullTotalPageFile", ctypes.c_ulonglong),
-                    ("ullAvailPageFile", ctypes.c_ulonglong),
-                    ("ullTotalVirtual", ctypes.c_ulonglong),
-                    ("ullAvailVirtual", ctypes.c_ulonglong),
-                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
-                ]
-
-            status = MemoryStatusEx()
-            status.dwLength = ctypes.sizeof(MemoryStatusEx)
-            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status))
-            mb = 1024 * 1024
-            return int(status.ullTotalPhys // mb), int(status.ullAvailPhys // mb)
-        import re
-
-        meminfo = Path("/proc/meminfo").read_text(encoding="utf-8")
-        total = re.search(r"MemTotal:\s+(\d+) kB", meminfo)
-        available = re.search(r"MemAvailable:\s+(\d+) kB", meminfo)
-        return (
-            int(total.group(1)) // 1024 if total else 0,
-            int(available.group(1)) // 1024 if available else 0,
-        )
-    except (OSError, AttributeError, ValueError):
-        return 0, 0
-
-
-def _gpu_info() -> dict[str, Any]:
-    """Name plus total/free VRAM in MB via nvidia-smi; empty values without one."""
-    try:
-        out = subprocess.run(
-            [
-                "nvidia-smi",
-                "--query-gpu=name,memory.total,memory.free",
-                "--format=csv,noheader,nounits",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if out.returncode == 0 and out.stdout.strip():
-            name, total, free = out.stdout.strip().splitlines()[0].rsplit(",", 2)
-            return {
-                "name": name.strip(),
-                "vram_total_mb": int(total.strip()),
-                "vram_free_mb": int(free.strip()),
-            }
-    except (OSError, subprocess.TimeoutExpired, ValueError):
-        pass
-    return {"name": "", "vram_total_mb": 0, "vram_free_mb": 0}
-
-
 def system_info() -> dict[str, Any]:
     """General machine facts for the settings page (system section)."""
-    ram_total, ram_available = _memory_mb()
+    ram_total, ram_available = hardware.ram_mb()
     return {
         "os": f"{platform.system()} {platform.release()}",
         "os_version": platform.version(),
@@ -338,7 +270,7 @@ def system_info() -> dict[str, Any]:
         "cpu_cores": os.cpu_count() or 0,
         "ram_total_mb": ram_total,
         "ram_available_mb": ram_available,
-        "gpu": _gpu_info(),
+        "gpu": hardware.gpu_info(),
         "ffmpeg": check_ffmpeg().ok,
     }
 

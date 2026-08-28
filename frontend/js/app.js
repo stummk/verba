@@ -1,7 +1,7 @@
 // App bootstrap: i18n, hash router, adaptive shell (top bar, nav, FAB).
 
 import { api } from "./api.js";
-import { el } from "./dom.js";
+import { el, toast } from "./dom.js";
 import { initI18n, t } from "./i18n.js";
 import { isActive, jobStatusLine } from "./jobs.js";
 import * as ws from "./ws.js";
@@ -147,6 +147,9 @@ function bindShell() {
   ws.on("engine.status", ({ engine, state, detail }) => {
     engineLine = state === "idle" ? "" : `${t(`engine.${engine}`)}: ${detail || state}`;
     renderStatus();
+    // a model that ran out of memory must not hide in a status line that the
+    // next event overwrites
+    if (state === "error" && detail) toast(`${t(`engine.${engine}`)}: ${detail}`);
   });
   ws.on("job.update", (job) => {
     if (isActive(job)) runningJobs.set(job.id, job);

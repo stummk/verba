@@ -6,6 +6,7 @@
 import { api } from "../api.js";
 import { el, html, toast } from "../dom.js";
 import { fillEmbeddingSelect } from "../embeddings.js";
+import { applyFitHint, endpointEstimate, isLocalEndpoint } from "../hardware.js";
 import { t } from "../i18n.js";
 import { fillLanguageSelect } from "../languages.js";
 import { on } from "../ws.js";
@@ -274,6 +275,7 @@ async function renderWhisperStep(body) {
           <input id="wizard-model" value="${settings.whisper.model}" list="wizard-model-list">
           <datalist id="wizard-model-list"></datalist>
           <p class="hint">${t("settings.modelHint")}</p>
+          <p class="small" id="wizard-model-fit"></p>
         </div>
         <div>
           <label for="wizard-models-dir">${t("settings.modelsDir")}</label>
@@ -310,14 +312,28 @@ async function renderWhisperStep(body) {
       ...(models.local ?? []).filter((name) => !(models.builtin ?? []).includes(name)),
     ];
     el("wizard-model-list")?.replaceChildren(...names.map((name) => new Option("", name)));
+    bindModelFit(models);
   } catch {
     /* the model list is a convenience — the field accepts any name */
   }
 }
 
+// Says right in the wizard whether the typed model fits this machine — the
+// models run here, so a 6 GB model on a 4 GB box is worth knowing before the
+// first transcription rather than after it.
+function bindModelFit(models) {
+  const field = el("wizard-model");
+  const hint = el("wizard-model-fit");
+  if (!field || !hint) return;
+  const show = () => applyFitHint(hint, models.models?.[field.value.trim()]);
+  field.addEventListener("input", show);
+  if (models.suggested && !field.value.trim()) field.value = models.suggested;
+  show();
+}
+
 // ── step 4: LLM ───────────────────────────────────────────────────────
 
-function renderLlmStep(body) {
+async function renderLlmStep(body) {
   body.replaceChildren(html`
     <div class="card">
       <h2>${t("setup.step.llm")}</h2>
@@ -333,6 +349,7 @@ function renderLlmStep(body) {
       <div id="wizard-llm-none" hidden><p class="hint">${t("settings.llmOffHint")}</p></div>
       <div id="wizard-llm-local" hidden>
         <p class="hint">${t("setup.llmLocalHint")}</p>
+        <p class="small" id="wizard-llm-fit"></p>
         <div class="form-grid">
           <div>
             <label for="wizard-llm-dir">${t("settings.llmModelsDir")}</label>
@@ -348,6 +365,7 @@ function renderLlmStep(body) {
             <label for="wizard-base-url">${t("settings.baseUrl")}</label>
             <input id="wizard-base-url" value="${settings.llm.base_url}"
                    placeholder="https://api.openai.com/v1">
+            <p class="small" id="wizard-endpoint-estimate"></p>
           </div>
           <div>
             <label for="wizard-api-key">${t("settings.apiKey")}</label>
@@ -395,6 +413,35 @@ function renderLlmStep(body) {
       result.textContent = t("settings.llmTestFail", { error: error.message });
     }
   };
+
+  // the local model runs on this machine, so name it and say whether it fits
+  try {
+    const status = await api.llmStatus();
+    const fit = status.catalog.find((entry) => entry.name === status.recommended.name)?.fit;
+    const hint = el("wizard-llm-fit");
+    if (hint) {
+      hint.textContent = [
+        t("models.suggested", { model: status.recommended.label }),
+        fit?.message ?? "",
+      ].filter(Boolean).join(" · ");
+      hint.className = fit ? `small fit-${fit.level}` : "small";
+    }
+    // an endpoint on 127.0.0.1 is this machine too — but not our program, so
+    // only an estimate
+    const url = el("wizard-base-url");
+    const estimate = el("wizard-endpoint-estimate");
+    if (url && estimate) {
+      const show = () => {
+        estimate.textContent = isLocalEndpoint(url.value.trim())
+          ? endpointEstimate(status.hardware, status.budget)
+          : "";
+      };
+      url.addEventListener("input", show);
+      show();
+    }
+  } catch {
+    /* without the probe the wizard simply says nothing about the hardware */
+  }
 }
 
 // ── step 5: search ────────────────────────────────────────────────────
@@ -408,6 +455,7 @@ async function renderSearchStep(body) {
         <div>
           <label for="wizard-embedding">${t("settings.embeddingModel")}</label>
           <select id="wizard-embedding"></select>
+          <p class="small" id="wizard-embedding-fit"></p>
           <p class="hint" id="wizard-embedding-hint"></p>
         </div>
         <div>
@@ -423,7 +471,9 @@ async function renderSearchStep(body) {
 
   try {
     const catalog = await api.searchModels();
-    fillEmbeddingSelect(el("wizard-embedding"), catalog, settings.search?.embedding_model);
+    fillEmbeddingSelect(el("wizard-embedding"), catalog, settings.search?.embedding_model, {
+      hint: el("wizard-embedding-fit"),
+    });
     el("wizard-embedding-hint").textContent = t("settings.embeddingCacheHint", {
       path: catalog.cache_dir,
     });

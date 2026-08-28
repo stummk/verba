@@ -4,8 +4,13 @@
   directory; local CTranslate2 model folders (containing model.bin) anywhere
   below that directory are discovered as well.
 - The model is loaded lazily and reloaded when the relevant settings change.
-- If loading on CUDA fails (missing cuBLAS/cuDNN is common on Windows), the
-  service falls back to CPU/int8 and reports that via the status monitor.
+- Before a load, services/hardware.py says whether this machine has the memory
+  for that model: a model too large for the VRAM skips the GPU attempt, a model
+  too large for everything is refused with a German message instead of letting
+  the backend abort the process.
+- If loading on CUDA fails (missing cuBLAS/cuDNN is common on Windows) or the
+  GPU memory runs out, the service falls back to CPU/int8 and reports that via
+  the status monitor.
 """
 
 from __future__ import annotations
@@ -21,7 +26,7 @@ from typing import Any
 from .. import config, db
 from ..core.jobs import JobCancelled
 from ..events import hub
-from . import transcripts, workspace
+from . import hardware, transcripts, workspace
 from .media import probe_duration
 
 logger = logging.getLogger(__name__)
@@ -41,7 +46,7 @@ _model_lock = threading.Lock()
 _model: Any = None
 _model_key: tuple[str, str, str, str] | None = None  # name, device, compute, models dir
 _active_device: str = ""
-_cuda_broken = False  # set when CUDA libs turn out to be unusable at runtime
+_cuda_broken = False  # set when CUDA libs or the VRAM turn out unusable at runtime
 
 
 def _is_cuda_lib_error(exc: Exception) -> bool:
@@ -101,13 +106,20 @@ def installed_builtin_models(local: list[str] | None = None) -> list[str]:
     return installed
 
 
-def list_models() -> dict[str, list[str]]:
+def list_models() -> dict[str, Any]:
+    """The model list the settings page renders — with the fit for this machine.
+
+    Every name is rated (see services/hardware.py), so the UI can say "runs
+    here" / "tight" / "too large" before a download starts.
+    """
     local = list_local_models()
+    names = BUILTIN_MODELS + [name for name in local if name not in BUILTIN_MODELS]
     return {
         "builtin": BUILTIN_MODELS,
         "local": local,
         "installed": installed_builtin_models(local),
         "downloading": sorted(_active_downloads),
+        **hardware.whisper_fit(names),
     }
 
 
@@ -217,10 +229,17 @@ def get_model(model_override: str = "") -> Any:
 
         from faster_whisper import WhisperModel
 
+        verdict = _preflight(model_name, device, Path(download_root))
         model_ref = _resolve_model_ref(model_name)
-        attempts: list[tuple[str, str]] = [(device, compute)]
-        if device in ("auto", "cuda"):
-            attempts.append(("cpu", "int8"))  # fallback if CUDA libs are missing
+        cpu_attempt = ("cpu", compute if compute not in ("auto", "float16") else "int8")
+        if device in ("auto", "cuda") and verdict["device"] == "cpu":
+            # the probe already knows the VRAM is too small — no point in
+            # loading it there just to watch the allocation fail
+            attempts: list[tuple[str, str]] = [cpu_attempt]
+        else:
+            attempts = [(device, compute)]
+            if device in ("auto", "cuda"):
+                attempts.append(cpu_attempt)  # CUDA libs missing, or VRAM full
 
         last_error: Exception | None = None
         for device, compute_type in attempts:
@@ -241,8 +260,33 @@ def get_model(model_override: str = "") -> Any:
                 logger.warning("loading the model on %s failed: %s", device, exc)
                 last_error = exc
 
+        if last_error is not None and hardware.is_oom(last_error):
+            message = hardware.oom_message(attempts[-1][0], name=model_name)
+            _publish_engine_status("error", message)
+            raise hardware.InsufficientMemory(
+                f"{message} Bitte ein kleineres Modell wählen oder Programme schließen."
+            ) from last_error
         _publish_engine_status("error", f"Could not load model: {last_error}")
         raise RuntimeError(f"Could not load Whisper model: {last_error}")
+
+
+def _preflight(model_name: str, device: str, models_dir: Path) -> dict[str, Any]:
+    """Rate the model against this machine before the backend touches memory.
+
+    A verdict of "no" is refused here: CTranslate2 answers an impossible
+    allocation with an abort, which would take the whole process down instead
+    of failing the one job.
+    """
+    verdict = hardware.check_whisper_model(
+        model_name, device=device, hw=hardware.probe(fresh=True), models_dir=models_dir
+    )
+    if verdict["level"] == hardware.NO:
+        message = f"Modell '{model_name}' passt nicht in den Speicher. {verdict['message']}"
+        _publish_engine_status("error", message)
+        raise hardware.InsufficientMemory(message)
+    if verdict["level"] == hardware.TIGHT:
+        logger.warning("memory is tight for '%s': %s", model_name, verdict["message"])
+    return verdict
 
 
 def unload_model() -> None:
@@ -251,6 +295,7 @@ def unload_model() -> None:
     with _model_lock:
         _model = None
         _model_key = None
+    hardware.invalidate_probe()  # the freed memory is available to the next check
     _publish_engine_status("idle")
 
 
@@ -267,21 +312,41 @@ def _store_segments(file_id: int, segments: list[dict[str, Any]]) -> None:
 
 
 def _with_cpu_fallback(run: Callable[[], Any], report: Callable[[int, str], None]) -> Any:
-    """Run a transcription callable; on a lazy CUDA-library failure (CTranslate2
-    loads CUDA libs only at inference time) switch to CPU for the rest of the
-    session and retry once."""
+    """Run a transcription callable and survive the two GPU surprises.
+
+    CTranslate2 loads its CUDA libraries and allocates its workspace only at
+    inference time, so both a missing cuDNN and a full VRAM show up here rather
+    than at load time. Either way the session switches to the CPU and retries
+    once — the user is told in the progress line, the job does not fail.
+
+    Out of memory on the *CPU* has nowhere left to go: it becomes an
+    `InsufficientMemory` with the numbers, so the job reports a reason instead
+    of an allocation traceback.
+    """
     global _cuda_broken
     try:
         return run()
     except JobCancelled:
         raise
     except Exception as exc:
-        if not _is_cuda_lib_error(exc) or _active_device == "cpu":
+        out_of_memory = hardware.is_oom(exc)
+        if _active_device == "cpu" or not (out_of_memory or _is_cuda_lib_error(exc)):
+            if out_of_memory:
+                message = hardware.oom_message("cpu", name=config.get_settings().whisper.model)
+                _publish_engine_status("error", message)
+                raise hardware.InsufficientMemory(
+                    f"{message} Bitte ein kleineres Modell wählen oder Programme schließen."
+                ) from exc
             raise
-        logger.warning("CUDA not usable (%s) — falling back to CPU permanently", exc)
+        if out_of_memory:
+            logger.warning("GPU memory exhausted (%s) — falling back to CPU", exc)
+            detail = hardware.oom_message("gpu")
+        else:
+            logger.warning("CUDA not usable (%s) — falling back to CPU permanently", exc)
+            detail = "GPU-Bibliotheken nicht verfügbar"
         _cuda_broken = True
         unload_model()
-        report(0, "GPU-Bibliotheken nicht verfügbar — weiter auf der CPU ...")
+        report(0, f"{detail} — weiter auf der CPU ...")
         return run()
 
 

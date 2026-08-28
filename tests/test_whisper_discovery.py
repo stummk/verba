@@ -6,7 +6,29 @@ from pathlib import Path
 import pytest
 
 from verba import config
-from verba.services import whisper
+from verba.services import hardware, whisper
+
+
+@pytest.fixture(autouse=True)
+def enough_memory(monkeypatch):
+    """Loading a model is guarded by a memory check (services/hardware.py).
+
+    These tests are about discovery and paths — they must not depend on how
+    much RAM the CI runner or a developer's laptop happens to have free, and a
+    GPU present or absent must not change what they assert. The check itself is
+    covered in tests/test_hardware_fit.py.
+    """
+    monkeypatch.setattr(
+        hardware,
+        "probe",
+        lambda **kwargs: {
+            "ram_total_mb": 32768,
+            "ram_available_mb": 24576,
+            "gpu_name": "",
+            "vram_total_mb": 0,
+            "vram_free_mb": 0,
+        },
+    )
 
 
 def test_builtin_models_listed(client):

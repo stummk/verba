@@ -6,7 +6,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from .. import config
-from ..services import rag, vectorstore
+from ..services import hardware, rag, vectorstore
 from ..services.llm import llm_location
 
 router = APIRouter(prefix="/api/search", tags=["search"])
@@ -72,8 +72,11 @@ def list_embedding_models() -> dict:
     """The selectable embedding models — a catalog, not free text.
 
     `present` says whether the model already lies in the models directory: the
-    UI can then promise "no download" instead of guessing.
+    UI can then promise "no download" instead of guessing. `fit` says whether
+    this machine has the memory for it — the index is built here, locally.
     """
+    hw = hardware.probe()
+    alternatives = [(entry.label, entry.size_mb) for entry in config.EMBEDDING_MODELS]
     return {
         "models": [
             {
@@ -84,12 +87,16 @@ def list_embedding_models() -> dict:
                 "languages": entry.languages,
                 "speed": entry.speed,
                 "present": vectorstore.model_present_locally(entry),
+                "fit": hardware.check_embedding_model(
+                    entry.size_mb, hw=hw, alternatives=alternatives
+                ),
             }
             for entry in config.EMBEDDING_MODELS
         ],
         "default": config.DEFAULT_EMBEDDING_MODEL,
         "configured": config.get_settings().search.embedding_model,
         "cache_dir": str(config.embeddings_dir()),
+        "hardware": hw,
     }
 
 

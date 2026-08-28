@@ -31,7 +31,7 @@ from typing import Any
 from .. import config, db
 from ..core.jobs import JobCancelled, job_queue
 from ..events import hub
-from . import chunking, transcripts, workspace
+from . import chunking, hardware, transcripts, workspace
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +107,18 @@ def _load_model() -> Any:
     with _model_lock:
         if _model is not None and _model_key == key:
             return _model
+        verdict = hardware.check_embedding_model(entry.size_mb)
+        if verdict["level"] == hardware.NO:
+            # refused before torch allocates: an impossible allocation would
+            # take the process down, not just this index run
+            hub.publish(
+                "engine.status",
+                {"engine": "embeddings", "state": "error", "detail": verdict["message"]},
+            )
+            raise EmbeddingUnavailable(
+                f"Das Embedding-Modell „{entry.label}“ passt nicht in den Speicher. "
+                f"{verdict['message']}"
+            )
         hub.publish(
             "engine.status",
             {"engine": "embeddings", "state": "loading", "detail": entry.name},
@@ -123,6 +135,11 @@ def _load_model() -> Any:
         except Exception as exc:  # noqa: BLE001 — network, disk and model errors alike
             hub.publish("engine.status", {"engine": "embeddings", "state": "error", "detail": ""})
             logger.exception("embedding model %s could not be loaded", entry.name)
+            if hardware.is_oom(exc):
+                raise EmbeddingUnavailable(
+                    f"{hardware.oom_message('cpu', name=entry.label)} "
+                    f"Bitte ein kleineres Embedding-Modell wählen."
+                ) from exc
             raise EmbeddingUnavailable(
                 f"Das Embedding-Modell „{entry.label}“ konnte nicht geladen werden "
                 f"(wird beim ersten Gebrauch heruntergeladen, ca. {entry.size_mb} MB): {exc}"
@@ -137,6 +154,7 @@ def unload_model() -> None:
     with _model_lock:
         _model = None
         _model_key = None
+    hardware.invalidate_probe()  # the freed memory counts for the next check
 
 
 def _encode(texts: list[str], kind: str = "passage") -> list[list[float]]:

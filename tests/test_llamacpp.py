@@ -8,14 +8,25 @@ from verba import config
 from verba.services import llamacpp
 
 
+def machine(ram_mb: int, vram_mb: int = 0, gpu: str = "") -> dict:
+    """A probe result as services/hardware.py reports it (see probe())."""
+    return {
+        "ram_total_mb": ram_mb,
+        "ram_available_mb": ram_mb,
+        "gpu_name": gpu,
+        "vram_total_mb": vram_mb,
+        "vram_free_mb": vram_mb,
+    }
+
+
 def test_recommendation_scales_with_hardware():
-    tiny = llamacpp.recommend_model({"ram_mb": 4000, "vram_mb": 0, "gpu_name": ""})
+    tiny = llamacpp.recommend_model(machine(4000))
     assert tiny["name"] == "Qwen3-1.7B-Q8_0"
 
-    mid = llamacpp.recommend_model({"ram_mb": 16000, "vram_mb": 0, "gpu_name": ""})
+    mid = llamacpp.recommend_model(machine(16000))
     assert mid["name"] == "Qwen3-4B-Q4_K_M"
 
-    gpu = llamacpp.recommend_model({"ram_mb": 16000, "vram_mb": 12000, "gpu_name": "RTX"})
+    gpu = llamacpp.recommend_model(machine(16000, vram_mb=12000, gpu="RTX"))
     assert gpu["name"] == "Qwen3-8B-Q4_K_M"
 
 
@@ -26,7 +37,7 @@ def test_the_recommendation_ignores_unflagged_alternatives():
     assert flagged and alternatives, "the catalog offers alternatives besides the recommended line"
     # a machine that fits everything still gets a recommended line, not the
     # largest alternative that happens to sit last in the list
-    everything = llamacpp.recommend_model({"ram_mb": 64000, "vram_mb": 48000, "gpu_name": "A6000"})
+    everything = llamacpp.recommend_model(machine(64000, vram_mb=48000, gpu="A6000"))
     assert everything.get("recommended") is True
     assert everything["name"] == flagged[-1]["name"]
 
@@ -53,8 +64,9 @@ def test_alternatives_from_another_family_are_offered():
 
 def test_probe_hardware_returns_numbers():
     hw = llamacpp.probe_hardware()
-    assert hw["ram_mb"] > 0  # every dev/CI machine has RAM
-    assert hw["vram_mb"] >= 0
+    assert hw["ram_total_mb"] > 0  # every dev/CI machine has RAM
+    assert hw["ram_total_mb"] >= hw["ram_available_mb"] >= 0
+    assert hw["vram_total_mb"] >= 0
 
 
 def test_delete_model_rejects_traversal():
