@@ -72,3 +72,11 @@ def test_every_used_i18n_key_exists_in_all_catalogs():
         catalog = json.loads((FRONTEND / "i18n" / f"{lang}.json").read_text(encoding="utf-8"))
         missing = used - set(catalog)
         assert not missing, f"{lang}.json fehlt: {sorted(missing)}"
+
+
+def test_dashboard_dialogs_are_available_inside_project_card_actions():
+    source = (FRONTEND / "js/views/dashboard.js").read_text(encoding="utf-8")
+    assert "let renameDialog = null;" in source
+    assert "let deleteDialog = null;" in source
+    assert "renameDialog.showModal()" in source
+    assert "deleteDialog.showModal()" in source

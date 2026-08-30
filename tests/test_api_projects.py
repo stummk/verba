@@ -16,7 +16,7 @@ def _workspaces_in_tmp(tmp_path):
     config.save_settings(settings)
 
 
-def test_project_crud(client):
+def test_project_crud(client, tmp_path):
     created = client.post("/api/projects", json={"name": "Interviews"}).json()
     assert created["slug"] == "interviews"
 
@@ -27,8 +27,17 @@ def test_project_crud(client):
     detail = client.get(f"/api/projects/{created['id']}").json()
     assert detail["files"] == []
 
+    (tmp_path / "sample.mp3").write_bytes(b"1")
+    file_row = client.post(
+        f"/api/projects/{created['id']}/files/import",
+        json={"paths": [str(tmp_path / "sample.mp3")]},
+    ).json()[0]
+    assert Path(created["workspace"]) / "audio" / "sample.mp3" in (Path(created["workspace"]) / "audio").iterdir()
+
     assert client.delete(f"/api/projects/{created['id']}").status_code == 200
     assert client.get(f"/api/projects/{created['id']}").status_code == 404
+    assert not Path(created["workspace"]).exists()
+    assert client.get(f"/api/files/{file_row['id']}").status_code == 404
 
 
 def test_create_project_requires_name(client):

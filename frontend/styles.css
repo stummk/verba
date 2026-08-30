@@ -322,6 +322,29 @@ details.advanced .form-grid { margin-top: .25rem; }
   color: var(--md-on-surface);
   transition: background .15s;
 }
+.project-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: .5rem;
+}
+.project-card-left {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  min-width: 0;
+}
+.project-card-right {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  flex-shrink: 0;
+}
+.project-card-actions {
+  display: inline-flex;
+  gap: .25rem;
+  flex-shrink: 0;
+}
 .project-card:hover { background: var(--md-surface-container-high); }
 
 .filetable { width: 100%; border-collapse: collapse; font-size: .9rem; }
@@ -369,6 +392,7 @@ details.advanced .form-grid { margin-top: .25rem; }
 .badge-fit-tight { background: var(--md-warning-container); color: var(--md-warning); }
 .badge-fit-no { background: var(--md-error-container); color: var(--md-error); }
 .badge-fit-unknown { background: var(--md-surface-container-high); color: var(--md-on-surface-variant); }
+.badge-type { background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
 /* the same verdict as running text (wizard, hints) */
 .fit-ok { color: var(--md-success); }
 .fit-tight { color: var(--md-warning); }

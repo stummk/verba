@@ -18,6 +18,7 @@ class CreateProjectRequest(BaseModel):
 class UpdateProjectRequest(BaseModel):
     """Partial update: only fields that were actually sent are changed."""
 
+    name: str | None = Field(default=None, min_length=1, max_length=200)
     type_id: int | None = None
     auto_process: bool | None = None
     auto_language: str | None = Field(default=None, max_length=10)
@@ -56,7 +57,7 @@ def get_project(project_id: int) -> dict:
 
 
 @router.delete("/{project_id}")
-def delete_project(project_id: int, delete_files: bool = False) -> dict:
+def delete_project(project_id: int, delete_files: bool = True) -> dict:
     if workspace.get_project(project_id) is None:
         raise HTTPException(status_code=404, detail="Transcript not found")
     workspace.delete_project(project_id, delete_files=delete_files)

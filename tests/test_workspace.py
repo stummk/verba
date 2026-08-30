@@ -86,12 +86,36 @@ def test_delete_file_removes_copy_not_source(tmp_path):
     assert not workspace.file_path(file_row).exists()
 
 
-def test_delete_project_keeps_folder_by_default():
-    project = workspace.create_project("Bleibt")
+def test_delete_project_removes_project_files_and_folder_by_default():
+    project = workspace.create_project("Weg")
+    source = Path(project["workspace"]).parent / "source.mp3"
+    source.write_bytes(b"data")
+    [file_row] = workspace.import_paths(project, [str(source)])
+
     workspace.delete_project(project["id"])
     assert workspace.get_project(project["id"]) is None
-    assert Path(project["workspace"]).is_dir()
+    assert workspace.get_file(file_row["id"]) is None
+    assert not Path(project["workspace"]).exists()
 
-    project2 = workspace.create_project("Weg")
-    workspace.delete_project(project2["id"], delete_files=True)
-    assert not Path(project2["workspace"]).exists()
+    project2 = workspace.create_project("Bleibt")
+    workspace.delete_project(project2["id"], delete_files=False)
+    assert workspace.get_project(project2["id"]) is None
+    assert Path(project2["workspace"]).is_dir()
+
+
+def test_rename_project_moves_workspace_directory_and_updates_db():
+    project = workspace.create_project("Alt")
+    old_dir = Path(project["workspace"])
+    old_dir.mkdir(exist_ok=True)
+
+    renamed = workspace.update_project(project["id"], {"name": "Neu"})
+    assert renamed is not None
+    assert renamed["name"] == "Neu"
+    assert renamed["slug"] == "neu"
+    assert renamed["workspace"] == str(old_dir.parent / "neu")
+    assert not old_dir.exists()
+    assert Path(renamed["workspace"]).is_dir()
+
+    meta = json.loads((Path(renamed["workspace"]) / "project.json").read_text(encoding="utf-8"))
+    assert meta["name"] == "Neu"
+    assert meta["slug"] == "neu"

@@ -1,13 +1,18 @@
-// Project overview: list, create (via FAB dialog), open.
+// Project overview: list, create (via FAB dialog), open, rename, delete.
 
 import { api } from "../api.js";
 import { el, esc, html, raw, toast } from "../dom.js";
+import { iconButton } from "../icons.js";
 import { t } from "../i18n.js";
 import { isActive } from "../jobs.js";
 import { on } from "../ws.js";
 
 let fabHandler = null;
 let unsubscribers = [];
+let currentProjectId = null;
+let renameDialog = null;
+let deleteDialog = null;
+let renameInput = null;
 
 export async function render(view, systemStatus) {
   const [projects, types, jobs] = await Promise.all([
@@ -16,8 +21,6 @@ export async function render(view, systemStatus) {
     api.listJobs(true).catch(() => []),
   ]);
   const ready = systemStatus?.ready ?? true;
-  // one entry per transcript with work in flight, so the list already says
-  // where something is running instead of making the user open every card
   const activeJobs = new Map(jobs.filter(isActive).map((job) => [job.id, job]));
 
   view.replaceChildren(html`
@@ -41,6 +44,25 @@ export async function render(view, systemStatus) {
         </div>
       </form>
     </dialog>
+    <dialog id="rename-dialog">
+      <h2>${t("dashboard.renameTitle")}</h2>
+      <form id="rename-project" method="dialog">
+        <label for="rename-name">${t("dashboard.renameLabel")}</label>
+        <input id="rename-name" maxlength="200" autocomplete="off">
+        <div class="actions">
+          <button type="submit">${t("dashboard.rename")}</button>
+          <button type="button" class="text-btn" id="rename-cancel">${t("common.cancel")}</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="delete-dialog">
+      <h2>${t("dashboard.deleteTitle")}</h2>
+      <p id="delete-message"></p>
+      <div class="actions">
+        <button type="button" class="tonal" id="delete-confirm">${t("common.delete")}</button>
+        <button type="button" class="text-btn" id="delete-cancel">${t("common.cancel")}</button>
+      </div>
+    </dialog>
   `);
 
   if (!ready) {
@@ -53,9 +75,12 @@ export async function render(view, systemStatus) {
     `);
   }
 
+  renameDialog = el("rename-dialog");
+  renameInput = el("rename-name");
+  deleteDialog = el("delete-dialog");
+
   renderList(projects, activeJobs);
 
-  // live: a job that starts or finishes changes both the badge and the counts
   unsubscribers.forEach((off) => off());
   let refreshTimer = null;
   unsubscribers = [
@@ -64,37 +89,72 @@ export async function render(view, systemStatus) {
       else activeJobs.delete(job.id);
       clearTimeout(refreshTimer);
       refreshTimer = setTimeout(async () => {
-        if (!el("project-list")) return; // the user navigated away
-        const fresh = await api.listProjects().catch(() => null);
-        renderList(fresh ?? projects, activeJobs);
+        if (!el("project-list")) return;
+        await refreshProjects();
       }, 300);
     }),
   ];
 
-  const dialog = el("create-dialog");
-  el("create-cancel").onclick = () => dialog.close();
+  const createDialog = el("create-dialog");
+  el("create-cancel").onclick = () => createDialog.close();
   el("create-project").onsubmit = async (event) => {
     event.preventDefault();
-    // empty input falls back to the suggested default (today as yyyymmdd)
     const name = el("project-name").value.trim() || defaultProjectName();
     const typeId = el("project-type").value ? Number(el("project-type").value) : null;
     try {
       const created = await api.createProject(name, typeId);
-      dialog.close();
+      createDialog.close();
       location.hash = `#/project/${created.id}`;
     } catch (error) {
       toast(t("dashboard.createError", { message: error.message }));
     }
   };
 
+  el("rename-cancel").onclick = () => renameDialog?.close();
+  el("rename-project").onsubmit = async (event) => {
+    event.preventDefault();
+    if (!currentProjectId) return;
+    const name = renameInput.value.trim();
+    if (!name) return;
+    try {
+      await api.updateProject(currentProjectId, { name });
+      toast(t("dashboard.renameSuccess"));
+      renameDialog.close();
+      await refreshProjects();
+    } catch (error) {
+      toast(t("dashboard.renameError", { message: error.message }));
+    }
+  };
+
+  el("delete-cancel").onclick = () => deleteDialog?.close();
+  el("delete-confirm").onclick = async () => {
+    if (!currentProjectId) return;
+    try {
+      await api.deleteProject(currentProjectId);
+      toast(t("dashboard.deleted"));
+      deleteDialog.close();
+      await refreshProjects();
+    } catch (error) {
+      toast(t("dashboard.deleteError", { message: error.message }));
+    }
+  };
+
   if (fabHandler) window.removeEventListener("fab:click", fabHandler);
   fabHandler = () => {
     if (location.hash === "" || location.hash.startsWith("#/") === false || parseRoute() === "dashboard") {
-      dialog.showModal();
+      createDialog.showModal();
       el("project-name").focus();
     }
   };
   window.addEventListener("fab:click", fabHandler);
+}
+
+async function refreshProjects() {
+  const fresh = await api.listProjects().catch(() => null);
+  if (!fresh) return;
+  const jobs = await api.listJobs(true).catch(() => []);
+  const activeJobs = new Map(jobs.filter(isActive).map((job) => [job.id, job]));
+  renderList(fresh, activeJobs);
 }
 
 function defaultProjectName() {
@@ -125,6 +185,11 @@ function renderList(projects, activeJobs = new Map()) {
       const card = document.createElement("a");
       card.className = "card project-card";
       card.href = `#/project/${project.id}`;
+      card.addEventListener("click", (event) => {
+        if (event.target.closest("button")) event.preventDefault();
+      });
+      const header = document.createElement("div");
+      header.className = "project-card-header";
       const title = document.createElement("strong");
       title.textContent = project.name;
       const count = running.get(project.id);
@@ -134,8 +199,39 @@ function renderList(projects, activeJobs = new Map()) {
         badge.textContent = t("dashboard.running", { count });
         title.append(" ", badge);
       }
+      const left = document.createElement("div");
+      left.className = "project-card-left";
+      left.append(title);
+      const right = document.createElement("div");
+      right.className = "project-card-right";
+      if (project.type_name) {
+        const typeBadge = document.createElement("span");
+        typeBadge.className = "badge badge-type";
+        typeBadge.textContent = project.type_name;
+        right.append(typeBadge);
+      }
+      const actions = document.createElement("div");
+      actions.className = "project-card-actions";
+      const renameBtn = iconButton("edit", t("dashboard.rename"), (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        currentProjectId = project.id;
+        renameInput.value = project.name;
+        renameDialog.showModal();
+        renameInput.focus();
+      });
+      const deleteBtn = iconButton("delete", t("common.delete"), (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        currentProjectId = project.id;
+        el("delete-message").textContent = t("dashboard.deleteConfirm", { name: project.name });
+        deleteDialog.showModal();
+      });
+      actions.append(renameBtn, deleteBtn);
+      right.append(actions);
+      header.append(left, right);
       card.append(
-        title,
+        header,
         Object.assign(document.createElement("span"), {
           className: "muted small",
           textContent: t("dashboard.fileStats", {

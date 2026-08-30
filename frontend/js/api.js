@@ -62,7 +62,7 @@ export const api = {
     request("POST", "/api/projects", { name, type_id: typeId }),
   updateProject: (id, changes) => request("PUT", `/api/projects/${id}`, changes),
   getProject: (id) => request("GET", `/api/projects/${id}`),
-  deleteProject: (id, deleteFiles = false) =>
+  deleteProject: (id, deleteFiles = true) =>
     request("DELETE", `/api/projects/${id}?delete_files=${deleteFiles}`),
   importFiles: (projectId, paths) =>
     request("POST", `/api/projects/${projectId}/files/import`, { paths }),

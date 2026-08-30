@@ -82,14 +82,39 @@ def get_project(project_id: int) -> dict[str, Any] | None:
     return db.row_to_dict(row)
 
 
-UPDATABLE_PROJECT_FIELDS = ("type_id", "auto_process", "auto_language")
+UPDATABLE_PROJECT_FIELDS = ("name", "type_id", "auto_process", "auto_language")
 
 
 def update_project(project_id: int, changes: dict[str, Any]) -> dict[str, Any] | None:
     """Update selected project fields (type, auto-processing); ignores unknown keys."""
+    project = get_project(project_id)
+    if project is None:
+        return None
     fields = {k: v for k, v in changes.items() if k in UPDATABLE_PROJECT_FIELDS}
     if not fields:
-        return get_project(project_id)
+        return project
+
+    source_dir = Path(project["workspace"])
+    target_dir: Path | None = None
+
+    new_name = fields.get("name")
+    if new_name is not None:
+        cleaned = str(new_name).strip()
+        if cleaned and cleaned != project["name"]:
+            with db.get_conn() as conn:
+                new_slug = _unique_slug(conn, slugify(cleaned))
+            target_dir = source_dir.parent / new_slug
+            if source_dir != target_dir:
+                if target_dir.exists():
+                    raise RuntimeError(f"Der Projektordner {target_dir} existiert bereits.")
+                source_dir.parent.mkdir(parents=True, exist_ok=True)
+                if source_dir.exists():
+                    source_dir.rename(target_dir)
+                else:
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                fields["slug"] = new_slug
+                fields["workspace"] = str(target_dir)
+
     assignments = ", ".join(f"{key} = ?" for key in fields)
     with db.get_conn() as conn:
         cursor = conn.execute(
@@ -98,6 +123,23 @@ def update_project(project_id: int, changes: dict[str, Any]) -> dict[str, Any] |
         )
         if cursor.rowcount == 0:
             return None
+
+    if target_dir is not None:
+        final_dir = target_dir
+        final_dir.mkdir(parents=True, exist_ok=True)
+        (final_dir / "project.json").write_text(
+            json.dumps(
+                {
+                    "name": fields.get("name", project["name"]),
+                    "slug": fields.get("slug", project["slug"]),
+                    "id": project_id,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
     return get_project(project_id)
 
 
@@ -117,7 +159,7 @@ def list_projects() -> list[dict[str, Any]]:
     return db.rows_to_dicts(rows)
 
 
-def delete_project(project_id: int, delete_files: bool = False) -> None:
+def delete_project(project_id: int, delete_files: bool = True) -> None:
     project = get_project(project_id)
     if project is None:
         return
