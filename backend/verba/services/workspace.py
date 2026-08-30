@@ -292,12 +292,39 @@ def save_upload(project: dict[str, Any], filename: str, stream: BinaryIO) -> dic
     return register_file(project, target)
 
 
+def _delete_generated_file_artifacts(file_row: dict[str, Any]) -> None:
+    """Remove project-local transcript/export outputs generated for one file."""
+    project = get_project(file_row["project_id"])
+    if project is None:
+        return
+
+    stem = Path(file_row["filename"]).stem
+    project_root = project_dir(project)
+
+    transcripts_dir = project_root / "transcripts"
+    if transcripts_dir.is_dir():
+        for candidate in list(transcripts_dir.iterdir()):
+            name = candidate.name
+            if name == f"{stem}.json" or (
+                candidate.suffix in {".json", ".md"}
+                and name.startswith(f"{stem}.")
+            ):
+                candidate.unlink(missing_ok=True)
+
+    exports_dir = project_root / "exports"
+    if exports_dir.is_dir():
+        for candidate in list(exports_dir.iterdir()):
+            if candidate.suffix == ".pdf" and candidate.name.startswith(f"{stem}."):
+                candidate.unlink(missing_ok=True)
+
+
 def delete_file(file_id: int) -> None:
     """Remove the DB entry and the workspace copy (never the original source)."""
     file_row = get_file(file_id)
     if file_row is None:
         return
     path = file_path(file_row)
+    _delete_generated_file_artifacts(file_row)
     from .vectorstore import remove_file  # local import: avoids a module cycle
 
     remove_file(file_id)  # search index entries disappear immediately

@@ -86,6 +86,36 @@ def test_delete_file_removes_copy_not_source(tmp_path):
     assert not workspace.file_path(file_row).exists()
 
 
+def test_delete_file_removes_generated_transcript_and_export_files(tmp_path):
+    source = tmp_path / "orig.mp3"
+    source.write_bytes(b"data")
+    project = workspace.create_project("Löschen-Generiert")
+    [file_row] = workspace.import_paths(project, [str(source)])
+
+    project_dir = Path(project["workspace"])
+    transcripts_dir = project_dir / "transcripts"
+    exports_dir = project_dir / "exports"
+    transcripts_dir.mkdir(parents=True, exist_ok=True)
+    exports_dir.mkdir(parents=True, exist_ok=True)
+
+    (transcripts_dir / "orig.json").write_text('{"segments": []}', encoding="utf-8")
+    (transcripts_dir / "orig.cleanup.md").write_text("cleaned", encoding="utf-8")
+    (transcripts_dir / "orig.translation.en.md").write_text("translated", encoding="utf-8")
+    (exports_dir / "orig.pdf").write_bytes(b"pdf")
+    (exports_dir / "orig.en.pdf").write_bytes(b"pdf-en")
+    (exports_dir / "other.pdf").write_bytes(b"other")
+
+    workspace.delete_file(file_row["id"])
+
+    assert workspace.get_file(file_row["id"]) is None
+    assert not (transcripts_dir / "orig.json").exists()
+    assert not (transcripts_dir / "orig.cleanup.md").exists()
+    assert not (transcripts_dir / "orig.translation.en.md").exists()
+    assert not (exports_dir / "orig.pdf").exists()
+    assert not (exports_dir / "orig.en.pdf").exists()
+    assert (exports_dir / "other.pdf").exists()
+
+
 def test_delete_project_removes_project_files_and_folder_by_default():
     project = workspace.create_project("Weg")
     source = Path(project["workspace"]).parent / "source.mp3"
