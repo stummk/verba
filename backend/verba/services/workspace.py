@@ -293,7 +293,11 @@ def save_upload(project: dict[str, Any], filename: str, stream: BinaryIO) -> dic
 
 
 def _delete_generated_file_artifacts(file_row: dict[str, Any]) -> None:
-    """Remove project-local transcript/export outputs generated for one file."""
+    """Remove transcript and derived-text files generated for one file.
+
+    PDF exports are not deleted here because they are project-level artifacts and
+    can be kept even after the source audio file is removed.
+    """
     project = get_project(file_row["project_id"])
     if project is None:
         return
@@ -308,13 +312,8 @@ def _delete_generated_file_artifacts(file_row: dict[str, Any]) -> None:
             if name == f"{stem}.json" or (
                 candidate.suffix in {".json", ".md"}
                 and name.startswith(f"{stem}.")
+                and not name.startswith(f"{stem}.export.")
             ):
-                candidate.unlink(missing_ok=True)
-
-    exports_dir = project_root / "exports"
-    if exports_dir.is_dir():
-        for candidate in list(exports_dir.iterdir()):
-            if candidate.suffix == ".pdf" and candidate.name.startswith(f"{stem}."):
                 candidate.unlink(missing_ok=True)
 
 

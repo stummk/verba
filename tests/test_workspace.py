@@ -86,7 +86,7 @@ def test_delete_file_removes_copy_not_source(tmp_path):
     assert not workspace.file_path(file_row).exists()
 
 
-def test_delete_file_removes_generated_transcript_and_export_files(tmp_path):
+def test_delete_file_removes_generated_transcript_files_only(tmp_path):
     source = tmp_path / "orig.mp3"
     source.write_bytes(b"data")
     project = workspace.create_project("Löschen-Generiert")
@@ -111,8 +111,8 @@ def test_delete_file_removes_generated_transcript_and_export_files(tmp_path):
     assert not (transcripts_dir / "orig.json").exists()
     assert not (transcripts_dir / "orig.cleanup.md").exists()
     assert not (transcripts_dir / "orig.translation.en.md").exists()
-    assert not (exports_dir / "orig.pdf").exists()
-    assert not (exports_dir / "orig.en.pdf").exists()
+    assert (exports_dir / "orig.pdf").exists()
+    assert (exports_dir / "orig.en.pdf").exists()
     assert (exports_dir / "other.pdf").exists()
 
 
