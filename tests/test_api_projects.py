@@ -32,7 +32,8 @@ def test_project_crud(client, tmp_path):
         f"/api/projects/{created['id']}/files/import",
         json={"paths": [str(tmp_path / "sample.mp3")]},
     ).json()[0]
-    assert Path(created["workspace"]) / "audio" / "sample.mp3" in (Path(created["workspace"]) / "audio").iterdir()
+    audio_dir = Path(created["workspace"]) / "audio"
+    assert (audio_dir / "sample.mp3") in audio_dir.iterdir()
 
     assert client.delete(f"/api/projects/{created['id']}").status_code == 200
     assert client.get(f"/api/projects/{created['id']}").status_code == 404
