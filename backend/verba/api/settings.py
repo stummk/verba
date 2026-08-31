@@ -11,12 +11,13 @@ folders with it (move job). Both are reported back in the response.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, ValidationError
 
 from .. import config
 from ..core.jobs import job_queue
-from ..services import llm, vectorstore, workspace
+from ..services import auth, llm, vectorstore, workspace
+from .deps import AdminUser, current_user
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -30,13 +31,39 @@ def _masked(settings: config.Settings) -> dict:
     return data
 
 
+# What a normal user gets to see: their own interface language, and the two
+# facts the transcript views need to decide what to offer. Endpoints, paths,
+# models and keys are an administrator's business.
+USER_VISIBLE_SETTINGS = {
+    "general": ("ui_language",),
+    "llm": ("mode",),
+    "whisper": ("language",),
+    "auth": ("enabled", "default_visibility"),
+}
+
+
+def _for_user(settings: config.Settings, user: dict | None) -> dict:
+    data = _masked(settings)
+    if not auth.enabled() or auth.is_admin(user):
+        return data
+    reduced = {
+        section: {key: data[section][key] for key in keys}
+        for section, keys in USER_VISIBLE_SETTINGS.items()
+    }
+    # the settings form uses this to show the personal page instead of the
+    # administrative one, rather than guessing from the missing sections
+    reduced["restricted"] = True
+    return reduced
+
+
 @router.get("")
-def get_settings() -> dict:
-    return _masked(config.get_settings())
+def get_settings(request: Request) -> dict:
+    """The settings — reduced to the personal ones for a normal user."""
+    return _for_user(config.get_settings(), current_user(request))
 
 
 @router.get("/paths")
-def get_paths() -> dict:
+def get_paths(user: dict = AdminUser) -> dict:
     """The directories in use — the settings form shows the effective values.
 
     A configured path is stored absolute (see config.normalize_dir), so what
@@ -60,7 +87,9 @@ def get_paths() -> dict:
 
 @router.put("")
 def update_settings(
-    body: dict, x_session_id: str = Header(default="", alias="X-Session-Id")
+    body: dict,
+    x_session_id: str = Header(default="", alias="X-Session-Id"),
+    user: dict = AdminUser,
 ) -> dict:
     current = config.get_settings()
     try:
@@ -72,6 +101,10 @@ def update_settings(
         updated.llm.api_key = current.llm.api_key
     # setup state is owned by the backend, not the settings form
     updated.setup = current.setup
+    # so is the auth switch: it is turned on and off through /api/auth, never
+    # by writing a settings document — otherwise the form would be a way to
+    # unlock the whole installation
+    updated.auth.enabled = current.auth.enabled
 
     old_root = config.workspaces_root(current)
     new_root = config.workspaces_root(updated)
@@ -112,7 +145,7 @@ class LLMTestRequest(BaseModel):
 
 
 @router.post("/llm/test")
-def test_llm_endpoint(body: LLMTestRequest) -> dict:
+def test_llm_endpoint(body: LLMTestRequest, user: dict = AdminUser) -> dict:
     """Probe an OpenAI-compatible endpoint and list its models."""
     if not body.base_url.strip():
         raise HTTPException(status_code=422, detail="Base URL fehlt")

@@ -26,6 +26,7 @@ const SECTION_ICONS = {
   pdf: "pdf",
   search: "search",
   settings: "tune",
+  security: "lock",
   api: "key",
 };
 

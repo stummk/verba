@@ -1,8 +1,9 @@
 """Public OpenAI-compatible API (/v1) for external clients.
 
-Authentication: as soon as at least one API key exists (settings → API),
-requests must send "Authorization: Bearer <key>". Without any configured key
-the endpoint is as open as the rest of the app (local desktop usage).
+Authentication: as soon as at least one API key exists (settings → API) — or
+the user management is switched on — requests must send
+"Authorization: Bearer <key>". Without either the endpoint is as open as the
+rest of the app (local desktop usage).
 
 The request runs through the same fair job queue as the UI (round-robin per
 API key) and returns synchronously once the job is done. Extensions beyond
@@ -21,7 +22,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import PlainTextResponse
 
 from ..core.jobs import job_queue
-from ..services import llm, project_types, public_api
+from ..services import auth, llm, project_types, public_api
 
 router = APIRouter(prefix="/v1", tags=["public-api"])
 
@@ -31,8 +32,13 @@ UPLOAD_CHUNK = 1024 * 1024
 
 
 def _authorize(request: Request) -> str:
-    """Returns the queue session id: fair scheduling per API key."""
-    if not public_api.keys_configured():
+    """Returns the queue session id: fair scheduling per API key.
+
+    Once the user management is on, a key is mandatory — an endpoint that
+    transcribes for anyone who reaches the port would undo the login the rest
+    of the app just gained.
+    """
+    if not public_api.keys_configured() and not auth.enabled():
         return "api:open"
     token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
     key = public_api.verify_key(token)

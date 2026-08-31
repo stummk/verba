@@ -21,15 +21,29 @@ const fileJobs = new Map(); // file_id -> latest active job
 // status at "done", so without this the row would give no hint at all.
 const fileJobErrors = new Map();
 
+// Who else can reach this transcript — shown next to its name, because
+// "public" is not something to discover only when a colleague edits it.
+function visibilityChip(project, authState) {
+  if (!authState.enabled) return "";
+  const owner = project.owner_name
+    ? t("visibility.ownedBy", { name: project.owner_name })
+    : t("visibility.ownerless");
+  return raw(
+    ` <span class="type-chip badge-visibility ${esc(project.visibility)}" title="${esc(owner)}">` +
+    `${esc(t(`visibility.${project.visibility || "public"}`))}</span>`
+  );
+}
+
 export async function render(view, _status, params) {
   const projectId = Number(params[0]);
   let projectError = null;
-  const [project, settings] = await Promise.all([
+  const [project, settings, authState] = await Promise.all([
     api.getProject(projectId).catch((error) => {
       projectError = error;
       return null;
     }),
     api.getSettings().catch(() => null),
+    api.authState().catch(() => ({ enabled: false, user: null })),
   ]);
   // The model list scans directories and probes the hardware — the view must
   // not wait for it, so the advanced dropdown fills in once it arrives.
@@ -42,7 +56,7 @@ export async function render(view, _status, params) {
 
   view.replaceChildren(html`
     <p><a href="#/" class="muted small">${t("project.back")}</a></p>
-    <h1>${project.name}${project.type_name ? raw(` <span class="type-chip">${esc(project.type_name)}</span>`) : ""}</h1>
+    <h1>${project.name}${project.type_name ? raw(` <span class="type-chip">${esc(project.type_name)}</span>`) : ""}${visibilityChip(project, authState)}</h1>
     <div class="card">
       <div class="step-tabs" role="tablist">
         <button type="button" class="step-tab" role="tab" data-step="1" aria-controls="step-panel-1">

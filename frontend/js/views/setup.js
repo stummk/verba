@@ -1,7 +1,12 @@
-// First-run setup: a five-step wizard — install missing components, then
-// workspace, Whisper, LLM and search configuration. Every step can be skipped
-// with its defaults, and the whole wizard can be postponed at any point; only
+// First-run setup: a six-step wizard — install missing components, then
+// workspace, Whisper, LLM, search and access. Every step can be skipped with
+// its defaults, and the whole wizard can be postponed at any point; only
 // reaching the end marks the setup as completed (the reminder stays otherwise).
+//
+// "Access" comes last on purpose: the installation should be working before it
+// is locked, and skipping the step leaves the app open — which is exactly right
+// for the local desktop build and clearly wrong for a server, so the step says
+// so instead of quietly doing nothing.
 
 import { api } from "../api.js";
 import { el, html, toast } from "../dom.js";
@@ -11,7 +16,7 @@ import { t } from "../i18n.js";
 import { fillLanguageSelect } from "../languages.js";
 import { on } from "../ws.js";
 
-const STEPS = ["install", "workspace", "whisper", "llm", "search"];
+const STEPS = ["install", "workspace", "whisper", "llm", "search", "access"];
 
 let unsubscribe = null;
 let installRunning = false;
@@ -61,6 +66,9 @@ export async function render(view) {
 }
 
 function goTo(index, status) {
+  // the shell can take the view away mid-flight (session expired, a start
+  // password still pending) — then there is nothing left to navigate
+  if (!el("wizard-next")) return undefined;
   stepIndex = Math.min(Math.max(index, 0), STEPS.length - 1);
   renderStepIndicator();
   el("wizard-back").hidden = stepIndex === 0;
@@ -133,6 +141,7 @@ async function renderStep(status) {
   if (step === "workspace") return renderWorkspaceStep(body);
   if (step === "whisper") return renderWhisperStep(body);
   if (step === "llm") return renderLlmStep(body);
+  if (step === "access") return renderAccessStep(body);
   return renderSearchStep(body);
 }
 
@@ -516,11 +525,70 @@ async function renderSearchStep(body) {
     : t("setup.searchMissing");
 }
 
+
+// ── step 6: access ────────────────────────────────────────────────────
+
+async function renderAccessStep(body) {
+  const state = await api.authState().catch(() => ({ enabled: false }));
+  if (state.enabled) {
+    body.replaceChildren(html`
+      <div class="card">
+        <h2>${t("setup.step.access")}</h2>
+        <p class="badge-ok">${t("users.accessOn")}</p>
+        <p class="muted">${t("setup.accessAlready")}</p>
+      </div>
+    `);
+    return;
+  }
+
+  body.replaceChildren(html`
+    <div class="card">
+      <h2>${t("setup.step.access")}</h2>
+      <p class="muted">${t("setup.accessIntro")}</p>
+      <div class="form-grid">
+        <div>
+          <label for="wizard-admin-user">${t("login.username")}</label>
+          <input id="wizard-admin-user" autocomplete="username">
+        </div>
+        <div>
+          <label for="wizard-admin-password">${t("login.newPassword")}</label>
+          <input id="wizard-admin-password" type="password" autocomplete="new-password">
+        </div>
+      </div>
+      <p class="hint">${t("setup.accessHint")}</p>
+      <div class="actions">
+        <button type="button" class="btn primary" id="wizard-admin-create">
+          ${t("users.enable")}
+        </button>
+      </div>
+      <p class="warning-box">${t("setup.accessSkipWarning")}</p>
+    </div>
+  `);
+
+  el("wizard-admin-create").onclick = async () => {
+    const username = el("wizard-admin-user").value.trim();
+    const password = el("wizard-admin-password").value;
+    if (!username || !password) {
+      toast(t("setup.accessMissing"));
+      return;
+    }
+    try {
+      await api.enableAuth(username, password);
+      toast(t("users.enabled", { count: 0 }));
+      await renderAccessStep(body);
+    } catch (error) {
+      toast(error.message);
+    }
+  };
+}
+
 // ── saving ────────────────────────────────────────────────────────────
 
 async function saveCurrentStep() {
   const step = STEPS[stepIndex];
-  if (step === "install") return; // nothing to store, the installer did that
+  // the installer wrote its own state; the access step goes through
+  // /api/auth/enable, which owns the switch
+  if (step === "install" || step === "access") return;
   const payload = { ...settings };
 
   if (step === "workspace") {

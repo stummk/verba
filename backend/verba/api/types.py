@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from ..services import project_types
 from ..services.pdf import DEFAULT_STRUCTURE, STRUCTURES
+from .deps import AdminUser
 
 router = APIRouter(prefix="/api/types", tags=["types"])
 
@@ -38,7 +39,7 @@ def default_prompts() -> dict:
 
 
 @router.post("", status_code=201)
-def create_type(body: TypeRequest) -> dict:
+def create_type(body: TypeRequest, user: dict = AdminUser) -> dict:
     return project_types.create_type(
         body.name.strip(),
         body.system_prompt.strip(),
@@ -48,7 +49,7 @@ def create_type(body: TypeRequest) -> dict:
 
 
 @router.put("/{type_id}")
-def update_type(type_id: int, body: TypeRequest) -> dict:
+def update_type(type_id: int, body: TypeRequest, user: dict = AdminUser) -> dict:
     updated = project_types.update_type(
         type_id,
         body.name.strip(),
@@ -62,12 +63,12 @@ def update_type(type_id: int, body: TypeRequest) -> dict:
 
 
 @router.delete("/{type_id}")
-def delete_type(type_id: int) -> dict:
+def delete_type(type_id: int, user: dict = AdminUser) -> dict:
     if not project_types.delete_type(type_id):
         raise HTTPException(status_code=404, detail="Transcript type not found")
     return {"deleted": True}
 
 
 @router.post("/restore-defaults")
-def restore_defaults() -> list[dict]:
+def restore_defaults(user: dict = AdminUser) -> list[dict]:
     return project_types.restore_builtin_types()

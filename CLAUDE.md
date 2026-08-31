@@ -2,7 +2,7 @@
 
 Cross-platform transcription tool: FastAPI backend + PWA frontend (no build step),
 faster-whisper, optional LLM pipeline (OpenAI-compatible), PDF export, semantic
-search (sqlite-vec).
+search (sqlite-vec), optional user management with per-transcript visibility.
 Architecture & phase plan: `docs/PLAN.md`. Detailed guidelines: `AGENTS.md`.
 
 ## Commands
@@ -27,17 +27,24 @@ python -m ruff format --check backend/ tests/ run.py
   a Windows console codepage cannot encode more), which systemd captures in
   the journal
 - `backend/verba/` — entire backend
-  - `config.py` — settings (pydantic) ↔ `data/settings.json`; path resolution
+  - `config.py` — settings (pydantic) ↔ `data/settings.json`; `auth.enabled` is
+    backend-owned (only `/api/auth` writes it, never the settings form); path resolution
     (configured directories are normalised to absolute paths; workspaces,
     whisper models, embeddings and GGUF each have their own configurable
     directory), curated `EMBEDDING_MODELS` catalog for the search
-  - `db.py` — SQLite (`data/app.db`): projects, files, segments, jobs; short-lived connections
+  - `db.py` — SQLite (`data/app.db`): projects, files, segments, jobs, users,
+    sessions, project_shares; short-lived connections. Every schema change is
+    additive (`_migrate`/`add_missing`) so an installation upgrades in place —
+    an index on a migrated column belongs in `_migrate`, not in `_SCHEMA`, which
+    runs first (`tests/test_auth_migration.py`)
   - `logging_setup.py` — log rotation (retention from settings)
   - `procutil.py` — every subprocess spawn goes through here: a child console
     program would otherwise flash its own window on a Windows build that has
     no console (nvidia-smi, ffmpeg, pip, llama-server)
   - `setup_check.py` — first-run checks + automatic installation (ffmpeg, pip groups)
-  - `events.py` — EventHub: WebSocket broadcast to the UI (`publish()` is threadsafe)
+  - `events.py` — EventHub: WebSocket broadcast to the UI (`publish()` is threadsafe);
+    an event about a transcript passes `project_id`/`file_id` and then only reaches
+    clients that may see it — otherwise the status line names foreign files
   - `lifecycle.py` — process lifetime: desktop mode stops when the last UI
     WebSocket stays away (grace period for reloads); server mode keeps running
   - `core/jobs.py` — persistent JobQueue: two lanes (main/llm), FIFO per session,
@@ -45,7 +52,13 @@ python -m ruff format --check backend/ tests/ run.py
     local → phased batches with model swap), cancellation, requeue after restart;
     every job row is read through `JOB_SELECT`, which joins the file name so the
     UI can say *which* file a step is running on
-  - `services/` — workspace (project folders, import, moving the workspaces
+  - `services/` — auth (optional user management: scrypt password hashing from the
+    stdlib — no extra dependency —, cookie sessions stored as SHA-256, roles
+    admin/user, the three visibilities private/shared/public and the SQL clause
+    `visibility_clause()` that every cross-project query must join; deleting an
+    account removes its private transcripts and hands the shared and public ones
+    to the longest-serving admin, and the last admin can neither be deleted nor
+    demoted), workspace (project folders, import, moving the workspaces
     root incl. DB repointing via job kind `move_workspace`),
     hardware (the single RAM/VRAM probe — `setup_check`, whisper and llamacpp all
     read it; per-model memory verdicts `ok`/`tight`/`no` in German for local
@@ -79,11 +92,19 @@ python -m ruff format --check backend/ tests/ run.py
     error; only available with a configured LLM),
     public_api (public OpenAI-compatible API: key management with SHA-256 hashes,
     synchronous job bridge `api_transcribe` in the main lane, srt/vtt/verbose_json formatting)
-  - `api/` — REST routers (system incl. `setup/complete` for the five-step wizard,
+  - `api/` — REST routers; `deps.py` holds the whole authorisation surface
+    (`current_user`, `require_admin`, `project_or_403`, `file_or_403`) and returns
+    a permissive result while the user management is off, so there is no second
+    unguarded code path. `main.py` adds a middleware that 401s every `/api` route
+    without a session, so forgetting a per-route check cannot open a hole.
+    Routers: auth (login/logout/state/enable/disable/own password/own account),
+    users (admin CRUD + `users/directory` for the share picker),
+    system incl. `setup/complete` for the six-step wizard,
     settings incl. `settings/paths` and the workspace-move/reindex side effects of
     PUT, projects, types, files, segments, jobs, models, docs incl. `docs/ask`,
     export, search incl. `search/models`, apikeys, openai_compat →
-    `/v1/audio/transcriptions`: Bearer auth as soon as a key exists, otherwise open)
+    `/v1/audio/transcriptions`: Bearer auth as soon as a key exists or the user
+    management is on, otherwise open)
   - `main.py` — app factory `create_app()`, mounts `frontend/` statically
 - `frontend/` — PWA, vanilla ES modules, hash routing; **no npm, no bundler**;
   LLM output (help answers, RAG answers) goes through `js/markdown.js`:
@@ -127,6 +148,10 @@ python -m ruff format --check backend/ tests/ run.py
   and `matchMedia` calls in JS — `tests/test_pwa.py` enforces this.
   Base: 1rem = 16px.
 - Tests for every new API route and every service; FastAPI's `TestClient` is enough.
+- **Every new route that touches a transcript** goes through `api/deps.py`
+  (`project_or_403`/`file_or_403`), and every query that spans projects joins
+  `auth.visibility_clause()` — the search index is global, so that is where a
+  private transcript would otherwise leak.
 - After every code change, run `python -m ruff format --check backend/ tests/ run.py` and
   fix any reported files before considering the change complete.
 - **Maintain the in-app docs:** user-visible feature changes belong in the

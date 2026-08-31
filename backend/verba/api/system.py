@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from .. import __version__, config, lifecycle, setup_check
+from .deps import AdminUser
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -25,7 +26,7 @@ def get_status() -> dict:
 
 
 @router.get("/info")
-def get_info() -> dict:
+def get_info(user: dict = AdminUser) -> dict:
     """General machine and app facts for the settings page."""
     info = setup_check.system_info()
     info["version"] = __version__
@@ -33,7 +34,7 @@ def get_info() -> dict:
 
 
 @router.post("/setup/run")
-def run_setup(body: SetupRunRequest) -> dict:
+def run_setup(body: SetupRunRequest, user: dict = AdminUser) -> dict:
     """Start the setup in a background thread; progress arrives via WebSocket."""
     if setup_check.progress.running:
         return {"started": False, "reason": "Setup is already running."}
@@ -48,7 +49,7 @@ def run_setup(body: SetupRunRequest) -> dict:
 
 
 @router.post("/setup/complete")
-def complete_setup() -> dict:
+def complete_setup(user: dict = AdminUser) -> dict:
     """Mark the first-run wizard as finished.
 
     The wizard walks through installation, workspace, Whisper, LLM and search;
@@ -66,7 +67,7 @@ def complete_setup() -> dict:
 
 
 @router.post("/shutdown")
-def shutdown() -> dict:
+def shutdown(user: dict = AdminUser) -> dict:
     """Stop the local desktop process after the response has been sent."""
     if not lifecycle.desktop_mode():
         return {"stopped": False}

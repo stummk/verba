@@ -21,6 +21,32 @@ CREATE TABLE IF NOT EXISTS meta (
     value  TEXT NOT NULL
 );
 
+-- Optional user management. The tables exist from the first start on, but
+-- stay empty until an admin switches the feature on (settings.auth.enabled):
+-- an empty users table means "nobody is logged in, everybody may do anything",
+-- which is exactly how the local desktop build is meant to run.
+CREATE TABLE IF NOT EXISTS users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    display_name  TEXT NOT NULL DEFAULT '',
+    password_hash TEXT NOT NULL,
+    password_salt TEXT NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'user',
+    must_change_password INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    last_login_at TEXT
+);
+
+-- Login sessions. Only the SHA-256 of the cookie value is stored, so a stolen
+-- database file does not hand out live sessions.
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash   TEXT PRIMARY KEY,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at   TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS project_types (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     key           TEXT NOT NULL UNIQUE,
@@ -40,6 +66,11 @@ CREATE TABLE IF NOT EXISTS projects (
     type_id       INTEGER REFERENCES project_types(id) ON DELETE SET NULL,
     auto_process  INTEGER NOT NULL DEFAULT 0,
     auto_language TEXT NOT NULL DEFAULT '',
+    -- Ownership and visibility only mean something while the user management
+    -- is switched on. 'public' is the default so a database written before
+    -- this existed keeps behaving exactly as it did: everything visible.
+    owner_id      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    visibility    TEXT NOT NULL DEFAULT 'public',
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -130,6 +161,14 @@ CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
     INSERT INTO chunks_fts(rowid, text) VALUES (new.id, new.text);
 END;
 
+-- Which users a 'shared' project is shared with. Both sides cascade, so
+-- deleting either the project or the user leaves no dangling grant.
+CREATE TABLE IF NOT EXISTS project_shares (
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (project_id, user_id)
+);
+
 -- Keys for the public OpenAI-compatible API; only a SHA-256 hash is stored,
 -- the plaintext key is shown exactly once at creation time.
 CREATE TABLE IF NOT EXISTS api_keys (
@@ -146,6 +185,7 @@ CREATE INDEX IF NOT EXISTS idx_files_project ON files(project_id);
 CREATE INDEX IF NOT EXISTS idx_segments_file ON segments(file_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_derived_texts_file ON derived_texts(file_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 """
 
 
@@ -195,6 +235,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     add_missing("files", "header_middle", "header_middle TEXT NOT NULL DEFAULT ''")
     add_missing("files", "header_right", "header_right TEXT NOT NULL DEFAULT ''")
     add_missing("files", "target_language", "target_language TEXT NOT NULL DEFAULT ''")
+    add_missing("projects", "owner_id", "owner_id INTEGER REFERENCES users(id)")
+    add_missing("projects", "visibility", "visibility TEXT NOT NULL DEFAULT 'public'")
+    # not part of _SCHEMA: that script runs before this migration, so on a
+    # database written without the column the index would fail to create
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_owner ON projects(owner_id)")
     add_missing("jobs", "session_id", "session_id TEXT NOT NULL DEFAULT ''")
     add_missing("jobs", "priority", "priority INTEGER NOT NULL DEFAULT 0")
 

@@ -63,7 +63,7 @@ Server wieder erreichbar ist, geht es automatisch weiter.
 
 ## Ersteinrichtung {#first-run}
 
-Die Ersteinrichtung führt in fünf Schritten durch alles, was Verba braucht:
+Die Ersteinrichtung führt in sechs Schritten durch alles, was Verba braucht:
 
 1. **Komponenten installieren** — Verba prüft das System (Python, ffmpeg, GPU,
    KI-Komponenten) und installiert Fehlendes automatisch. Der Fortschritt läuft
@@ -81,6 +81,10 @@ Die Ersteinrichtung führt in fünf Schritten durch alles, was Verba braucht:
 4. **Sprachmodell** — optional: aus, lokal oder OpenAI-kompatibler Endpunkt
    (Abschnitt „Sprachmodell (LLM) einrichten").
 5. **Suche** — Embedding-Modell für die semantische Suche (Abschnitt „Suche").
+6. **Zugang** — optional ein Administratorkonto anlegen und damit die
+   Nutzerverwaltung einschalten (Abschnitt „Nutzer & Sichtbarkeit"). Wird der
+   Schritt übersprungen, bleibt Verba ungesichert — das ist nur für die
+   lokale Nutzung auf diesem Rechner sinnvoll.
 
 Jeder Schritt lässt sich mit **Schritt überspringen** auslassen; dann gilt die
 Standardeinstellung, die später jederzeit in den Einstellungen änderbar ist.
@@ -615,9 +619,110 @@ steht die Bereichsliste als Seitenleiste neben dem gewählten Bereich.
   Modellverzeichnis, Index neu aufbauen
 - **API:** Schlüssel für die öffentliche Transkriptions-API (Abschnitt
   „Öffentliche API")
+- **Mein Konto:** eigenes Passwort ändern, eigenes Konto löschen und —
+  als Administrator — der Einstieg in die Nutzerverwaltung (Abschnitt
+  „Nutzer & Sichtbarkeit“)
 - **System:** Informationen über den Rechner, auf dem Verba läuft — CPU
   (Modell und Kerne), Arbeitsspeicher (frei/gesamt), Grafikkarte samt VRAM,
   ffmpeg-Status — sowie die App-Version
+
+## Nutzer & Sichtbarkeit {#security}
+
+Standardmäßig ist Verba **ungesichert**: Wer die Adresse erreicht, sieht alles
+und darf alles. Für die lokale Nutzung auf dem eigenen Rechner ist das genau
+richtig. Sobald Verba auf einem Server läuft oder mehrere Personen damit
+arbeiten, schalten Sie die **Nutzerverwaltung** ein.
+
+### Einschalten
+
+Bei der Ersteinrichtung im Schritt **Zugang**, später jederzeit unter
+Einstellungen → Mein Konto → **Nutzerverwaltung öffnen**. Sie legen dort ein
+Administratorkonto an; damit ist die Anwendung sofort geschützt und nur noch
+nach Anmeldung erreichbar.
+
+Beim Einschalten geht nichts verloren: Alle vorhandenen Transkripte bleiben
+unverändert, bleiben **öffentlich** — also für alle angemeldeten Nutzer
+sichtbar — und werden dem ersten Administrator als Eigentümer zugeordnet. Er
+kann sie anschließend anderen zuordnen oder ihre Sichtbarkeit ändern.
+
+Überspringen Sie den Schritt, wird kein Konto angelegt und Verba bleibt offen.
+Die Anwendung sagt das an dieser Stelle auch deutlich.
+
+### Rollen
+
+- **Administrator:** verwaltet Nutzer, Einstellungen, Whisper- und
+  Sprachmodelle, Transkripttypen, Suchindex und API-Schlüssel. Sieht und
+  bearbeitet jedes Transkript.
+- **Nutzer:** arbeitet mit den eigenen und den für ihn freigegebenen
+  Transkripten, durchsucht sie, exportiert sie. In den Einstellungen bleiben
+  ihm die Oberflächensprache, die Dokumentation und das eigene Konto.
+
+Der erste Nutzer ist immer Administrator. Das **letzte** Administratorkonto
+lässt sich weder löschen noch zum normalen Nutzer machen — sonst könnte
+niemand mehr Nutzer oder Einstellungen verwalten.
+
+### Konten anlegen
+
+Es gibt keine Selbstregistrierung: Konten legt ein Administrator unter
+Einstellungen → Nutzerverwaltung an, mit einem Startpasswort. Beim ersten
+Anmelden muss der Nutzer ein eigenes Passwort vergeben — bis dahin kommt er
+nicht weiter. Setzt ein Administrator ein Passwort zurück, gilt dasselbe
+wieder.
+
+### Sichtbarkeit pro Transkript
+
+Jedes Transkript hat eine von drei Sichtbarkeiten. Sie steht als farbige
+Marke auf der Transkriptkachel und lässt sich über das Schloss-Symbol ändern:
+
+- **Privat** — nur der Eigentümer und Administratoren
+- **Freigegeben** — zusätzlich die ausdrücklich ausgewählten Personen
+- **Öffentlich** — alle angemeldeten Nutzer
+
+**Wer ein Transkript sieht, darf es auch bearbeiten und löschen.** Die einzige
+Ausnahme sind die Sichtbarkeit und die Freigabeliste selbst: die ändern nur
+der Eigentümer und Administratoren. Sonst könnte ein Kollege ein öffentliches
+Transkript auf privat stellen und alle anderen aussperren.
+
+Welche Sichtbarkeit neue Transkripte bekommen, legt ein Administrator unter
+Nutzerverwaltung → **Standard-Sichtbarkeit** fest; beim Anlegen lässt sich
+davon abweichen.
+
+Die Sichtbarkeit gilt überall, nicht nur in der Übersicht: Die Suche findet
+nur, was Sie sehen dürfen, die Statuszeile nennt keine fremden Dateinamen, und
+Dateien, Segmente und PDF-Exporte eines fremden privaten Transkripts sind
+nicht erreichbar.
+
+### Eigenes Konto
+
+Unter Einstellungen → **Mein Konto** ändern Sie Ihr Passwort (dabei werden
+alle anderen angemeldeten Geräte abgemeldet) oder löschen Ihr Konto.
+
+Beim Löschen eines Kontos gilt:
+
+- **Private** Transkripte werden mitsamt Audiodateien gelöscht — sie gehörten
+  nur dieser einen Person.
+- **Freigegebene und öffentliche** Transkripte bleiben erhalten und gehen an
+  den dienstältesten Administrator über. Sie sind Arbeitsmaterial anderer und
+  sollen nicht unter deren Händen verschwinden.
+
+Dasselbe passiert, wenn ein Administrator ein fremdes Konto löscht. Die
+Anwendung nennt vor dem Löschen die betroffene Anzahl.
+
+### Was sich sonst noch ändert
+
+- Die **öffentliche API** (`/v1`) verlangt bei aktiver Nutzerverwaltung immer
+  einen API-Schlüssel — sonst wäre die Anmeldung über diesen Weg umgehbar.
+- Die Anmeldung läuft über ein Sitzungs-Cookie. Passwörter werden mit scrypt
+  gehasht gespeichert, von Sitzungen nur eine Prüfsumme; im Klartext liegt
+  weder das eine noch das andere in der Datenbank.
+- Hinter einem Reverse-Proxy sollte Verba über **HTTPS** laufen: das
+  Sitzungs-Cookie wird nur dann als `Secure` markiert.
+
+### Wieder ausschalten
+
+Unter Nutzerverwaltung → **Nutzerverwaltung deaktivieren**. Die Konten bleiben
+erhalten und lassen sich jederzeit wieder aktivieren; bis dahin ist Verba
+wieder für jeden offen, der die Adresse erreicht.
 
 ## Öffentliche API {#api}
 

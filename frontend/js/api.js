@@ -22,11 +22,25 @@ async function request(method, path, body) {
   const response = await fetch(path, options);
   if (!response.ok) {
     let detail = `${response.status} ${response.statusText}`;
+    let code = "";
     try {
       const data = await response.json();
       if (data.detail) detail = data.detail;
+      code = data.code ?? "";
     } catch { /* keep default detail */ }
-    throw new Error(detail);
+    // The session ended (expired, logged out elsewhere, account deleted) or a
+    // start password is still pending: the shell has to take over the screen,
+    // otherwise every view would only show a cryptic error card.
+    if (response.status === 401 && !path.startsWith("/api/auth/")) {
+      window.dispatchEvent(new CustomEvent("auth:required"));
+    }
+    if (code === "password_change_required") {
+      window.dispatchEvent(new CustomEvent("auth:passwordChange"));
+    }
+    const error = new Error(detail);
+    error.status = response.status;
+    error.code = code;
+    throw error;
   }
   return response.json();
 }
@@ -59,6 +73,26 @@ function upload(path, file, onProgress = null) {
 }
 
 export const api = {
+  // authentication & users
+  authState: () => request("GET", "/api/auth/state"),
+  login: (username, password) => request("POST", "/api/auth/login", { username, password }),
+  logout: () => request("POST", "/api/auth/logout"),
+  enableAuth: (username, password, displayName = "") =>
+    request("POST", "/api/auth/enable", {
+      username, password, display_name: displayName,
+    }),
+  disableAuth: () => request("POST", "/api/auth/disable"),
+  changePassword: (currentPassword, newPassword) =>
+    request("POST", "/api/auth/password", {
+      current_password: currentPassword, new_password: newPassword,
+    }),
+  deleteOwnAccount: (password) => request("DELETE", "/api/auth/me", { password }),
+  listUsers: () => request("GET", "/api/users"),
+  userDirectory: () => request("GET", "/api/users/directory"),
+  createUser: (user) => request("POST", "/api/users", user),
+  updateUser: (id, changes) => request("PUT", `/api/users/${id}`, changes),
+  deleteUser: (id) => request("DELETE", `/api/users/${id}`),
+
   // system & settings
   systemStatus: () => request("GET", "/api/system/status"),
   systemInfo: () => request("GET", "/api/system/info"),
@@ -75,8 +109,10 @@ export const api = {
 
   // projects & files
   listProjects: () => request("GET", "/api/projects"),
-  createProject: (name, typeId = null) =>
-    request("POST", "/api/projects", { name, type_id: typeId }),
+  createProject: (name, typeId = null, visibility = "") =>
+    request("POST", "/api/projects", { name, type_id: typeId, visibility }),
+  setVisibility: (id, visibility, userIds = []) =>
+    request("PUT", `/api/projects/${id}/visibility`, { visibility, user_ids: userIds }),
   updateProject: (id, changes) => request("PUT", `/api/projects/${id}`, changes),
   getProject: (id) => request("GET", `/api/projects/${id}`),
   deleteProject: (id, deleteFiles = true) =>

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from ..services import pdf, workspace
+from .deps import file_or_403 as _file_or_404
+from .deps import project_or_403 as _project_or_404
 
 router = APIRouter(prefix="/api", tags=["export"])
 
@@ -22,22 +24,14 @@ class ExportOptions(BaseModel):
     combine: bool = False
 
 
-def _project_or_404(project_id: int) -> dict:
-    project = workspace.get_project(project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Transcript not found")
-    return project
-
-
 @router.post("/files/{file_id}/export")
 def export_file(
     file_id: int,
+    request: Request,
     body: ExportOptions | None = None,
     x_session_id: str = Header(default="", alias="X-Session-Id"),
 ) -> dict:
-    file_row = workspace.get_file(file_id)
-    if file_row is None:
-        raise HTTPException(status_code=404, detail="File not found")
+    file_row = _file_or_404(file_id, request)
     if file_row["status"] != "done":
         raise HTTPException(status_code=409, detail="File has not been transcribed yet")
     options = body or ExportOptions()
@@ -49,10 +43,11 @@ def export_file(
 @router.post("/projects/{project_id}/export")
 def export_project(
     project_id: int,
+    request: Request,
     body: ExportOptions | None = None,
     x_session_id: str = Header(default="", alias="X-Session-Id"),
 ) -> dict:
-    project = _project_or_404(project_id)
+    project = _project_or_404(project_id, request)
     if not any(f["status"] == "done" for f in workspace.list_files(project_id)):
         raise HTTPException(status_code=422, detail="No transcribed files available")
     options = body or ExportOptions()
@@ -62,12 +57,12 @@ def export_project(
 
 
 @router.get("/projects/{project_id}/exports")
-def list_exports(project_id: int) -> list[dict]:
-    return pdf.list_exports(_project_or_404(project_id))
+def list_exports(project_id: int, request: Request) -> list[dict]:
+    return pdf.list_exports(_project_or_404(project_id, request))
 
 
-def _export_path_or_404(project_id: int, name: str):
-    project = _project_or_404(project_id)
+def _export_path_or_404(project_id: int, name: str, request: Request):
+    project = _project_or_404(project_id, request)
     directory = pdf.exports_dir(project).resolve()
     path = (directory / name).resolve()
     if path.parent != directory or path.suffix != ".pdf":
@@ -78,12 +73,12 @@ def _export_path_or_404(project_id: int, name: str):
 
 
 @router.get("/projects/{project_id}/exports/{name}")
-def download_export(project_id: int, name: str) -> FileResponse:
-    path = _export_path_or_404(project_id, name)
+def download_export(project_id: int, name: str, request: Request) -> FileResponse:
+    path = _export_path_or_404(project_id, name, request)
     return FileResponse(path, filename=path.name, media_type="application/pdf")
 
 
 @router.delete("/projects/{project_id}/exports/{name}")
-def delete_export(project_id: int, name: str) -> dict:
-    _export_path_or_404(project_id, name).unlink()
+def delete_export(project_id: int, name: str, request: Request) -> dict:
+    _export_path_or_404(project_id, name, request).unlink()
     return {"deleted": True}

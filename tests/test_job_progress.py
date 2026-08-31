@@ -62,7 +62,9 @@ def test_the_websocket_event_carries_it_too(env, monkeypatch):
     monkeypatch.setattr(
         jobs_module.hub,
         "publish",
-        lambda event_type, data=None: events.append({"type": event_type, "data": data}),
+        lambda event_type, data=None, **scope: events.append(
+            {"type": event_type, "data": data, "scope": scope}
+        ),
     )
     _, file_row = make_file(env)
     job_queue.enqueue("transcribe", payload={}, file_id=file_row["id"])
@@ -70,6 +72,9 @@ def test_the_websocket_event_carries_it_too(env, monkeypatch):
     [event] = [e for e in events if e["type"] == "job.update"]
     assert event["data"]["filename"] == "lied.mp3"
     assert event["data"]["kind"] == "transcribe"
+    # the event is scoped to its transcript so it only reaches clients
+    # that may see that file (user management on)
+    assert event["scope"]["file_id"] == file_row["id"]
 
 
 def test_a_job_without_a_file_has_no_name(env):

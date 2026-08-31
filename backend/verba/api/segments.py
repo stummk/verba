@@ -2,21 +2,24 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ..core.jobs import job_queue
-from ..services import transcripts, vectorstore, workspace
+from ..services import transcripts, vectorstore
 from ..services.audio import EDIT_OPS
+from .deps import file_or_403 as _file_or_404
 
 router = APIRouter(prefix="/api", tags=["segments"])
 
 
-def _file_or_404(file_id: int) -> dict:
-    file_row = workspace.get_file(file_id)
-    if file_row is None:
-        raise HTTPException(status_code=404, detail="File not found")
-    return file_row
+def _segment_or_404(segment_id: int, request: Request) -> dict:
+    """The segment, if the caller may reach the transcript it belongs to."""
+    segment = transcripts.get_segment(segment_id)
+    if segment is None:
+        raise HTTPException(status_code=404, detail="Segment nicht gefunden")
+    _file_or_404(segment["file_id"], request)
+    return segment
 
 
 class SegmentUpdate(BaseModel):
@@ -27,7 +30,8 @@ class SegmentUpdate(BaseModel):
 
 
 @router.put("/segments/{segment_id}")
-def update_segment(segment_id: int, body: SegmentUpdate) -> dict:
+def update_segment(segment_id: int, body: SegmentUpdate, request: Request) -> dict:
+    _segment_or_404(segment_id, request)
     changes = {k: v for k, v in body.model_dump().items() if v is not None}
     segment = transcripts.update_segment(segment_id, changes)
     if segment is None:
@@ -38,9 +42,9 @@ def update_segment(segment_id: int, body: SegmentUpdate) -> dict:
 
 
 @router.delete("/segments/{segment_id}")
-def delete_segment(segment_id: int) -> dict:
-    segment = transcripts.get_segment(segment_id)
-    if segment is None or not transcripts.delete_segment(segment_id):
+def delete_segment(segment_id: int, request: Request) -> dict:
+    segment = _segment_or_404(segment_id, request)
+    if not transcripts.delete_segment(segment_id):
         raise HTTPException(status_code=404, detail="Segment not found")
     vectorstore.maybe_enqueue_index(segment["file_id"])
     return {"deleted": True}
@@ -54,8 +58,8 @@ class RangeRequest(BaseModel):
 
 
 @router.post("/files/{file_id}/transcribe-range")
-def transcribe_range(file_id: int, body: RangeRequest) -> dict:
-    file_row = _file_or_404(file_id)
+def transcribe_range(file_id: int, body: RangeRequest, request: Request) -> dict:
+    file_row = _file_or_404(file_id, request)
     if body.end_s <= body.start_s:
         raise HTTPException(status_code=422, detail="End must be after start")
     payload = {"start_s": body.start_s, "end_s": body.end_s}
@@ -75,8 +79,8 @@ class AudioEditRequest(BaseModel):
 
 
 @router.post("/files/{file_id}/audio/edit")
-def edit_audio(file_id: int, body: AudioEditRequest) -> dict:
-    file_row = _file_or_404(file_id)
+def edit_audio(file_id: int, body: AudioEditRequest, request: Request) -> dict:
+    file_row = _file_or_404(file_id, request)
     if body.op not in EDIT_OPS:
         raise HTTPException(status_code=422, detail=f"Unknown operation: {body.op}")
     if body.end_s <= body.start_s:

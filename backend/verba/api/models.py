@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..services import llamacpp, whisper
+from .deps import AdminUser
 
 router = APIRouter(prefix="/api/models", tags=["models"])
 
@@ -26,7 +27,7 @@ def list_models() -> dict:
 
 
 @router.post("/download", status_code=202)
-def download_model(body: DownloadRequest) -> dict:
+def download_model(body: DownloadRequest, user: dict = AdminUser) -> dict:
     name = body.name.strip()
     if not name or not _NAME_RE.match(name):
         raise HTTPException(status_code=422, detail="Invalid model name")
@@ -36,7 +37,7 @@ def download_model(body: DownloadRequest) -> dict:
 
 
 @router.delete("")
-def delete_model(name: str) -> dict:
+def delete_model(name: str, user: dict = AdminUser) -> dict:
     try:
         whisper.delete_model(name)
     except ValueError as exc:
@@ -56,7 +57,7 @@ def llm_status() -> dict:
 
 
 @router.post("/llm/setup", status_code=202)
-def install_llm_binary() -> dict:
+def install_llm_binary(user: dict = AdminUser) -> dict:
     """Download the llama.cpp server binary in the background."""
     if llamacpp.server_binary() is not None:
         return {"started": False, "installed": True}
@@ -66,7 +67,7 @@ def install_llm_binary() -> dict:
 
 
 @router.post("/llm/download", status_code=202)
-def download_llm_model(body: DownloadRequest) -> dict:
+def download_llm_model(body: DownloadRequest, user: dict = AdminUser) -> dict:
     try:
         started = llamacpp.start_model_download(body.name.strip())
     except ValueError as exc:
@@ -77,7 +78,7 @@ def download_llm_model(body: DownloadRequest) -> dict:
 
 
 @router.delete("/llm")
-def delete_llm_model(name: str) -> dict:
+def delete_llm_model(name: str, user: dict = AdminUser) -> dict:
     try:
         llamacpp.delete_model(name)
     except ValueError as exc:
@@ -86,7 +87,7 @@ def delete_llm_model(name: str) -> dict:
 
 
 @router.post("/llm/stop")
-def stop_llm_server() -> dict:
+def stop_llm_server(user: dict = AdminUser) -> dict:
     """Stop the managed llama-server (frees VRAM/RAM)."""
     llamacpp.stop_server()
     return {"stopped": True}

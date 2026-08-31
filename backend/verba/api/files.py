@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -13,22 +13,10 @@ from ..core.jobs import job_queue
 from ..services import pipeline, transcripts, workspace
 from ..services.llm import llm_location
 from ..services.media import is_audio_file
+from .deps import file_or_403 as _file_or_404
+from .deps import project_or_403 as _project_or_404
 
 router = APIRouter(prefix="/api", tags=["files"])
-
-
-def _project_or_404(project_id: int) -> dict:
-    project = workspace.get_project(project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Transcript not found")
-    return project
-
-
-def _file_or_404(file_id: int) -> dict:
-    file_row = workspace.get_file(file_id)
-    if file_row is None:
-        raise HTTPException(status_code=404, detail="File not found")
-    return file_row
 
 
 # ── server file browser (restricted to configured roots) ─────────────
@@ -95,8 +83,8 @@ class ImportRequest(BaseModel):
 
 
 @router.post("/projects/{project_id}/files/import")
-def import_files(project_id: int, body: ImportRequest) -> list[dict]:
-    project = _project_or_404(project_id)
+def import_files(project_id: int, body: ImportRequest, request: Request) -> list[dict]:
+    project = _project_or_404(project_id, request)
     for raw in body.paths:
         _ensure_within_roots(Path(raw).resolve())
     imported = workspace.import_paths(project, body.paths)
@@ -106,16 +94,16 @@ def import_files(project_id: int, body: ImportRequest) -> list[dict]:
 
 
 @router.post("/projects/{project_id}/files/upload")
-async def upload_file(project_id: int, file: UploadFile) -> dict:
-    project = _project_or_404(project_id)
+async def upload_file(project_id: int, file: UploadFile, request: Request) -> dict:
+    project = _project_or_404(project_id, request)
     if not file.filename or not is_audio_file(Path(file.filename)):
         raise HTTPException(status_code=422, detail="No supported audio file")
     return workspace.save_upload(project, file.filename, file.file)
 
 
 @router.delete("/files/{file_id}")
-def delete_file(file_id: int) -> dict:
-    _file_or_404(file_id)
+def delete_file(file_id: int, request: Request) -> dict:
+    _file_or_404(file_id, request)
     workspace.delete_file(file_id)
     return {"deleted": True}
 
@@ -136,10 +124,11 @@ class TranscribeOptions(BaseModel):
 @router.post("/files/{file_id}/transcribe")
 def transcribe_file(
     file_id: int,
+    request: Request,
     body: TranscribeOptions | None = None,
     x_session_id: str = Header(default="", alias="X-Session-Id"),
 ) -> dict:
-    file_row = _file_or_404(file_id)
+    file_row = _file_or_404(file_id, request)
     if file_row["status"] == "transcribing":
         raise HTTPException(status_code=409, detail="File is already being transcribed")
     payload = body.as_payload() if body else {}
@@ -155,11 +144,12 @@ def transcribe_file(
 @router.post("/projects/{project_id}/transcribe")
 def transcribe_project(
     project_id: int,
+    request: Request,
     force: bool = False,
     body: TranscribeOptions | None = None,
     x_session_id: str = Header(default="", alias="X-Session-Id"),
 ) -> list[dict]:
-    _project_or_404(project_id)
+    _project_or_404(project_id, request)
     skip_states = ("transcribing",) if force else ("transcribing", "done")
     payload = body.as_payload() if body else {}
     jobs = [
@@ -225,9 +215,10 @@ def _enqueue_process(file_row: dict, body: ProcessOptions, session_id: str) -> d
 def process_file(
     file_id: int,
     body: ProcessOptions,
+    request: Request,
     x_session_id: str = Header(default="", alias="X-Session-Id"),
 ) -> dict:
-    file_row = _file_or_404(file_id)
+    file_row = _file_or_404(file_id, request)
     _ensure_llm_available()
     if file_row["status"] != "done":
         raise HTTPException(status_code=409, detail="File has not been transcribed yet")
@@ -238,9 +229,10 @@ def process_file(
 def process_project(
     project_id: int,
     body: ProcessOptions,
+    request: Request,
     x_session_id: str = Header(default="", alias="X-Session-Id"),
 ) -> list[dict]:
-    _project_or_404(project_id)
+    _project_or_404(project_id, request)
     _ensure_llm_available()
     jobs = [
         _enqueue_process(f, body, x_session_id)
@@ -253,8 +245,8 @@ def process_project(
 
 
 @router.get("/files/{file_id}/texts")
-def get_texts(file_id: int) -> dict:
-    file_row = _file_or_404(file_id)
+def get_texts(file_id: int, request: Request) -> dict:
+    file_row = _file_or_404(file_id, request)
     return {"file": file_row, "texts": pipeline.list_texts(file_id)}
 
 
@@ -269,17 +261,19 @@ class FileHeaderUpdate(BaseModel):
 
 
 @router.put("/files/{file_id}/header")
-def update_file_header(file_id: int, body: FileHeaderUpdate) -> dict:
-    _file_or_404(file_id)
+def update_file_header(file_id: int, body: FileHeaderUpdate, request: Request) -> dict:
+    _file_or_404(file_id, request)
     updated = workspace.update_file(file_id, body.model_dump())
     assert updated is not None
     return updated
 
 
 @router.put("/files/{file_id}/texts/{kind}")
-def update_text(file_id: int, kind: str, body: TextUpdate, language: str = "") -> dict:
+def update_text(
+    file_id: int, kind: str, body: TextUpdate, request: Request, language: str = ""
+) -> dict:
     """Manual edit of a derived text (cleanup/translation) from the editor."""
-    _file_or_404(file_id)
+    _file_or_404(file_id, request)
     updated = pipeline.update_text_content(file_id, kind, language, body.content)
     if updated is None:
         raise HTTPException(status_code=404, detail="No such AI text available")
@@ -290,14 +284,14 @@ def update_text(file_id: int, kind: str, body: TextUpdate, language: str = "") -
 
 
 @router.get("/files/{file_id}/segments")
-def get_segments(file_id: int) -> dict:
-    file_row = _file_or_404(file_id)
+def get_segments(file_id: int, request: Request) -> dict:
+    file_row = _file_or_404(file_id, request)
     return {"file": file_row, "segments": transcripts.list_segments(file_id)}
 
 
 @router.get("/files/{file_id}/audio")
-def get_audio(file_id: int) -> FileResponse:
-    file_row = _file_or_404(file_id)
+def get_audio(file_id: int, request: Request) -> FileResponse:
+    file_row = _file_or_404(file_id, request)
     path = workspace.file_path(file_row)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Audio file is missing from the workspace")

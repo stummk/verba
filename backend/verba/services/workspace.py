@@ -50,14 +50,28 @@ def project_dir(project: dict[str, Any]) -> Path:
     return Path(project["workspace"])
 
 
-def create_project(name: str, type_id: int | None = None) -> dict[str, Any]:
+def create_project(
+    name: str,
+    type_id: int | None = None,
+    owner_id: int | None = None,
+    visibility: str = "",
+) -> dict[str, Any]:
+    """Create a project folder and its database row.
+
+    Without an explicit visibility the configured default applies — and while
+    the user management is off that is always "public", because there is
+    nobody the transcript could be private from.
+    """
     settings = config.get_settings()
+    if not visibility:
+        visibility = settings.auth.default_visibility if settings.auth.enabled else "public"
     with db.get_conn() as conn:
         slug = _unique_slug(conn, slugify(name))
         workspace = config.workspaces_dir(settings) / slug
         cursor = conn.execute(
-            "INSERT INTO projects (name, slug, workspace, type_id) VALUES (?, ?, ?, ?)",
-            (name, slug, str(workspace), type_id),
+            "INSERT INTO projects (name, slug, workspace, type_id, owner_id, visibility) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (name, slug, str(workspace), type_id, owner_id, visibility),
         )
         project_id = cursor.lastrowid
 
@@ -74,8 +88,10 @@ def get_project(project_id: int) -> dict[str, Any] | None:
     with db.get_conn() as conn:
         row = conn.execute(
             "SELECT p.*, t.key AS type_key, t.name AS type_name, t.system_prompt AS type_prompt, "
-            "t.output_prompt AS type_output_prompt, t.structure AS type_structure "
+            "t.output_prompt AS type_output_prompt, t.structure AS type_structure, "
+            "u.username AS owner_name "
             "FROM projects p LEFT JOIN project_types t ON t.id = p.type_id "
+            "LEFT JOIN users u ON u.id = p.owner_id "
             "WHERE p.id = ?",
             (project_id,),
         ).fetchone()
@@ -143,20 +159,57 @@ def update_project(project_id: int, changes: dict[str, Any]) -> dict[str, Any] |
     return get_project(project_id)
 
 
-def list_projects() -> list[dict[str, Any]]:
+def list_projects(user: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Every transcript this user may see (all of them while auth is off)."""
+    from .auth import visibility_clause  # local import: auth imports this module
+
+    clause, params = visibility_clause(user)
+    where = f"WHERE {clause}" if clause else ""
     with db.get_conn() as conn:
         rows = conn.execute(
-            """
-            SELECT p.*, t.name AS type_name,
+            f"""
+            SELECT p.*, t.name AS type_name, u.username AS owner_name,
                    COUNT(f.id) AS file_count,
                    SUM(CASE WHEN f.status = 'done' THEN 1 ELSE 0 END) AS done_count
             FROM projects p
             LEFT JOIN project_types t ON t.id = p.type_id
+            LEFT JOIN users u ON u.id = p.owner_id
             LEFT JOIN files f ON f.project_id = p.id
+            {where}
             GROUP BY p.id ORDER BY p.created_at DESC
-            """
+            """,
+            params,
         ).fetchall()
     return db.rows_to_dicts(rows)
+
+
+def set_visibility(
+    project_id: int, visibility: str, user_ids: list[int] | None = None
+) -> dict[str, Any] | None:
+    """Change who may reach a transcript.
+
+    The share list is only kept for 'shared'; switching to private or public
+    clears it, so a transcript that becomes shared again does not silently
+    reuse a list nobody remembers.
+    """
+    from .auth import VISIBILITIES, set_shares
+
+    if visibility not in VISIBILITIES:
+        raise ValueError(f"Unbekannte Sichtbarkeit: {visibility}")
+    if get_project(project_id) is None:
+        return None
+    with db.get_conn() as conn:
+        conn.execute("UPDATE projects SET visibility = ? WHERE id = ?", (visibility, project_id))
+    set_shares(project_id, user_ids or [] if visibility == "shared" else [])
+    return get_project(project_id)
+
+
+def set_owner(project_id: int, owner_id: int | None) -> dict[str, Any] | None:
+    if get_project(project_id) is None:
+        return None
+    with db.get_conn() as conn:
+        conn.execute("UPDATE projects SET owner_id = ? WHERE id = ?", (owner_id, project_id))
+    return get_project(project_id)
 
 
 def delete_project(project_id: int, delete_files: bool = True) -> None:
@@ -226,7 +279,7 @@ def file_path(file_row: dict[str, Any]) -> Path:
 def emit_file_update(file_id: int) -> None:
     file_row = get_file(file_id)
     if file_row is not None:
-        hub.publish("file.update", file_row)
+        hub.publish("file.update", file_row, project_id=file_row["project_id"])
 
 
 def unique_target(audio_dir: Path, filename: str) -> Path:
@@ -266,7 +319,7 @@ def register_file(project: dict[str, Any], target: Path, source: str = "") -> di
         file_id = cursor.lastrowid
     file_row = get_file(file_id)
     assert file_row is not None
-    hub.publish("file.update", file_row)
+    hub.publish("file.update", file_row, project_id=file_row["project_id"])
     return file_row
 
 

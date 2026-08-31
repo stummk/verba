@@ -14,13 +14,25 @@ let currentProjectId = null;
 let renameDialog = null;
 let deleteDialog = null;
 let renameInput = null;
+// {enabled, user} plus the name list for the share picker; all empty while the
+// user management is off, and then nothing visibility-related is shown at all
+let access = { enabled: false, user: null, directory: [] };
+// set up once with the dialog; re-applied whenever it is opened
+let syncVisibilityDialog = () => {};
 
 export async function render(view, systemStatus) {
-  const [projects, types, jobs] = await Promise.all([
+  const [projects, types, jobs, authState] = await Promise.all([
     api.listProjects(),
     api.listTypes(),
     api.listJobs(true).catch(() => []),
+    api.authState().catch(() => ({ enabled: false, user: null })),
   ]);
+  access = {
+    enabled: authState.enabled,
+    user: authState.user,
+    defaultVisibility: authState.default_visibility ?? "private",
+    directory: authState.enabled ? await api.userDirectory().catch(() => []) : [],
+  };
   const ready = systemStatus?.ready ?? true;
   const activeJobs = new Map(jobs.filter(isActive).map((job) => [job.id, job]));
 
@@ -39,6 +51,15 @@ export async function render(view, systemStatus) {
           <option value="">${t("dashboard.noType")}</option>
           ${raw(types.map((type) => `<option value="${type.id}">${esc(type.name)}</option>`).join(""))}
         </select>
+        <div id="create-visibility-field" hidden>
+          <label for="project-visibility">${t("visibility.label")}</label>
+          <select id="project-visibility">
+            <option value="private">${t("visibility.private")}</option>
+            <option value="shared">${t("visibility.shared")}</option>
+            <option value="public">${t("visibility.public")}</option>
+          </select>
+          <p class="hint">${t("visibility.createHint")}</p>
+        </div>
         <div class="actions">
           <button type="submit">${t("dashboard.create")}</button>
           <button type="button" class="text-btn" id="create-cancel">${t("common.cancel")}</button>
@@ -56,6 +77,31 @@ export async function render(view, systemStatus) {
         </div>
       </form>
     </dialog>
+    <dialog id="visibility-dialog">
+      <h2>${t("visibility.title")}</h2>
+      <form id="visibility-form" method="dialog">
+        <div class="segmented" role="radiogroup" id="visibility-choice">
+          <label><input type="radio" name="visibility" value="private">
+            <span>${t("visibility.private")}</span></label>
+          <label><input type="radio" name="visibility" value="shared">
+            <span>${t("visibility.shared")}</span></label>
+          <label><input type="radio" name="visibility" value="public">
+            <span>${t("visibility.public")}</span></label>
+        </div>
+        <p class="hint" id="visibility-hint"></p>
+        <div id="visibility-people" hidden>
+          <label for="visibility-users">${t("visibility.people")}</label>
+          <select id="visibility-users" multiple size="6"></select>
+          <p class="hint">${t("visibility.peopleHint")}</p>
+        </div>
+        <div class="actions">
+          <button type="submit">${t("common.save")}</button>
+          <button type="button" class="text-btn" id="visibility-cancel">
+            ${t("common.cancel")}
+          </button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="delete-dialog">
       <h2>${t("dashboard.deleteTitle")}</h2>
       <p id="delete-message"></p>
@@ -66,7 +112,9 @@ export async function render(view, systemStatus) {
     </dialog>
   `);
 
-  if (!ready) {
+  // the setup is an administrator's job — a normal user can only read the
+  // reminder and then be refused by every button behind it
+  if (!ready && (!access.enabled || access.user?.role === "admin")) {
     el("setup-hint").replaceChildren(html`
       <div class="card">
         <p><strong>${t("dashboard.setupHintTitle")}</strong></p>
@@ -96,13 +144,18 @@ export async function render(view, systemStatus) {
   ];
 
   const createDialog = el("create-dialog");
+  if (access.enabled) {
+    el("create-visibility-field").hidden = false;
+    el("project-visibility").value = access.defaultVisibility;
+  }
   el("create-cancel").onclick = () => createDialog.close();
   el("create-project").onsubmit = async (event) => {
     event.preventDefault();
     const name = el("project-name").value.trim() || defaultProjectName();
     const typeId = el("project-type").value ? Number(el("project-type").value) : null;
     try {
-      const created = await api.createProject(name, typeId);
+      const visibility = access.enabled ? el("project-visibility").value : "";
+      const created = await api.createProject(name, typeId, visibility);
       createDialog.close();
       location.hash = `#/project/${created.id}`;
     } catch (error) {
@@ -126,6 +179,8 @@ export async function render(view, systemStatus) {
     }
   };
 
+  bindVisibilityDialog();
+
   el("delete-cancel").onclick = () => deleteDialog?.close();
   el("delete-confirm").onclick = async () => {
     if (!currentProjectId) return;
@@ -147,6 +202,72 @@ export async function render(view, systemStatus) {
     }
   };
   window.addEventListener("fab:click", fabHandler);
+}
+
+// ── visibility ────────────────────────────────────────────────────────
+
+function canAdminister(project) {
+  if (!access.enabled) return false; // nothing to set: everything is reachable
+  return access.user?.role === "admin" || project.owner_id === access.user?.id;
+}
+
+function visibilityLabel(project) {
+  return t(`visibility.${project.visibility || "public"}`);
+}
+
+function bindVisibilityDialog() {
+  const dialog = el("visibility-dialog");
+  const radios = [...dialog.querySelectorAll('input[name="visibility"]')];
+  const people = el("visibility-people");
+  const hint = el("visibility-hint");
+
+  function sync() {
+    const value = radios.find((radio) => radio.checked)?.value ?? "private";
+    people.hidden = value !== "shared";
+    hint.textContent = t(`visibility.${value}Hint`);
+  }
+  radios.forEach((radio) => radio.addEventListener("change", sync));
+
+  el("visibility-cancel").onclick = () => dialog.close();
+  el("visibility-form").onsubmit = async (event) => {
+    event.preventDefault();
+    if (!currentProjectId) return;
+    const value = radios.find((radio) => radio.checked)?.value ?? "private";
+    const userIds = [...el("visibility-users").selectedOptions].map((o) => Number(o.value));
+    try {
+      await api.setVisibility(currentProjectId, value, userIds);
+      toast(t("visibility.saved"));
+      dialog.close();
+      await refreshProjects();
+    } catch (error) {
+      toast(error.message);
+    }
+  };
+  syncVisibilityDialog = sync;
+}
+
+async function openVisibilityDialog(project) {
+  currentProjectId = project.id;
+  const dialog = el("visibility-dialog");
+  const current = project.visibility || "public";
+  for (const radio of dialog.querySelectorAll('input[name="visibility"]')) {
+    radio.checked = radio.value === current;
+  }
+  // the share list is not part of the overview payload — fetch the one project
+  const detail = await api.getProject(project.id).catch(() => null);
+  const shared = new Set(detail?.shared_with ?? []);
+  const select = el("visibility-users");
+  select.replaceChildren(
+    ...access.directory
+      .filter((person) => person.id !== project.owner_id)
+      .map((person) => {
+        const option = new Option(person.display_name || person.username, String(person.id));
+        option.selected = shared.has(person.id);
+        return option;
+      })
+  );
+  syncVisibilityDialog();
+  dialog.showModal();
 }
 
 async function refreshProjects() {
@@ -210,6 +331,16 @@ function renderList(projects, activeJobs = new Map()) {
         typeBadge.textContent = project.type_name;
         right.append(typeBadge);
       }
+      if (access.enabled) {
+        const visibilityBadge = document.createElement("span");
+        visibilityBadge.className = `badge badge-visibility ${project.visibility}`;
+        visibilityBadge.textContent = visibilityLabel(project);
+        // whose it is matters as soon as more than one person works here
+        visibilityBadge.title = project.owner_name
+          ? t("visibility.ownedBy", { name: project.owner_name })
+          : t("visibility.ownerless");
+        right.append(visibilityBadge);
+      }
       const actions = document.createElement("div");
       actions.className = "project-card-actions";
       const renameBtn = iconButton("edit", t("dashboard.rename"), (event) => {
@@ -227,7 +358,15 @@ function renderList(projects, activeJobs = new Map()) {
         el("delete-message").textContent = t("dashboard.deleteConfirm", { name: project.name });
         deleteDialog.showModal();
       });
-      actions.append(renameBtn, deleteBtn);
+      actions.append(renameBtn);
+      if (canAdminister(project)) {
+        actions.append(iconButton("lock", t("visibility.title"), (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openVisibilityDialog(project);
+        }));
+      }
+      actions.append(deleteBtn);
       right.append(actions);
       header.append(left, right);
       card.append(

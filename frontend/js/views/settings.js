@@ -15,6 +15,10 @@ let unsubscribers = [];
 
 export async function render(view) {
   let settings = await api.getSettings();
+  // A normal user gets nothing to configure beyond their own account: the
+  // reduced payload the backend sends has no whisper/paths/keys sections at
+  // all, so the administrative form below could not even be built from it.
+  if (settings.restricted) return renderPersonalSettings(view, settings);
 
   view.replaceChildren(html`
     <h1>${t("settings.title")}</h1>
@@ -27,6 +31,7 @@ export async function render(view) {
       <button type="button" data-target="card-api">${t("settings.apiTitle")}</button>
       <button type="button" data-target="card-storage">${t("settings.storage")}</button>
       <button type="button" data-target="card-system">${t("settings.system")}</button>
+      <button type="button" data-target="card-account">${t("settings.accountTitle")}</button>
     </nav>
     <form class="settings" id="settings-form">
       <button type="button" class="text-btn settings-back" id="settings-back">
@@ -237,12 +242,22 @@ export async function render(view) {
         <dl class="info-list" id="system-info"></dl>
       </div>
 
+      <div class="card" id="card-account">
+        <h2>${t("settings.accountTitle")}</h2>
+        <p class="muted small">${t("settings.accountIntro")}</p>
+        <div id="account-host"></div>
+        <h3 class="subhead">${t("users.title")}</h3>
+        <p class="muted small">${t("settings.usersIntro")}</p>
+        <a class="btn tonal" href="#/users">${t("settings.usersOpen")}</a>
+      </div>
+
       <div class="actions">
         <button type="submit">${t("common.save")}</button>
       </div>
     </form>
     </div>
   `);
+  mountAccount(el("account-host"));
 
   // populate selects
   const uiLanguageSelect = el("ui-language");
@@ -444,6 +459,114 @@ export async function render(view) {
     }
   };
 }
+
+/**
+ * Everything a normal user may change: their language, the guide, their own
+ * account. No sidebar — there is not enough here to navigate between.
+ */
+async function renderPersonalSettings(view, settings) {
+  view.replaceChildren(html`
+    <h1>${t("settings.title")}</h1>
+    <form class="settings" id="settings-form">
+      <div class="card">
+        <h2>${t("settings.ui")}</h2>
+        <div class="form-grid">
+          <div>
+            <label for="ui-language">${t("settings.uiLanguage")}</label>
+            <select id="ui-language"></select>
+          </div>
+          <div>
+            <label>${t("settings.docs")}</label>
+            <a class="btn tonal" href="#/docs">${t("settings.docsOpen")}</a>
+            <p class="hint">${t("settings.docsHint")}</p>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="submit">${t("common.save")}</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>${t("settings.accountTitle")}</h2>
+        <p class="muted small">${t("settings.accountIntro")}</p>
+        <div id="account-host"></div>
+      </div>
+    </form>
+  `);
+
+  const uiLanguageSelect = el("ui-language");
+  for (const code of SUPPORTED_LANGUAGES) {
+    uiLanguageSelect.append(new Option(t(`lang.${code}`), code));
+  }
+  uiLanguageSelect.value = settings.general.ui_language || currentLanguage();
+
+  el("settings-form").onsubmit = async (event) => {
+    event.preventDefault();
+    try {
+      // the payload keeps the shape the backend sent; only the one field a
+      // normal user owns is changed
+      await api.updateSettings({
+        ...settings,
+        general: { ...settings.general, ui_language: uiLanguageSelect.value },
+      });
+      toast(t("settings.saved"));
+      location.reload(); // the whole interface changes language
+    } catch (error) {
+      toast(error.message);
+    }
+  };
+
+  mountAccount(el("account-host"));
+}
+
+/** Change own password, delete own account — identical for both variants. */
+function mountAccount(host) {
+  host.replaceChildren(html`
+    <div class="form-grid">
+      <div>
+        <label for="account-current">${t("login.currentPassword")}</label>
+        <input id="account-current" type="password" autocomplete="current-password">
+      </div>
+      <div>
+        <label for="account-new">${t("login.newPassword")}</label>
+        <input id="account-new" type="password" autocomplete="new-password">
+      </div>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn" id="account-change">${t("login.changeSubmit")}</button>
+    </div>
+    <h3 class="subhead">${t("settings.deleteAccount")}</h3>
+    <p class="hint">${t("settings.deleteAccountHint")}</p>
+    <div class="actions">
+      <button type="button" class="text-btn danger" id="account-delete">
+        ${t("settings.deleteAccount")}
+      </button>
+    </div>
+  `);
+
+  el("account-change").onclick = async () => {
+    try {
+      await api.changePassword(el("account-current").value, el("account-new").value);
+      el("account-current").value = "";
+      el("account-new").value = "";
+      toast(t("settings.passwordChanged"));
+    } catch (error) {
+      toast(error.message);
+    }
+  };
+
+  el("account-delete").onclick = async () => {
+    if (!confirm(t("settings.deleteAccountConfirm"))) return;
+    const password = prompt(t("login.currentPassword"));
+    if (!password) return;
+    try {
+      await api.deleteOwnAccount(password);
+      location.reload();
+    } catch (error) {
+      toast(error.message);
+    }
+  };
+}
+
 
 async function refreshModels() {
   let models;

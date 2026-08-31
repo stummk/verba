@@ -62,7 +62,7 @@ again, everything resumes automatically.
 
 ## First-run setup {#first-run}
 
-The first-run setup walks through everything Verba needs, in five steps:
+The first-run setup walks through everything Verba needs, in six steps:
 
 1. **Install components** — Verba checks the system (Python, ffmpeg, GPU, AI
    components) and installs whatever is missing. Progress is live: the bar
@@ -80,6 +80,9 @@ The first-run setup walks through everything Verba needs, in five steps:
    (section "Setting up a language model (LLM)").
 5. **Search** — the embedding model for the semantic search (section
    "Search").
+6. **Access** — optionally create an administrator account and switch the user
+   management on (section "Users & visibility"). If the step is skipped Verba
+   stays unprotected — which only makes sense for local use on this machine.
 
 Every step can be left out with **Skip this step**; its default then applies
 and can be changed in the settings at any time. **Set up later** leaves the
@@ -591,9 +594,107 @@ the selected section.
 - **Search:** index status, embedding model (pick list), models directory,
   rebuild index
 - **API:** keys for the public transcription API (section "Public API")
+- **My account:** change your own password, delete your own account and —
+  as an administrator — the way into the user management (section
+  “Users & visibility”)
 - **System:** information about the machine Verba runs on — CPU (model and
   cores), memory (free/total), graphics card with VRAM, ffmpeg status — plus
   the app version
+
+## Users & visibility {#security}
+
+By default Verba is **unprotected**: whoever reaches the address sees
+everything and may do everything. For local use on your own machine that is
+exactly right. As soon as Verba runs on a server, or several people work with
+it, switch the **user management** on.
+
+### Switching it on
+
+During the first-run setup in the **Access** step, or later at any time under
+Settings → My account → **Open user management**. You create an administrator
+account there; from that moment the application is protected and only
+reachable after signing in.
+
+Nothing is lost by switching it on: all existing transcripts stay as they
+were, stay **public** — visible to every signed-in user — and are assigned to
+the first administrator as their owner. They can hand them over to other
+people or change their visibility afterwards.
+
+If you skip the step no account is created and Verba stays open. The
+application says so plainly at that point.
+
+### Roles
+
+- **Administrator:** manages users, settings, Whisper and language models,
+  transcript types, the search index and API keys. Sees and edits every
+  transcript.
+- **User:** works with their own transcripts and the ones shared with them,
+  searches and exports them. In the settings they keep the interface
+  language, the documentation and their own account.
+
+The first user is always an administrator. The **last** administrator account
+can neither be deleted nor demoted to a normal user — otherwise nobody would
+be left who could manage users or settings.
+
+### Creating accounts
+
+There is no self-registration: an administrator creates accounts under
+Settings → User management, with a start password. At the first sign-in the
+user has to choose their own password — until then they get no further. The
+same applies again when an administrator resets a password.
+
+### Visibility per transcript
+
+Every transcript has one of three visibilities. It appears as a coloured badge
+on the transcript card and is changed through the padlock icon:
+
+- **Private** — only the owner and administrators
+- **Shared** — plus the people explicitly selected
+- **Public** — every signed-in user
+
+**Whoever can see a transcript may also edit and delete it.** The only
+exception is the visibility and the share list themselves: only the owner and
+administrators change those. Otherwise a colleague could set a public
+transcript to private and lock everyone else out.
+
+Which visibility new transcripts get is set by an administrator under User
+management → **Default visibility**; it can be overridden at creation time.
+
+Visibility applies everywhere, not only in the overview: the search finds only
+what you may see, the status line never names somebody else's file, and the
+files, segments and PDF exports of a foreign private transcript are out of
+reach.
+
+### Your own account
+
+Under Settings → **My account** you change your password (which signs out
+every other device) or delete your account.
+
+When an account is deleted:
+
+- **Private** transcripts are deleted together with their audio files — they
+  belonged to that one person alone.
+- **Shared and public** transcripts are kept and handed to the
+  longest-serving administrator. They are other people's working material and
+  must not disappear from under them.
+
+The same happens when an administrator deletes somebody else's account. The
+application names the number of affected transcripts before deleting.
+
+### What else changes
+
+- The **public API** (`/v1`) always requires an API key while the user
+  management is on — otherwise the sign-in could simply be bypassed there.
+- Signing in uses a session cookie. Passwords are stored hashed with scrypt,
+  sessions only as a checksum; neither is in the database in clear text.
+- Behind a reverse proxy Verba should run over **HTTPS**: only then is the
+  session cookie marked `Secure`.
+
+### Switching it off again
+
+Under User management → **Disable user management**. The accounts are kept and
+can be re-enabled at any time; until then Verba is open again to anyone who
+reaches the address.
 
 ## Public API {#api}
 

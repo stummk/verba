@@ -8,11 +8,13 @@ import * as ws from "./ws.js";
 import * as dashboard from "./views/dashboard.js";
 import * as docs from "./views/docs.js";
 import * as editor from "./views/editor.js";
+import { renderLogin, renderPasswordChange } from "./views/login.js";
 import * as project from "./views/project.js";
 import * as search from "./views/search.js";
 import * as settings from "./views/settings.js";
 import * as setup from "./views/setup.js";
 import * as types from "./views/types.js";
+import * as users from "./views/users.js";
 
 const routes = {
   dashboard: { module: dashboard, title: "dashboard.title", fab: true },
@@ -21,9 +23,14 @@ const routes = {
   types: { module: types, title: "types.title", fab: true },
   search: { module: search, title: "search.title", fab: false },
   settings: { module: settings, title: "settings.title", fab: false },
-  setup: { module: setup, title: "setup.title", fab: false },
+  setup: { module: setup, title: "setup.title", fab: false, admin: true },
   docs: { module: docs, title: "docs.title", fab: false },
+  users: { module: users, title: "users.title", fab: false, admin: true },
 };
+
+// Views a normal user has no business in — the server refuses them anyway,
+// this only keeps the app from showing a page made of error cards.
+const ADMIN_ROUTES = ["types", "users"];
 
 // How many jobs the status line names before it summarises the rest.
 const MAX_STATUS_JOBS = 2;
@@ -33,12 +40,19 @@ function byRunningFirst(a, b) {
   return a.id - b.id;
 }
 
+function isAdmin() {
+  return !authState.enabled || authState.user?.role === "admin";
+}
+
 function parseHash() {
   const segments = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   return { route: segments[0] || "dashboard", params: segments.slice(1) };
 }
 
 let systemStatus = null;
+// {enabled, user} — user is null while the management is off, so `isAdmin()`
+// is true then and every role check below reads "everything allowed"
+let authState = { enabled: false, user: null };
 // the view currently on screen, and a counter that invalidates a render whose
 // navigation was overtaken by the next one
 let activeModule = null;
@@ -49,7 +63,8 @@ let firstRunPending = false;
 
 async function navigate() {
   const parsed = parseHash();
-  const route = routes[parsed.route] ? parsed.route : "dashboard";
+  let route = routes[parsed.route] ? parsed.route : "dashboard";
+  if (routes[route].admin && !isAdmin()) route = "dashboard";
   const config = routes[route];
   const token = ++navigation;
 
@@ -66,6 +81,7 @@ async function navigate() {
   document.body.classList.toggle("nav-hidden", firstRun);
 
   document.querySelectorAll(".nav-item").forEach((link) => {
+    link.hidden = ADMIN_ROUTES.includes(link.dataset.route) && !isAdmin();
     link.classList.toggle(
       "active",
       link.dataset.route === route ||
@@ -196,7 +212,7 @@ function bindShell() {
   // views (the setup wizard) publish a fresh status after they changed it
   window.addEventListener("system:status", (event) => {
     systemStatus = event.detail;
-    el("shutdown").hidden = !systemStatus.desktop_mode;
+    el("shutdown").hidden = !systemStatus.desktop_mode || !isAdmin();
     if (systemStatus.setup_completed) firstRunPending = false;
     navigate();
   });
@@ -216,21 +232,86 @@ function bindShell() {
   }
 }
 
-async function init() {
-  let uiLanguage = "de";
+// The last known interface language, so the login screen — which cannot read
+// the settings yet — comes up in the language the user chose.
+const LANGUAGE_KEY = "verba.language";
+
+async function loadLanguage() {
+  let uiLanguage = localStorage.getItem(LANGUAGE_KEY) || "de";
   try {
     const stored = await api.getSettings();
-    uiLanguage = stored.general?.ui_language || "de";
-  } catch { /* backend not reachable yet — fall back to default */ }
+    uiLanguage = stored.general?.ui_language || uiLanguage;
+    localStorage.setItem(LANGUAGE_KEY, uiLanguage);
+  } catch { /* not reachable or not logged in — the stored value has to do */ }
   await initI18n(uiLanguage);
+}
+
+/** Show the sign-in screen instead of the app; booting continues after it. */
+function showLoginScreen() {
+  document.body.classList.add("nav-hidden", "signed-out");
+  el("main-nav").hidden = true;
+  el("fab").hidden = true;
+  el("shutdown").hidden = true;
+  el("logout").hidden = true;
+  el("current-user").textContent = "";
+  el("page-title").textContent = t("app.title");
+  renderLogin(el("view"), () => location.reload());
+}
+
+function showPasswordChangeScreen() {
+  document.body.classList.add("nav-hidden");
+  el("main-nav").hidden = true;
+  el("fab").hidden = true;
+  renderPasswordChange(el("view"), () => location.reload());
+}
+
+function bindAuthShell() {
+  const logout = el("logout");
+  logout.onclick = async () => {
+    await api.logout().catch(() => {});
+    location.reload();
+  };
+  // A session can end while the app is open (expiry, an administrator
+  // deleting the account, the protection being switched on elsewhere). The
+  // API client raises this on the first 401 so the screen changes instead of
+  // filling up with error cards.
+  window.addEventListener("auth:required", () => {
+    if (!document.body.classList.contains("signed-out")) showLoginScreen();
+  });
+  window.addEventListener("auth:passwordChange", showPasswordChangeScreen);
+}
+
+function applyIdentity() {
+  const user = authState.user;
+  el("logout").hidden = !user;
+  el("current-user").textContent = user ? (user.display_name || user.username) : "";
+}
+
+async function init() {
+  authState = await api.authState().catch(() => ({ enabled: false, user: null }));
+  await loadLanguage();
+  bindAuthShell();
+
+  if (authState.enabled && !authState.user) {
+    showLoginScreen();
+    return; // no WebSocket, no views: there is nothing this visitor may see
+  }
+  if (authState.user?.must_change_password) {
+    showPasswordChangeScreen();
+    return;
+  }
+  applyIdentity();
 
   bindShell();
   ws.connect();
 
   try {
     systemStatus = await api.systemStatus();
-    el("shutdown").hidden = !systemStatus.desktop_mode;
-    if (!systemStatus.ready && !systemStatus.setup_completed) {
+    el("shutdown").hidden = !systemStatus.desktop_mode || !isAdmin();
+    // Installing components and finishing the setup are administrator
+    // endpoints, so a normal user must never be sent into the wizard — they
+    // would only collect refusals from a screen they cannot leave forwards.
+    if (!systemStatus.ready && !systemStatus.setup_completed && isAdmin()) {
       firstRunPending = true;
       if (!location.hash) location.hash = "#/setup";
     }

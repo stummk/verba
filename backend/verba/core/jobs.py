@@ -52,6 +52,11 @@ LANES = ("main", "llm")
 JOB_SELECT = "SELECT j.*, f.filename FROM jobs j LEFT JOIN files f ON f.id = j.file_id"
 
 
+def broadcast_job(job: dict[str, Any]) -> None:
+    """A job event names a file, so it only reaches clients who may see it."""
+    hub.publish("job.update", job, project_id=job.get("project_id"), file_id=job.get("file_id"))
+
+
 def lane_for_kind(kind: str) -> str:
     return "llm" if kind in LLM_KINDS else "main"
 
@@ -132,7 +137,7 @@ class JobQueue:
             job_id = cursor.lastrowid
         job = self.get(job_id)
         assert job is not None
-        hub.publish("job.update", job)
+        broadcast_job(job)
         with self._cond:
             self._cond.notify_all()
         return job
@@ -332,7 +337,7 @@ class JobQueue:
     def _publish(self, job_id: int) -> None:
         job = self.get(job_id)
         if job is not None:
-            hub.publish("job.update", job)
+            broadcast_job(job)
 
 
 job_queue = JobQueue()

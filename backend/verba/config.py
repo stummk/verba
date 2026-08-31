@@ -282,6 +282,20 @@ class GeneralSettings(BaseModel):
         return normalize_dir(value)
 
 
+class AuthSettings(BaseModel):
+    """Optional user management.
+
+    `enabled` is owned by the backend (services.auth), never by the settings
+    form: a normal user who could write it would simply switch the whole
+    protection off. Everything else here is an admin preference.
+    """
+
+    enabled: bool = False
+    # What a newly created transcript gets when the owner does not choose.
+    default_visibility: Literal["private", "shared", "public"] = "private"
+    session_days: int = Field(default=30, ge=1, le=365)
+
+
 class SetupState(BaseModel):
     completed: bool = False
     ffmpeg_path: str = ""  # filled when ffmpeg was auto-installed to <data>/tools
@@ -294,6 +308,7 @@ class Settings(BaseModel):
     llm: LLMSettings = Field(default_factory=LLMSettings)
     search: SearchSettings = Field(default_factory=SearchSettings)
     general: GeneralSettings = Field(default_factory=GeneralSettings)
+    auth: AuthSettings = Field(default_factory=AuthSettings)
     setup: SetupState = Field(default_factory=SetupState)
 
 

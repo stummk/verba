@@ -68,7 +68,11 @@ def save_text(file_id: int, kind: str, content: str, language: str = "", model: 
             (file_id, kind, language, content, model),
         )
     _write_workspace_copy(file_id, kind, language, content)
-    hub.publish("texts.changed", {"file_id": file_id, "kind": kind, "language": language})
+    hub.publish(
+        "texts.changed",
+        {"file_id": file_id, "kind": kind, "language": language},
+        file_id=file_id,
+    )
 
 
 def update_text_content(
@@ -83,7 +87,11 @@ def update_text_content(
         if cursor.rowcount == 0:
             return None
     _write_workspace_copy(file_id, kind, language, content)
-    hub.publish("texts.changed", {"file_id": file_id, "kind": kind, "language": language})
+    hub.publish(
+        "texts.changed",
+        {"file_id": file_id, "kind": kind, "language": language},
+        file_id=file_id,
+    )
     return get_text(file_id, kind, language)
 
 

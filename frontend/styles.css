@@ -1176,7 +1176,7 @@ dialog textarea {
 }
 .col-actions { white-space: nowrap; }
 
-/* ── first-run wizard: five steps, each skippable ─────────────────── */
+/* ── first-run wizard: six steps, each skippable ──────────────────── */
 .wizard-steps {
   display: flex;
   flex-wrap: wrap;
@@ -1219,3 +1219,80 @@ dialog textarea {
 .job-card { margin-bottom: .6rem; }
 .job-card-head { display: flex; align-items: center; gap: .5rem; margin-bottom: .4rem; }
 .job-card .job-message { margin-top: .35rem; }
+
+/* ── sign-in and user management ──────────────────────────────────── */
+.login-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  padding: 1rem;
+}
+.login-card {
+  width: min(24rem, 100%);
+  text-align: center;
+}
+.login-card h1 { margin: .25rem 0 .75rem; }
+.login-card form { text-align: left; }
+.login-card label { display: block; margin-top: .75rem; }
+.login-card input { width: 100%; }
+.login-logo { display: block; margin: 0 auto; }
+.btn.block, .text-btn.block { display: block; width: 100%; margin-top: 1rem; }
+.error {
+  margin: .75rem 0 0;
+  color: var(--md-error);
+  font-size: .85rem;
+}
+.warning-box {
+  padding: .6rem .75rem;
+  border-radius: var(--shape-sm);
+  background: var(--md-warning-container);
+  color: var(--md-warning);
+  font-size: .85rem;
+}
+.badge-ok {
+  padding: .6rem .75rem;
+  border-radius: var(--shape-sm);
+  background: var(--md-success-container);
+  color: var(--md-success);
+  font-size: .85rem;
+}
+.top-bar-user {
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .8rem;
+  color: var(--md-on-surface-variant);
+}
+.top-bar-logout { margin-left: .25rem; }
+
+.user-row {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+  padding: .5rem 0;
+  border-bottom: .0625rem solid var(--md-outline-variant);
+}
+.user-row:last-child { border-bottom: 0; }
+.user-main { display: flex; flex-direction: column; flex: 1; min-width: 8rem; }
+.user-row .model-name { font-family: inherit; font-size: .95rem; font-weight: 600; }
+.row-actions { display: flex; gap: .25rem; margin-left: auto; }
+.chip {
+  padding: .1rem .5rem;
+  border-radius: var(--shape-full);
+  background: var(--md-surface-container-high);
+  font-size: .75rem;
+  white-space: nowrap;
+}
+.chip.warn { background: var(--md-warning-container); color: var(--md-warning); }
+.dialog-form label { display: block; margin-top: .75rem; }
+.dialog-form input, .dialog-form select { width: 100%; }
+
+/* Visibility is the one badge that has to be readable at a glance: it says
+   who else can reach the transcript. */
+.badge-visibility.private { background: var(--md-surface-container-high); color: var(--md-on-surface-variant); }
+.badge-visibility.shared { background: var(--md-warning-container); color: var(--md-warning); }
+.badge-visibility.public { background: var(--md-success-container); color: var(--md-success); }
+#visibility-users { width: 100%; }

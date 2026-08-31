@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from .. import config
 from ..services import hardware, rag, vectorstore
 from ..services.llm import llm_location
+from .deps import AdminUser, current_user
 
 router = APIRouter(prefix="/api/search", tags=["search"])
 
@@ -24,8 +25,11 @@ class SearchRequest(BaseModel):
     # files with several hits each still fits in the default
     limit: int = Field(default=24, ge=1, le=50)
 
-    def filters(self) -> dict:
+    def filters(self, user: dict | None = None) -> dict:
         return {
+            # not a user-chosen filter: it decides which transcripts exist for
+            # this search at all
+            "user": user,
             "project_id": self.project_id,
             "type_id": self.type_id,
             "language": self.language,
@@ -44,11 +48,11 @@ def _ensure_available() -> None:
 
 
 @router.post("")
-def search(body: SearchRequest) -> dict:
+def search(body: SearchRequest, request: Request) -> dict:
     """Hit list grouped by file: one entry per file, its hits in timeline order."""
     _ensure_available()
     try:
-        hits = vectorstore.search(body.query, body.filters(), limit=body.limit)
+        hits = vectorstore.search(body.query, body.filters(current_user(request)), limit=body.limit)
     except vectorstore.EmbeddingUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {
@@ -58,13 +62,13 @@ def search(body: SearchRequest) -> dict:
 
 
 @router.post("/ask")
-def ask(body: SearchRequest) -> dict:
+def ask(body: SearchRequest, request: Request) -> dict:
     """RAG answer plus the same grouped hit list, so one call fills both."""
     _ensure_available()
     if llm_location() == "none":
         raise HTTPException(status_code=409, detail="No LLM configured — set one up in Settings")
     try:
-        answer = rag.ask(body.query, body.filters(), limit=min(body.limit, 12))
+        answer = rag.ask(body.query, body.filters(current_user(request)), limit=min(body.limit, 12))
     except vectorstore.EmbeddingUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {**answer, "results": vectorstore.group_by_file(answer["sources"])}
@@ -78,7 +82,7 @@ def get_status() -> dict:
 
 
 @router.get("/models")
-def list_embedding_models() -> dict:
+def list_embedding_models(user: dict = AdminUser) -> dict:
     """The selectable embedding models — a catalog, not free text.
 
     `present` says whether the model already lies in the models directory: the
@@ -111,7 +115,9 @@ def list_embedding_models() -> dict:
 
 
 @router.post("/reindex")
-def reindex(x_session_id: str = Header(default="", alias="X-Session-Id")) -> dict:
+def reindex(
+    x_session_id: str = Header(default="", alias="X-Session-Id"), user: dict = AdminUser
+) -> dict:
     _ensure_available()
     job = vectorstore.enqueue_reindex(session_id=x_session_id)
     if job is None:

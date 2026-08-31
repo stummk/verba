@@ -158,4 +158,4 @@ def write_transcript_json(file_id: int) -> None:
 
 def sync_after_change(file_id: int) -> None:
     write_transcript_json(file_id)
-    hub.publish("segments.changed", {"file_id": file_id})
+    hub.publish("segments.changed", {"file_id": file_id}, file_id=file_id)

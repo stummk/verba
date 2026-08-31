@@ -20,6 +20,10 @@ programs. Everything runs locally — no cloud required.
   timestamp jump marks, AI answers with sources)
 - **Public API**: `POST /v1/audio/transcriptions` in the OpenAI wire format,
   API key management in the settings
+- **Optional user management**: off by default (local use), switched on with one
+  administrator account. Roles admin/user, per-transcript visibility
+  private/shared/public, and an upgrade path that keeps every existing
+  transcript
 - PWA (mobile first, de/en/ru, offline-capable interface), Material 3 design
 
 ## Screenshots
@@ -76,6 +80,14 @@ Ready-made templates live under [`deploy/`](deploy/): systemd unit,
 nginx and Caddy example configuration (incl. WebSocket and upload limits) and
 `install.sh` for the complete server setup. For running the public API on a
 network, create a key in the settings under "API".
+
+**On a network, switch the user management on.** Without it every visitor has
+full access to all transcripts and settings — which is the right default for a
+local desktop install and the wrong one for a server. Create the first
+administrator in the setup wizard (step "Access") or later under Settings →
+User management; existing transcripts stay untouched and are assigned to that
+account. Put the server behind HTTPS while you are at it: the session cookie is
+only marked `Secure` over https.
 
 More options: `python run.py --help` (`--host`, `--port`, `--no-browser`, `--data-dir`).
 

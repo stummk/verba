@@ -417,9 +417,20 @@ FILE_COLUMNS = (
 
 
 def _filter_clause(filters: dict[str, Any], speaker_sql: str) -> tuple[str, list[Any]]:
-    """The shared file/project filters; `speaker_sql` differs per hit source."""
+    """The shared file/project filters; `speaker_sql` differs per hit source.
+
+    The visibility of the transcript is one of them, and not an optional one:
+    the search runs across every project at once, so this is the place where a
+    private transcript would otherwise show up in somebody else's hit list.
+    """
+    from .auth import visibility_clause  # local import: auth imports the db layer
+
     sql = ""
     params: list[Any] = []
+    visible, visible_params = visibility_clause(filters.get("user"))
+    if visible:
+        sql += f" AND {visible}"
+        params.extend(visible_params)
     if filters.get("project_id"):
         sql += " AND f.project_id = ?"
         params.append(filters["project_id"])
