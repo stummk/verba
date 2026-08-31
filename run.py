@@ -107,7 +107,10 @@ def ensure_core_dependencies() -> None:
     except ImportError:
         print("Installing core dependencies (one-time) ...")
         subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "-r", str(CORE_REQUIREMENTS)]
+            [sys.executable, "-m", "pip", "install", "-r", str(CORE_REQUIREMENTS)],
+            # Windows without a console (packaged desktop build): a child
+            # console process would flash its own window over the desktop
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         print("Core dependencies installed.")
 

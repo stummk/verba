@@ -19,8 +19,7 @@ export async function render(view, _status, params) {
   const fileId = Number(params[0]);
   // deep link from search results: #/editor/<fileId>/<seconds> jumps and plays
   const startAt = params[1] !== undefined ? Number(params[1]) : null;
-  destroy(); // clean up a previous editor instance
-  window.addEventListener("hashchange", destroy, { once: true });
+  destroy(); // clean up a previous editor instance (the router calls it too)
 
   let data, textsData, settings;
   try {
@@ -564,7 +563,9 @@ function autoGrow(textarea) {
   textarea.style.height = `${textarea.scrollHeight}px`;
 }
 
-function destroy() {
+// Called by the router when another view takes over — and by render() for a
+// second editor in a row (deep link from a search hit).
+export function destroy() {
   document.getElementById("view")?.classList.remove("wide");
   unsubscribers.forEach((off) => off());
   unsubscribers = [];

@@ -8,10 +8,10 @@ transcribed.
 from __future__ import annotations
 
 import logging
-import subprocess
 from pathlib import Path
 from typing import Any
 
+from .. import procutil
 from ..setup_check import ffmpeg_path
 from . import workspace
 from .media import probe_duration
@@ -30,7 +30,7 @@ def _ffmpeg() -> str:
 
 
 def _run(cmd: list[str]) -> None:
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+    result = procutil.run(cmd, capture_output=True, text=True, timeout=1800)
     if result.returncode != 0:
         tail = (result.stderr or "").strip().splitlines()[-3:]
         raise RuntimeError("ffmpeg error: " + " | ".join(tail))

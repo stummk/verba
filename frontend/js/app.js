@@ -1,7 +1,7 @@
 // App bootstrap: i18n, hash router, adaptive shell (top bar, nav, FAB).
 
 import { api } from "./api.js";
-import { el, toast } from "./dom.js";
+import { el, html, toast } from "./dom.js";
 import { initI18n, t } from "./i18n.js";
 import { isActive, jobStatusLine } from "./jobs.js";
 import * as ws from "./ws.js";
@@ -15,14 +15,14 @@ import * as setup from "./views/setup.js";
 import * as types from "./views/types.js";
 
 const routes = {
-  dashboard: { render: dashboard.render, title: "dashboard.title", fab: true },
-  project: { render: project.render, title: null, fab: true },
-  editor: { render: editor.render, title: null, fab: false },
-  types: { render: types.render, title: "types.title", fab: true },
-  search: { render: search.render, title: "search.title", fab: false },
-  settings: { render: settings.render, title: "settings.title", fab: false },
-  setup: { render: setup.render, title: "setup.title", fab: false },
-  docs: { render: docs.render, title: "docs.title", fab: false },
+  dashboard: { module: dashboard, title: "dashboard.title", fab: true },
+  project: { module: project, title: null, fab: true },
+  editor: { module: editor, title: null, fab: false },
+  types: { module: types, title: "types.title", fab: true },
+  search: { module: search, title: "search.title", fab: false },
+  settings: { module: settings, title: "settings.title", fab: false },
+  setup: { module: setup, title: "setup.title", fab: false },
+  docs: { module: docs, title: "docs.title", fab: false },
 };
 
 // How many jobs the status line names before it summarises the rest.
@@ -39,6 +39,10 @@ function parseHash() {
 }
 
 let systemStatus = null;
+// the view currently on screen, and a counter that invalidates a render whose
+// navigation was overtaken by the next one
+let activeModule = null;
+let navigation = 0;
 // the very first run shows the wizard alone: no tabs to wander off into until
 // it is finished or skipped. Opening it again later is a normal view.
 let firstRunPending = false;
@@ -47,6 +51,14 @@ async function navigate() {
   const parsed = parseHash();
   const route = routes[parsed.route] ? parsed.route : "dashboard";
   const config = routes[route];
+  const token = ++navigation;
+
+  // The outgoing view releases its WebSocket subscriptions, timers and window
+  // handlers *before* the next one is built — otherwise every visited view
+  // keeps redrawing into a DOM that is long gone, which is what made leaving
+  // the editor feel like a freeze.
+  if (activeModule && activeModule !== config.module) activeModule.destroy?.();
+  activeModule = config.module;
 
   if (route !== "setup") firstRunPending = false; // skipped or finished
   const firstRun = firstRunPending && route === "setup";
@@ -65,9 +77,14 @@ async function navigate() {
   el("fab").hidden = !config.fab;
 
   const view = el("view");
+  // the click gets an answer immediately: the old view goes, a spinner takes
+  // over (it fades in late enough that a fast render never flashes it)
+  view.replaceChildren(html`<div class="view-loading" aria-hidden="true"></div>`);
   try {
-    await config.render(view, systemStatus, parsed.params);
+    await config.module.render(view, systemStatus, parsed.params);
+    if (token !== navigation) return; // a newer navigation owns the view now
   } catch (error) {
+    if (token !== navigation) return;
     view.innerHTML = "";
     const card = document.createElement("div");
     card.className = "card";
@@ -179,6 +196,17 @@ function bindShell() {
 
   // FAB is context-sensitive: views listen for this event
   el("fab").onclick = () => window.dispatchEvent(new CustomEvent("fab:click"));
+
+  // Drag & drop belongs to the import step alone. Everywhere else a dropped
+  // file would make the browser leave the app and open that file, so the
+  // default is swallowed — without any highlight, so nothing invites a drop.
+  for (const type of ["dragover", "drop"]) {
+    window.addEventListener(type, (event) => {
+      if (event.target.closest?.(".drop-zone")) return; // the zone handles it
+      event.preventDefault();
+      if (type === "drop") event.dataTransfer.dropEffect = "none";
+    });
+  }
 }
 
 async function init() {

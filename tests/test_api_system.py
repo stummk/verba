@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from verba import setup_check
+from verba import procutil, setup_check
 
 
 def test_health(client):
@@ -84,7 +84,13 @@ def test_feature_install_bootstraps_missing_pip(monkeypatch):
     assert calls == [
         (
             [setup_check.sys.executable, "-m", "ensurepip", "--upgrade"],
-            {"check": True, "capture_output": True, "text": True},
+            {
+                "check": True,
+                "capture_output": True,
+                "text": True,
+                # no console window flashes over the desktop on Windows
+                "creationflags": procutil.NO_WINDOW,
+            },
         )
     ]
 

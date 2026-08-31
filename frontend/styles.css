@@ -399,6 +399,24 @@ details.advanced .form-grid { margin-top: .25rem; }
 .fit-no { color: var(--md-error); }
 .fit-unknown { color: var(--md-on-surface-variant); }
 
+/* view switch: the spinner only becomes visible when a render really takes a
+   moment, so a fast one does not flash it */
+.view-loading {
+  width: 2rem;
+  height: 2rem;
+  margin: 4rem auto;
+  border: .1875rem solid var(--md-surface-container-high);
+  border-top-color: var(--md-primary);
+  border-radius: var(--shape-full);
+  opacity: 0;
+  animation: view-spin .8s linear infinite, view-fade .2s ease .25s forwards;
+}
+@keyframes view-spin { to { transform: rotate(360deg); } }
+@keyframes view-fade { to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .view-loading { animation: view-fade .2s ease .25s forwards; }
+}
+
 /* progress */
 .progressbar {
   height: .3125rem;
@@ -744,13 +762,19 @@ dialog::backdrop { background: var(--md-scrim); }
 .icon-label { display: inline-flex; align-items: center; gap: .4rem; }
 .icon-label svg { flex-shrink: 0; }
 
-/* drag & drop highlight */
-.view.dragover {
-  outline: .1875rem dashed var(--md-primary);
-  outline-offset: -.375rem;
-  background: var(--md-surface-container-low);
+/* drag & drop — the import step is the only drop target in the app */
+.drop-zone {
+  border: .09375rem dashed var(--md-outline-variant);
   border-radius: var(--shape-lg);
+  padding: .9rem;
+  transition: background-color .12s ease, border-color .12s ease;
 }
+.drop-zone.dragover {
+  border: .1875rem dashed var(--md-primary);
+  padding: .8125rem; /* keeps the box the same size as the thinner border */
+  background: var(--md-surface-container-low);
+}
+.drop-hint { margin: .6rem 0 0; }
 
 /* ── phase 5: project types, AI processing, local LLM ─────────────── */
 .type-chip {

@@ -849,3 +849,11 @@ async function refreshSystemInfo() {
     return row;
   }));
 }
+
+// Called by the router when another view takes over.
+export function destroy() {
+  unsubscribers.forEach((off) => off());
+  unsubscribers = [];
+  unsubscribe?.();
+  unsubscribe = null;
+}

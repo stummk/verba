@@ -37,7 +37,7 @@ from typing import Any
 
 import httpx
 
-from . import config
+from . import config, procutil
 from .events import hub
 from .services import hardware
 
@@ -52,7 +52,7 @@ INTERNAL_PIP_FLAG = "--internal-pip"
 INTERNAL_IMPORT_FLAG = "--internal-import"
 
 # Windows: keep helper processes from flashing a console window
-_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+_NO_WINDOW = procutil.NO_WINDOW
 
 FFMPEG_URLS = {
     "Windows": "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
@@ -207,7 +207,10 @@ def check_ffmpeg() -> CheckResult:
 
 
 def check_gpu() -> CheckResult:
-    gpu = hardware.gpu_info()
+    # through the cached probe: the status endpoint is polled, nvidia-smi is a
+    # process spawn — one per request would be pure noise
+    hw = hardware.probe()
+    gpu = {"name": hw["gpu_name"], "vram_total_mb": hw["vram_total_mb"]}
     ok = bool(gpu["name"])
     detail = (
         f"{gpu['name']}, {gpu['vram_total_mb']} MiB"
@@ -281,7 +284,8 @@ def _cpu_model() -> str:
 
 def system_info() -> dict[str, Any]:
     """General machine facts for the settings page (system section)."""
-    ram_total, ram_available = hardware.ram_mb()
+    hw = hardware.probe()
+    ram_total, ram_available = hw["ram_total_mb"], hw["ram_available_mb"]
     return {
         "os": f"{platform.system()} {platform.release()}",
         "os_version": platform.version(),
@@ -290,7 +294,11 @@ def system_info() -> dict[str, Any]:
         "cpu_cores": os.cpu_count() or 0,
         "ram_total_mb": ram_total,
         "ram_available_mb": ram_available,
-        "gpu": hardware.gpu_info(),
+        "gpu": {
+            "name": hw["gpu_name"],
+            "vram_total_mb": hw["vram_total_mb"],
+            "vram_free_mb": hw["vram_free_mb"],
+        },
         "ffmpeg": check_ffmpeg().ok,
     }
 
@@ -484,7 +492,7 @@ def _ensure_pip() -> None:
         return
     _emit("pip", 0, "pip fehlt in der Python-Umgebung; installiere pip ...")
     try:
-        subprocess.run(
+        procutil.run(
             [sys.executable, "-m", "ensurepip", "--upgrade"],
             check=True,
             capture_output=True,

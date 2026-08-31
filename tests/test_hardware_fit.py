@@ -15,6 +15,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import types
 
 import pytest
@@ -145,6 +146,42 @@ def test_the_probe_is_cached_and_can_be_invalidated(monkeypatch):
     hardware.invalidate_probe()
     hardware.probe()
     assert len(calls) == 2
+
+
+def test_an_aged_probe_does_not_make_the_caller_wait(monkeypatch):
+    """nvidia-smi costs half a second on some machines — a UI request that
+    only wants the RAM/VRAM numbers must not sit through it. The aged value is
+    handed out, the refresh happens behind it."""
+    hardware.invalidate_probe()
+    seen: list[str] = []
+    refreshing = threading.Event()
+    release = threading.Event()
+
+    def gpu_info():
+        first = not seen
+        seen.append("call")
+        if not first:  # the background refresh: hold it open on purpose
+            refreshing.set()
+            release.wait(5)
+        return {"name": "old" if first else "new", "vram_total_mb": 8192, "vram_free_mb": 4096}
+
+    monkeypatch.setattr(hardware, "ram_mb", lambda: (8192, 4096))
+    monkeypatch.setattr(hardware, "gpu_info", gpu_info)
+
+    assert hardware.probe()["gpu_name"] == "old"  # first call measures
+    monkeypatch.setattr(hardware, "PROBE_TTL_S", 0)
+
+    started = time.monotonic()
+    assert hardware.probe()["gpu_name"] == "old"  # stale, but instant
+    assert time.monotonic() - started < 1
+    assert refreshing.wait(5)
+
+    release.set()
+    for _ in range(50):  # the refreshed value lands without anybody waiting
+        if hardware.probe()["gpu_name"] == "new":
+            break
+        time.sleep(0.05)
+    assert hardware.probe()["gpu_name"] == "new"
 
 
 # ── the verdicts ──────────────────────────────────────────────────────

@@ -29,7 +29,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .. import config
+from .. import config, procutil
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,8 @@ CPU_RESERVE_MB = 1024
 #: Loading into VRAM needs a little more than the weights (context, workspace).
 VRAM_MARGIN_MB = 512
 
-PROBE_TTL_S = 3.0
+#: How long a probe stays fresh before the next reader triggers a refresh.
+PROBE_TTL_S = 10.0
 
 
 class InsufficientMemory(RuntimeError):
@@ -98,7 +99,7 @@ def ram_mb() -> tuple[int, int]:
 def gpu_info() -> dict[str, Any]:
     """Name plus total/free VRAM in MB via nvidia-smi; zeros without a GPU."""
     try:
-        out = subprocess.run(
+        out = procutil.run(
             [
                 "nvidia-smi",
                 "--query-gpu=name,memory.total,memory.free",
@@ -122,26 +123,66 @@ def gpu_info() -> dict[str, Any]:
 
 _probe_lock = threading.Lock()
 _probe_cache: tuple[float, dict[str, Any]] | None = None
+_refreshing = False
+
+
+def _measure() -> dict[str, Any]:
+    """The actual measurement — no lock held while nvidia-smi runs."""
+    ram_total, ram_available = ram_mb()
+    gpu = gpu_info()
+    return {
+        "ram_total_mb": ram_total,
+        "ram_available_mb": ram_available,
+        "gpu_name": gpu["name"],
+        "vram_total_mb": gpu["vram_total_mb"],
+        "vram_free_mb": gpu["vram_free_mb"],
+    }
 
 
 def probe(*, fresh: bool = False) -> dict[str, Any]:
-    """RAM and VRAM of this machine. Cached for `PROBE_TTL_S` seconds."""
+    """RAM and VRAM of this machine.
+
+    `nvidia-smi` is a process spawn and takes half a second on some machines —
+    long enough to be felt when a view switch waits for the model list behind
+    it. So only the very first call measures synchronously; an aged value is
+    handed out as it is and refreshed in the background. Whoever needs the
+    free VRAM of *this* moment (right before a model is loaded) asks with
+    `fresh=True` and waits for it.
+    """
     global _probe_cache
     with _probe_lock:
-        now = time.monotonic()
-        if not fresh and _probe_cache is not None and now - _probe_cache[0] < PROBE_TTL_S:
-            return dict(_probe_cache[1])
-        ram_total, ram_available = ram_mb()
-        gpu = gpu_info()
-        result = {
-            "ram_total_mb": ram_total,
-            "ram_available_mb": ram_available,
-            "gpu_name": gpu["name"],
-            "vram_total_mb": gpu["vram_total_mb"],
-            "vram_free_mb": gpu["vram_free_mb"],
-        }
-        _probe_cache = (now, result)
+        cached = _probe_cache
+    if fresh or cached is None:
+        result = _measure()
+        with _probe_lock:
+            _probe_cache = (time.monotonic(), result)
         return dict(result)
+    if time.monotonic() - cached[0] >= PROBE_TTL_S:
+        _refresh_in_background()
+    return dict(cached[1])
+
+
+def _refresh_in_background() -> None:
+    """Renew the cached probe without anybody waiting for it (one at a time)."""
+    global _refreshing
+    with _probe_lock:
+        if _refreshing:
+            return
+        _refreshing = True
+
+    def run() -> None:
+        global _probe_cache, _refreshing
+        try:
+            result = _measure()
+            with _probe_lock:
+                _probe_cache = (time.monotonic(), result)
+        except Exception:  # a probe must never take the process down
+            logger.debug("background hardware probe failed", exc_info=True)
+        finally:
+            with _probe_lock:
+                _refreshing = False
+
+    threading.Thread(target=run, daemon=True, name="hardware-probe").start()
 
 
 def invalidate_probe() -> None:

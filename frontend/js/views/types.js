@@ -225,3 +225,9 @@ function showPrompt() {
     : t("types.promptHint");
   el("type-prompt-default").hidden = !isOutput;
 }
+
+// Called by the router when another view takes over.
+export function destroy() {
+  if (fabHandler) window.removeEventListener("fab:click", fabHandler);
+  fabHandler = null;
+}

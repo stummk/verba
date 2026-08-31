@@ -16,19 +16,22 @@ let unsubscribers = [];
 const COMBINED = "__combined__";
 
 let fabHandler = null;
+let queueTimerHandle = null;
 const fileJobs = new Map(); // file_id -> latest active job
 
 export async function render(view, _status, params) {
   const projectId = Number(params[0]);
   let projectError = null;
-  const [project, models, settings] = await Promise.all([
+  const [project, settings] = await Promise.all([
     api.getProject(projectId).catch((error) => {
       projectError = error;
       return null;
     }),
-    api.listModels().catch(() => ({ builtin: [], local: [] })),
     api.getSettings().catch(() => null),
   ]);
+  // The model list scans directories and probes the hardware — the view must
+  // not wait for it, so the advanced dropdown fills in once it arrives.
+  const modelsPromise = api.listModels().catch(() => ({ builtin: [], local: [] }));
   if (!project) {
     view.replaceChildren(html`<div class="card">${projectError.message}</div>`);
     return;
@@ -51,15 +54,18 @@ export async function render(view, _status, params) {
         </button>
       </div>
       <div class="step-panel" id="step-panel-1" role="tabpanel">
-        <div class="step-actions">
-          <label class="btn tonal icon-label" for="file-upload">
-            ${raw(iconSvg("upload"))} ${t("project.upload")}
-          </label>
-          <input type="file" id="file-upload" multiple hidden
-                 accept=".mp3,.wav,.m4a,.flac,.ogg,.opus,.aac,.wma,.webm,.mp4">
-          <button id="server-import" class="text-btn icon-label">
-            ${raw(iconSvg("folder"))} ${t("project.serverImport")}
-          </button>
+        <div class="drop-zone" id="drop-zone">
+          <div class="step-actions">
+            <label class="btn tonal icon-label" for="file-upload">
+              ${raw(iconSvg("upload"))} ${t("project.upload")}
+            </label>
+            <input type="file" id="file-upload" multiple hidden
+                   accept=".mp3,.wav,.m4a,.flac,.ogg,.opus,.aac,.wma,.webm,.mp4">
+            <button id="server-import" class="text-btn icon-label">
+              ${raw(iconSvg("folder"))} ${t("project.serverImport")}
+            </button>
+          </div>
+          <p class="hint drop-hint">${t("project.dropHint")}</p>
         </div>
         <p class="hint">${t("project.workspaceHint", { path: project.workspace })}</p>
       </div>
@@ -120,7 +126,11 @@ export async function render(view, _status, params) {
     <div id="browser-modal"></div>
   `);
 
-  fillAdvancedSelects(models);
+  fillLanguageSelect(el("adv-language"), { placeholder: t("project.advAuto") });
+  const renderedFor = projectId;
+  modelsPromise.then((models) => {
+    if (el("adv-model") && renderedFor === currentProjectId()) fillModelSelect(models);
+  });
 
   // step tabs: one workflow step visible at a time; panels stay in the DOM
   // so their controls keep state and every handler binds once below
@@ -156,7 +166,14 @@ export async function render(view, _status, params) {
   // large file (or a whole folder) goes over the wire — hence its own card.
   const uploadProgress = uploadProgressCard(el("upload-progress"));
 
+  let uploading = false;
+
   async function uploadFiles(fileList) {
+    if (uploading) { // a second drop while the first batch is still going up
+      toast(t("project.uploadBusy"));
+      return;
+    }
+    uploading = true;
     const audioFiles = [...fileList].filter((f) => AUDIO_RE.test(f.name));
     const skipped = fileList.length - audioFiles.length;
     const totalBytes = audioFiles.reduce((sum, f) => sum + f.size, 0);
@@ -192,6 +209,7 @@ export async function render(view, _status, params) {
         }
       }
     } finally {
+      uploading = false;
       uploadProgress.stop();
     }
     if (uploaded) toast(t("project.uploaded", { count: uploaded }));
@@ -203,7 +221,10 @@ export async function render(view, _status, params) {
     event.target.value = "";
   };
 
-  setupDropZone(view, uploadFiles);
+  // bound to the import panel, never to #view: that element outlives every
+  // render, so listeners on it would pile up and keep uploading into the
+  // project of an earlier render — from any view
+  setupDropZone(el("drop-zone"), uploadFiles);
 
   if (fabHandler) window.removeEventListener("fab:click", fabHandler);
   fabHandler = () => el("file-upload")?.click();
@@ -307,10 +328,9 @@ export async function render(view, _status, params) {
   renderRows(files);
 
   // ── queue positions (multi-user fairness feedback) ────────────────
-  let queueTimer = null;
   function refreshQueuePositions() {
-    clearTimeout(queueTimer);
-    queueTimer = setTimeout(async () => {
+    clearTimeout(queueTimerHandle);
+    queueTimerHandle = setTimeout(async () => {
       const overview = await api.queueOverview().catch(() => null);
       if (!overview) return;
       const positions = new Map();
@@ -632,19 +652,24 @@ export async function render(view, _status, params) {
 
 }
 
-function fillAdvancedSelects(models) {
+// Which project the hash points at right now — a late model list must not
+// drop into the dropdown of a project the user has already left.
+function currentProjectId() {
+  const segments = location.hash.replace(/^#\/?/, "").split("/");
+  return segments[0] === "project" ? Number(segments[1]) : null;
+}
+
+function fillModelSelect(models) {
   const modelSelect = el("adv-model");
-  const languageSelect = el("adv-language");
-  if (!modelSelect || !languageSelect) return;
+  if (!modelSelect) return;
 
   const local = models.local ?? [];
+  modelSelect.replaceChildren();
   modelSelect.append(new Option(t("project.advDefault"), ""));
   for (const name of local) modelSelect.append(new Option(`📁 ${name}`, name));
   for (const name of models.builtin ?? []) {
     if (!local.includes(name)) modelSelect.append(new Option(name, name));
   }
-
-  fillLanguageSelect(languageSelect, { placeholder: t("project.advAuto") });
 }
 
 // ── upload progress card ──────────────────────────────────────────────
@@ -810,4 +835,16 @@ function openBrowser(onImport) {
   }
 
   load("");
+}
+
+// Called by the router when another view takes over. Without this the file
+// and job subscriptions of a project kept redrawing rows that are no longer
+// on screen — and the drop zone of an old render kept accepting uploads.
+export function destroy() {
+  unsubscribers.forEach((off) => off());
+  unsubscribers = [];
+  clearTimeout(queueTimerHandle);
+  fileJobs.clear();
+  if (fabHandler) window.removeEventListener("fab:click", fabHandler);
+  fabHandler = null;
 }

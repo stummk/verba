@@ -27,7 +27,7 @@ from typing import Any
 
 import httpx
 
-from .. import config
+from .. import config, procutil
 from ..events import hub
 from . import hardware
 
@@ -450,7 +450,7 @@ def ensure_running() -> str:
             "engine.status",
             {"engine": "llm", "state": "loading", "detail": model_file.name},
         )
-        _server_process = subprocess.Popen(
+        _server_process = procutil.popen(
             cmd,
             cwd=str(binary.parent),
             stdout=subprocess.DEVNULL,

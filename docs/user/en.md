@@ -179,7 +179,8 @@ Three equivalent ways:
 1. **Upload** — file picker via the "Upload files" button
 2. **Import from server** — browse folders on the machine/server;
    importing a folder picks up all audio files inside (nested too)
-3. **Drag & drop** — drop files or whole folders onto the transcript view
+3. **Drag & drop** — drop files or whole folders onto the dashed area in the
+   "Import audio" step; that area is the only drop target in the app
 
 Supported formats: mp3, wav, m4a, flac, ogg, opus, aac, wma, webm, mp4.
 Importing always copies — your original files stay untouched.

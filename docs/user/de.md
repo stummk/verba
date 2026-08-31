@@ -183,7 +183,8 @@ Drei Wege, alle gleichwertig:
 1. **Hochladen** — Dateiauswahl über den Knopf „Dateien hochladen"
 2. **Vom Server importieren** — Ordner des Rechners/Servers durchsuchen;
    ein ganzer Ordner importiert alle enthaltenen Audiodateien (auch verschachtelt)
-3. **Drag & Drop** — Dateien oder ganze Ordner einfach in die Transkript-Ansicht ziehen
+3. **Drag & Drop** — Dateien oder ganze Ordner in den gestrichelten Bereich
+   im Schritt „Audio importieren" ziehen; nur dort nimmt Verba Dateien an
 
 Unterstützte Formate: mp3, wav, m4a, flac, ogg, opus, aac, wma, webm, mp4.
 Importieren kopiert immer — die Originaldateien bleiben unangetastet.

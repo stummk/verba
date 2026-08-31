@@ -9,6 +9,7 @@ import { on } from "../ws.js";
 
 let fabHandler = null;
 let unsubscribers = [];
+let refreshTimer = null;
 let currentProjectId = null;
 let renameDialog = null;
 let deleteDialog = null;
@@ -82,7 +83,6 @@ export async function render(view, systemStatus) {
   renderList(projects, activeJobs);
 
   unsubscribers.forEach((off) => off());
-  let refreshTimer = null;
   unsubscribers = [
     on("job.update", (job) => {
       if (isActive(job)) activeJobs.set(job.id, job);
@@ -243,4 +243,14 @@ function renderList(projects, activeJobs = new Map()) {
       return card;
     })
   );
+}
+
+// Called by the router when another view takes over: nothing of this one may
+// keep running in the background.
+export function destroy() {
+  unsubscribers.forEach((off) => off());
+  unsubscribers = [];
+  clearTimeout(refreshTimer);
+  if (fabHandler) window.removeEventListener("fab:click", fabHandler);
+  fabHandler = null;
 }

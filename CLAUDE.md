@@ -33,6 +33,9 @@ python -m ruff format --check backend/ tests/ run.py
     directory), curated `EMBEDDING_MODELS` catalog for the search
   - `db.py` — SQLite (`data/app.db`): projects, files, segments, jobs; short-lived connections
   - `logging_setup.py` — log rotation (retention from settings)
+  - `procutil.py` — every subprocess spawn goes through here: a child console
+    program would otherwise flash its own window on a Windows build that has
+    no console (nvidia-smi, ffmpeg, pip, llama-server)
   - `setup_check.py` — first-run checks + automatic installation (ffmpeg, pip groups)
   - `events.py` — EventHub: WebSocket broadcast to the UI (`publish()` is threadsafe)
   - `lifecycle.py` — process lifetime: desktop mode stops when the last UI
