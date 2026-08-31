@@ -3,6 +3,7 @@
 
 import { api } from "../api.js";
 import { el, esc, formatDuration, html, raw, toast } from "../dom.js";
+import { closeExportDialog, openExportDialog } from "../export-dialog.js";
 import { iconButton, iconSvg } from "../icons.js";
 import { t } from "../i18n.js";
 import { jobCardHost, jobStepLabel } from "../jobs.js";
@@ -12,8 +13,6 @@ import { on } from "../ws.js";
 const AUDIO_RE = /\.(mp3|wav|m4a|flac|ogg|opus|aac|wma|webm|mp4)$/i;
 
 let unsubscribers = [];
-// value of the extra "everything in one PDF" entry in the export dialog
-const COMBINED = "__combined__";
 
 let fabHandler = null;
 let queueTimerHandle = null;
@@ -614,57 +613,6 @@ export async function render(view, _status, params) {
 
   // ── PDF export (template pipeline; per file or whole project) ────────
 
-  function openExportDialog({ fileId = null, projectId: forProject = null }) {
-    const host = el("browser-modal");
-    host.replaceChildren(html`
-      <div class="modal-backdrop">
-        <div class="modal">
-          <div class="modal-head">
-            <strong>${t("export.title")}</strong>
-            <button class="text-btn small-btn" id="modal-close">${t("common.close")}</button>
-          </div>
-          <p class="small muted">${fileId ? t("export.introFile") : t("export.introProject")}</p>
-          <label for="export-language">${t("export.language")}</label>
-          <select id="export-language"></select>
-          <p class="hint">${t("export.hint")}</p>
-          <div class="actions">
-            <button id="export-start">${t("export.start")}</button>
-          </div>
-        </div>
-      </div>
-    `);
-
-    const select = el("export-language");
-    fillLanguageSelect(select, {
-      placeholder: t("export.original"),
-      label: (name) => t("export.translated", { lang: name }),
-    });
-    // one PDF holding the original and every stored translation — right
-    // below "original", not at the end of a hundred language entries
-    select.add(new Option(t("export.combined"), COMBINED), 1);
-    select.value = "";
-
-    const close = () => host.replaceChildren();
-    el("modal-close").onclick = close;
-    host.querySelector(".modal-backdrop").onclick = (event) => {
-      if (event.target === event.currentTarget) close();
-    };
-    el("export-start").onclick = async () => {
-      const choice = el("export-language").value;
-      const options = choice === COMBINED
-        ? { combine: true }
-        : { language: choice };
-      try {
-        if (fileId) await api.exportFile(fileId, options);
-        else await api.exportProject(forProject, options);
-        toast(t("export.started"));
-        close();
-      } catch (error) {
-        toast(error.message);
-      }
-    };
-  }
-
   async function refreshExports() {
     const card = el("exports-card");
     const list = el("export-list");
@@ -888,6 +836,7 @@ function openBrowser(onImport) {
 // and job subscriptions of a project kept redrawing rows that are no longer
 // on screen — and the drop zone of an old render kept accepting uploads.
 export function destroy() {
+  closeExportDialog(); // the dialog hangs on <body> and would outlive the view
   unsubscribers.forEach((off) => off());
   unsubscribers = [];
   clearTimeout(queueTimerHandle);

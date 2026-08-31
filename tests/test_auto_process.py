@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 
 import pytest
@@ -141,6 +142,69 @@ def test_process_endpoint_returns_the_running_job_instead_of_a_second_one(
         assert second.json()["id"] == first.json()["id"]
     finally:
         gate.set()
+
+
+def test_translation_starts_while_the_cleanup_is_still_running(done_file, client, monkeypatch):
+    """A step nobody is working on must start — even next to a running one.
+
+    The dedup guard used to hand back *any* running AI job for the file, so a
+    translation requested during a cleanup was answered with "started" and then
+    never produced.
+    """
+    configure_llm()
+    gate = threading.Event()
+    monkeypatch.setitem(
+        job_queue._handlers, "llm_process", lambda job, cancel, report: gate.wait(10)
+    )
+    try:
+        cleanup = client.post(f"/api/files/{done_file['id']}/process", json={"steps": ["cleanup"]})
+        translate = client.post(
+            f"/api/files/{done_file['id']}/process",
+            json={"steps": ["translate"], "target_language": "en"},
+        )
+        assert translate.status_code == 200
+        assert translate.json()["id"] != cleanup.json()["id"]
+        # the second job carries the translation only — the cleanup is on its way
+        assert json.loads(translate.json()["payload"])["steps"] == ["translate"]
+    finally:
+        gate.set()
+
+
+def test_a_second_language_is_not_swallowed_by_a_running_translation(
+    done_file, client, monkeypatch
+):
+    """Translations are deduplicated per language, not per file."""
+    configure_llm()
+    gate = threading.Event()
+    monkeypatch.setitem(
+        job_queue._handlers, "llm_process", lambda job, cancel, report: gate.wait(10)
+    )
+    body = {"steps": ["translate"], "target_language": "en"}
+    try:
+        first = client.post(f"/api/files/{done_file['id']}/process", json=body)
+        same = client.post(f"/api/files/{done_file['id']}/process", json=body)
+        other = client.post(
+            f"/api/files/{done_file['id']}/process",
+            json={"steps": ["translate"], "target_language": "ru"},
+        )
+        assert same.json()["id"] == first.json()["id"]  # same language: one run
+        assert other.json()["id"] != first.json()["id"]  # other language: own run
+    finally:
+        gate.set()
+
+
+def test_auto_process_still_adds_the_step_the_manual_run_left_out(done_file):
+    """A manual cleanup does not cancel the automatic translation."""
+    configure_llm()
+    workspace.update_project(done_file["project_id"], {"auto_process": 1, "auto_language": "en"})
+    manual = job_queue.enqueue(
+        "llm_process",
+        payload={"file_id": done_file["id"], "steps": ["cleanup"]},
+        file_id=done_file["id"],
+    )
+    auto = pipeline.maybe_enqueue_auto_process(done_file["id"])
+    assert auto["id"] != manual["id"]
+    assert json.loads(auto["payload"])["steps"] == ["translate"]
 
 
 def test_file_row_names_its_derived_texts(done_file):

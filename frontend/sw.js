@@ -14,6 +14,7 @@ const SHELL = [
   "/js/app.js",
   "/js/dom.js",
   "/js/embeddings.js",
+  "/js/export-dialog.js",
   "/js/hardware.js",
   "/js/i18n.js",
   "/js/icons.js",

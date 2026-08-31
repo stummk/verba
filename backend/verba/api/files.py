@@ -199,13 +199,16 @@ def _ensure_llm_available() -> None:
 
 def _enqueue_process(file_row: dict, body: ProcessOptions, session_id: str) -> dict:
     # The same AI step twice on one file is never wanted: the second run would
-    # only overwrite the first result and occupy the LLM lane for nothing.
-    running = job_queue.active_for_file("llm_process", file_row["id"])
-    if running is not None:
-        return running
+    # only overwrite the first result and occupy the LLM lane for nothing. A
+    # step that is not running yet still has to start — a translation asked for
+    # while the cleanup runs used to be dropped without a word.
+    steps = body.steps or ["cleanup"]
+    steps, covering = pipeline.pending_steps(file_row["id"], steps, body.target_language)
+    if not steps and covering is not None:
+        return covering
     payload = {
         "file_id": file_row["id"],
-        "steps": body.steps,
+        "steps": steps,
         "target_language": body.target_language,
         "model": body.model,
     }

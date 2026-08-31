@@ -262,7 +262,9 @@ danach in der Dateizeile und nennt den Schritt (z. B. „KI-Aufbereitung ·
 Bereinigung 2/5"). Abgeschlossene Schritte markiert die Zeile mit **bereinigt**
 bzw. **übersetzt**; daran ist zu sehen, ob eine Datei die Aufbereitung schon
 hinter sich hat. Ein zweiter Klick stellt denselben Schritt nicht doppelt in die
-Warteschlange. Schlägt ein Schritt fehl, erscheint der Grund als Meldung und
+Warteschlange; bei Übersetzungen zählt dabei die Sprache — eine zweite
+Zielsprache bekommt ihren eigenen Lauf, und eine Übersetzung startet auch dann,
+wenn die Bereinigung derselben Datei gerade noch läuft. Schlägt ein Schritt fehl, erscheint der Grund als Meldung und
 bleibt in der Dateizeile stehen — ein leeres Ergebnis wird nie gespeichert, denn
 sonst wäre auch jedes daraus gebaute PDF leer. Die Symbole der Dateizeile stehen
 in der Reihenfolge des Ablaufs: transkribieren → KI-Aufbereitung → Editor
@@ -295,9 +297,30 @@ transkribierten Datei öffnet den Editor — einen
   in einer Desktop-Anwendung und lassen sich einzeln zu- und abschalten; auf dem
   Smartphone schalten dieselben Reiter zwischen den Ansichten um — der volle
   Funktionsumfang bleibt erhalten.
-- Fehlt ein KI-Text noch, lässt er sich **direkt aus dem Editor erstellen**
-  („Bereinigung erstellen", „Übersetzung erstellen" mit Sprachwahl); das Ergebnis
-  erscheint live im Bereich, sobald es fertig ist
+- **Welcher Text am Ende zählt**, steht als Hinweis über den Bereichen: Solange
+  keine Bereinigung existiert, entstehen Übersetzung und PDF direkt aus den
+  Segmenten. Sobald es eine Bereinigung gibt, ist sie die Grundlage für beides —
+  spätere Änderungen an den Segmenten wirken erst, wenn die Bereinigung neu
+  erzeugt wird. Ausnahme sind Layouts mit Sprechern (*Dialog*, *Drehbuch*): dort
+  baut das PDF immer auf den Segmenten samt Sprecher auf, die Bereinigung dient
+  dann nur als Grundlage der Übersetzung.
+- **Segmente und KI-Text scrollen gemeinsam** und sind gleich hoch, sodass sich
+  eine Passage neben ihrer bereinigten oder übersetzten Fassung lesen lässt. Die
+  Zuordnung ist proportional — der bereinigte Text ist ein Fließtext, kein Block
+  je Segment.
+- Die **Wellenform bleibt beim Scrollen oben stehen** (ab Tablet-Breite), damit
+  Abspielen und Auswahl immer erreichbar bleiben.
+- **KI-Texte direkt aus dem Editor**: Fehlt ein Text, erstellen ihn
+  „Bereinigung erstellen" bzw. „Übersetzung erstellen" (mit Sprachwahl);
+  existiert er schon, erzeugt **„Neu erzeugen"** ihn neu und ersetzt ihn.
+  Fortschritt und Fehler stehen unter den Bereichen — schlägt der Schritt fehl,
+  bleibt der Grund stehen, statt dass scheinbar nichts passiert.
+- In der Sprachauswahl der Übersetzung sind die Sprachen in **„Bereits
+  übersetzt"** und **„Noch nicht übersetzt"** gruppiert; das Umschalten zeigt
+  sofort die jeweilige Fassung.
+- **Datei wechseln und exportieren ohne Umweg**: Oben wechselt eine Auswahlliste
+  zu einer anderen Datei desselben Transkripts, daneben startet das PDF-Symbol
+  den **Export** direkt aus dem Editor.
 - **Text und Sprecher** direkt in den Segmentzeilen bearbeiten — Änderungen werden
   automatisch gespeichert („Gespeichert"-Anzeige), **Rückgängig** hebt die letzten
   Änderungen schrittweise auf

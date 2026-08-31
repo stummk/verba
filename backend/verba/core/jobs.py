@@ -153,19 +153,24 @@ class JobQueue:
             row = conn.execute(f"{JOB_SELECT} WHERE j.id = ?", (job_id,)).fetchone()
         return db.row_to_dict(row)
 
-    def active_for_file(self, kind: str, file_id: int) -> dict[str, Any] | None:
-        """A queued or running job of that kind for the file, if there is one.
+    def active_jobs_for_file(self, kind: str, file_id: int) -> list[dict[str, Any]]:
+        """Every queued or running job of that kind for the file, in queue order.
 
-        Guards against the same step being queued twice for one file — a step
-        whose progress is easy to miss gets clicked again.
+        Callers compare the payloads to see which work is already on its way —
+        a step whose progress is easy to miss gets clicked again, while a step
+        nobody has started yet still has to be enqueued.
         """
         with db.get_conn() as conn:
-            row = conn.execute(
+            rows = conn.execute(
                 f"{JOB_SELECT} WHERE j.kind = ? AND j.file_id = ? "
-                "AND j.status IN ('queued', 'running') ORDER BY j.id ASC LIMIT 1",
+                "AND j.status IN ('queued', 'running') ORDER BY j.id ASC",
                 (kind, file_id),
-            ).fetchone()
-        return db.row_to_dict(row)
+            ).fetchall()
+        jobs = db.rows_to_dicts(rows)
+        for job in jobs:
+            if isinstance(job.get("payload"), str):
+                job["payload"] = json.loads(job["payload"] or "{}")
+        return jobs
 
     def list_jobs(self, active_only: bool = False, limit: int = 100) -> list[dict[str, Any]]:
         query = JOB_SELECT

@@ -5,6 +5,7 @@ import WaveSurfer from "/vendor/wavesurfer.esm.js";
 import RegionsPlugin from "/vendor/wavesurfer.regions.esm.js";
 import { api } from "../api.js";
 import { el, formatDuration, html, toast } from "../dom.js";
+import { closeExportDialog, openExportDialog } from "../export-dialog.js";
 import { iconButton, iconSvg, setIcon } from "../icons.js";
 import { t } from "../i18n.js";
 import { languageLabel, languageName, sortedLanguages } from "../languages.js";
@@ -21,25 +22,37 @@ export async function render(view, _status, params) {
   const startAt = params[1] !== undefined ? Number(params[1]) : null;
   destroy(); // clean up a previous editor instance (the router calls it too)
 
-  let data, textsData, settings;
+  let data, textsData, settings, project;
   try {
-    [data, textsData, settings] = await Promise.all([
-      api.getSegments(fileId),
+    data = await api.getSegments(fileId);
+    [textsData, settings, project] = await Promise.all([
       api.getTexts(fileId).catch(() => null),
       api.getSettings().catch(() => null),
+      api.getProject(data.file.project_id).catch(() => null),
     ]);
   } catch (error) {
     view.replaceChildren(html`<div class="card">${error.message}</div>`);
     return;
   }
   const file = data.file;
+  // a dialogue layout builds its PDF from the segments (it needs the speakers),
+  // every other layout prefers the cleaned text — the hint below says which
+  const dialogueLayout = ["dialogue", "script"].includes(project?.type_structure);
+  const projectFiles = (project?.files ?? []).filter((f) => f.id !== fileId);
   view.classList.add("wide"); // workspace uses the full width on large displays
   let derivedTexts = textsData?.texts ?? [];
   const llmEnabled = settings?.llm?.mode && settings.llm.mode !== "none";
 
   view.replaceChildren(html`
     <p><a href="#/project/${file.project_id}" class="muted small">${t("editor.back")}</a></p>
-    <h1>${file.filename}</h1>
+    <div class="editor-title-row">
+      <h1>${file.filename}</h1>
+      <span class="spacer"></span>
+      <select id="file-switch" class="file-switch" hidden
+              aria-label="${t("editor.switchFile")}" title="${t("editor.switchFile")}"></select>
+      <button id="editor-export" class="icon-btn"
+              title="${t("export.file")}" aria-label="${t("export.file")}"></button>
+    </div>
 
     <div class="card file-header-editor">
       <h2>${t("editor.pdfHeader")}</h2>
@@ -57,7 +70,7 @@ export async function render(view, _status, params) {
       <p class="hint">${t("editor.pdfHeaderHint")}</p>
     </div>
 
-    <div class="card">
+    <div class="card timeline-card">
       <div id="waveform" class="waveform"></div>
       <p class="muted small" id="wave-loading">${t("editor.loading")}</p>
       <div class="editor-controls">
@@ -93,10 +106,14 @@ export async function render(view, _status, params) {
       </div>
       <div class="editor-panels" id="editor-panels">
         <section class="panel" data-panel="segments">
-          <div id="segment-list" class="segment-list"></div>
+          <p class="hint source-hint" id="segments-hint" hidden></p>
+          <div class="panel-scroll" id="segment-scroll">
+            <div id="segment-list" class="segment-list"></div>
+          </div>
           <p class="muted small" id="no-segments" hidden>${t("editor.noSegments")}</p>
         </section>
         <section class="panel" data-panel="cleanup" hidden>
+          <p class="hint source-hint" id="cleanup-hint" hidden></p>
           <div id="cleanup-panel"></div>
         </section>
         <section class="panel" data-panel="translation" hidden>
@@ -115,6 +132,22 @@ export async function render(view, _status, params) {
   el("audio-trim").innerHTML = iconSvg("crop");
   el("audio-cut").innerHTML = iconSvg("cut");
   el("clear-selection").innerHTML = iconSvg("close");
+  el("editor-export").innerHTML = iconSvg("pdf");
+  el("editor-export").onclick = () => openExportDialog({ fileId });
+
+  // ── switch to another file of the same transcript ───────────────────
+  if (projectFiles.length) {
+    const switcher = el("file-switch");
+    switcher.hidden = false;
+    switcher.append(new Option(t("editor.switchFile"), ""));
+    for (const other of projectFiles) {
+      switcher.append(new Option(other.filename, String(other.id)));
+    }
+    switcher.value = "";
+    switcher.onchange = () => {
+      if (switcher.value) location.hash = `#/editor/${switcher.value}`;
+    };
+  }
 
   const headerTimers = new Map();
   for (const field of ["left", "middle", "right"]) {
@@ -393,6 +426,39 @@ export async function render(view, _status, params) {
     for (const tab of el("panel-tabs").querySelectorAll("button")) {
       tab.classList.toggle("active", activePanels.has(tab.dataset.panel));
     }
+    bindScrollSync();
+  }
+
+  // Segments and derived text scroll together — side by side they are only
+  // comparable when both move. The cleaned text is one flowing text, not one
+  // block per segment, so the mapping is proportional, not line-exact.
+  let scrollLock = false;
+
+  function scrollBoxes() {
+    const panels = el("editor-panels");
+    if (!panels) return [];
+    return [...panels.querySelectorAll(".panel:not([hidden]) .panel-scroll, "
+      + ".panel:not([hidden]) .dtext")];
+  }
+
+  function bindScrollSync() {
+    for (const box of scrollBoxes()) {
+      if (box.dataset.scrollSync) continue; // panels re-render, listeners do not
+      box.dataset.scrollSync = "1";
+      box.addEventListener("scroll", () => {
+        if (scrollLock) return;
+        const max = box.scrollHeight - box.clientHeight;
+        if (max <= 0) return;
+        const others = scrollBoxes().filter((other) => other !== box);
+        if (!others.length) return;
+        scrollLock = true; // the mirrored scroll must not bounce back
+        for (const other of others) {
+          const otherMax = other.scrollHeight - other.clientHeight;
+          if (otherMax > 0) other.scrollTop = (box.scrollTop / max) * otherMax;
+        }
+        requestAnimationFrame(() => { scrollLock = false; });
+      });
+    }
   }
 
   function derivedText(kind, language = "") {
@@ -402,19 +468,68 @@ export async function render(view, _status, params) {
   function renderDerivedPanels() {
     renderTextPanel("cleanup-panel", "cleanup", "");
     renderTranslationPanel();
+    renderSourceHints();
+    bindScrollSync();
+  }
+
+  // Which text counts in the end — the most confusing thing about the editor:
+  // as soon as a cleanup exists, it is what the translation and the PDF are
+  // built from, so edits in the segments no longer reach them. A dialogue
+  // layout is the exception; its PDF needs the speakers from the segments.
+  function renderSourceHints() {
+    const segHint = el("segments-hint");
+    const cleanHint = el("cleanup-hint");
+    if (!segHint || !cleanHint) return;
+    const hasCleanup = Boolean(derivedText("cleanup")?.content?.trim());
+    segHint.textContent = !hasCleanup
+      ? t("editor.sourceSegments")
+      : dialogueLayout ? t("editor.sourceDialogue") : t("editor.sourceCleanup");
+    segHint.hidden = false;
+    cleanHint.textContent = dialogueLayout
+      ? t("editor.cleanupRoleDialogue")
+      : t("editor.cleanupRole");
+    cleanHint.hidden = false;
   }
 
   function buildTextEditor(text, kind, language) {
-    const area = document.createElement("textarea");
-    area.className = "dtext";
-    area.value = text.content;
-    bindTextAutosave(area, kind, language);
-    const meta = document.createElement("p");
+    const head = document.createElement("div");
+    head.className = "dtext-head";
+    const meta = document.createElement("span");
     meta.className = "muted small";
     meta.textContent = t("editor.textMeta", {
       model: text.model || "—", date: text.created_at,
     });
-    return [area, meta];
+    head.append(meta, Object.assign(document.createElement("span"), { className: "spacer" }));
+    if (llmEnabled) {
+      // without this the step can only ever run once per file: the panel shows
+      // the text and there is no way back to the model
+      const rerun = document.createElement("button");
+      rerun.type = "button";
+      rerun.className = "text-btn small-btn";
+      rerun.textContent = t("editor.rerun");
+      rerun.title = t("editor.rerunHint");
+      rerun.onclick = () => startStep(kind, language, rerun);
+      head.append(rerun);
+    }
+    const area = document.createElement("textarea");
+    area.className = "dtext";
+    area.value = text.content;
+    bindTextAutosave(area, kind, language);
+    return [head, area];
+  }
+
+  async function startStep(kind, language, button) {
+    button.disabled = true;
+    try {
+      await api.processFile(fileId, {
+        steps: kind === "cleanup" ? ["cleanup"] : ["translate"],
+        target_language: language,
+      });
+      toast(t("ai.startedFile"));
+    } catch (error) {
+      button.disabled = false;
+      toast(error.message);
+    }
   }
 
   function renderTextPanel(hostId, kind, language) {
@@ -431,16 +546,22 @@ export async function render(view, _status, params) {
     if (!host) return;
     const select = document.createElement("select");
     select.className = "lang-select";
-    // existing translations first, then every language as a create target
+    // two groups, so a glance answers "which language is already translated?"
     const existing = [...new Set(
       derivedTexts.filter((x) => x.kind === "translation").map((x) => x.language)
     )];
+    const done = document.createElement("optgroup");
+    done.label = t("editor.langTranslated");
     for (const code of existing) {
-      select.append(new Option(languageLabel(code), code));
+      done.append(new Option(languageLabel(code), code));
     }
+    const open = document.createElement("optgroup");
+    open.label = t("editor.langOpen");
     for (const { code } of sortedLanguages()) {
-      if (!existing.includes(code)) select.append(new Option(languageLabel(code), code));
+      if (!existing.includes(code)) open.append(new Option(languageLabel(code), code));
     }
+    if (existing.length) select.append(done);
+    select.append(open);
     select.value = translationLanguage;
     const body = document.createElement("div");
     const fillBody = () => {
@@ -480,16 +601,7 @@ export async function render(view, _status, params) {
     button.textContent = kind === "cleanup"
       ? t("editor.createCleanup")
       : t("editor.createTranslation", { lang: languageName(language) });
-    button.onclick = async () => {
-      const steps = kind === "cleanup" ? ["cleanup"] : ["translate"];
-      try {
-        await api.processFile(fileId, { steps, target_language: language });
-        toast(t("ai.startedFile"));
-        button.disabled = true;
-      } catch (error) {
-        toast(error.message);
-      }
-    };
+    button.onclick = () => startStep(kind, language, button);
     wrap.append(button);
     return wrap;
   }
@@ -535,27 +647,34 @@ export async function render(view, _status, params) {
     on("job.update", (job) => {
       if (job.file_id !== fileId) return;
       if (job.kind === "transcribe_range") {
-        const progress = el("range-progress");
-        const message = el("range-message");
-        if (!progress) return;
-        const active = job.status === "running" || job.status === "queued";
-        progress.hidden = !active;
-        if (active) progress.firstElementChild.style.width = `${job.progress}%`;
-        message.textContent = active ? job.message : "";
+        showJobState("range-progress", "range-message", job);
       }
       if (job.kind === "llm_process") {
-        const progress = el("ai-progress");
-        const message = el("ai-message");
-        if (!progress) return;
-        const active = job.status === "running" || job.status === "queued";
-        progress.hidden = !active;
-        if (active) progress.firstElementChild.style.width = `${job.progress}%`;
-        message.textContent = active ? (job.message || t("ai.title")) : "";
+        showJobState("ai-progress", "ai-message", job, t("ai.title"));
+        // the run is over: the panels get their start buttons back, enabled
+        if (job.status === "failed" || job.status === "cancelled") renderDerivedPanels();
       }
     }),
   ];
 
   setupPanels();
+}
+
+// A finished job clears the line; a failed one leaves its reason standing.
+// Without this a broken LLM run looks exactly like nothing having happened —
+// which is what "I press the button and nothing shows up" came down to.
+function showJobState(progressId, messageId, job, fallback = "") {
+  const progress = el(progressId);
+  const message = el(messageId);
+  if (!progress || !message) return;
+  const active = job.status === "running" || job.status === "queued";
+  progress.hidden = !active;
+  if (active) progress.firstElementChild.style.width = `${job.progress}%`;
+  message.classList.toggle("error-text", job.status === "failed");
+  if (active) message.textContent = job.message || fallback;
+  else if (job.status === "failed") message.textContent = job.error || t("editor.jobFailed");
+  else message.textContent = "";
+  if (job.status === "failed" && job.error) toast(job.error);
 }
 
 function autoGrow(textarea) {
@@ -567,6 +686,7 @@ function autoGrow(textarea) {
 // second editor in a row (deep link from a search hit).
 export function destroy() {
   document.getElementById("view")?.classList.remove("wide");
+  closeExportDialog();
   unsubscribers.forEach((off) => off());
   unsubscribers = [];
   if (wavesurfer) {

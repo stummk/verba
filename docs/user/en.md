@@ -252,7 +252,9 @@ Once a language model is configured (section "Setting up a language model
 row and names the step (e.g. "AI processing · Cleanup 2/5"). Finished steps are
 marked in the row as **cleaned** and **translated**, so it is visible whether a
 file already went through the AI step. A second click does not queue the same
-step twice. If a step fails, the reason appears as a message and stays in the
+step twice; for translations the language counts — a second target language gets
+its own run, and a translation also starts while the cleanup of the same file is
+still running. If a step fails, the reason appears as a message and stays in the
 file row — an empty result is never stored, because every PDF built from it
 would be empty as well. The icons in the file row follow the order of the
 workflow: transcribe → AI processing → editor (checking) → PDF.
@@ -283,9 +285,29 @@ transcript and AI texts:
   On large displays the areas sit **side by side** like in a desktop app and
   can be toggled individually; on the phone the same tabs switch between the
   views — with the full feature set preserved.
-- If an AI text does not exist yet, it can be **created right from the editor**
-  ("Create cleanup", "Create translation" with a language picker); the result
-  appears live in the area once it is ready
+- **Which text counts in the end** is stated as a hint above the areas: as long
+  as there is no cleanup, translation and PDF are built straight from the
+  segments. Once a cleanup exists it is the basis for both — later changes to
+  the segments only take effect after the cleanup is regenerated. Layouts with
+  speakers (*dialogue*, *script*) are the exception: there the PDF is always
+  built from the segments including the speakers, and the cleanup only feeds the
+  translation.
+- **Segments and AI text scroll together** and share one height, so a passage can
+  be read next to its cleaned or translated version. The mapping is proportional
+  — the cleaned text is one flowing text, not one block per segment.
+- The **waveform stays at the top while scrolling** (from tablet width up), so
+  playback and selection are always within reach.
+- **AI texts right from the editor**: if a text is missing, "Create cleanup" or
+  "Create translation" (with a language picker) builds it; if it already exists,
+  **"Regenerate"** builds it again and replaces it. Progress and errors appear
+  below the areas — when a step fails its reason stays put instead of nothing
+  seeming to happen.
+- In the translation language picker the languages are grouped into **"Already
+  translated"** and **"Not translated yet"**; switching shows the matching
+  version right away.
+- **Switch files and export without a detour**: a picker at the top switches to
+  another file of the same transcript, and next to it the PDF icon starts the
+  **export** straight from the editor.
 - **Text and speaker** are edited directly in the segment rows — changes are
   saved automatically ("Saved" indicator), **Undo** reverts recent changes
   step by step

@@ -204,6 +204,49 @@ def chat_pieces(
     return pieces
 
 
+# ── which steps are already on their way ─────────────────────────────
+
+DEFAULT_TARGET_LANGUAGE = "en"
+
+
+def step_key(step: str, target_language: str = "") -> str:
+    """Identity of one pipeline step for a file.
+
+    A translation is one step *per language*, so a running English translation
+    must not swallow the request for a Russian one.
+    """
+    if step != "translate":
+        return step
+    return f"translate:{target_language or DEFAULT_TARGET_LANGUAGE}"
+
+
+def active_steps(file_id: int) -> dict[str, dict[str, Any]]:
+    """Step keys already queued or running for the file → the job doing them."""
+    taken: dict[str, dict[str, Any]] = {}
+    for job in job_queue.active_jobs_for_file("llm_process", file_id):
+        payload = job.get("payload") or {}
+        target = payload.get("target_language", "")
+        for step in payload.get("steps") or ["cleanup"]:
+            taken.setdefault(step_key(step, target), job)
+    return taken
+
+
+def pending_steps(
+    file_id: int, steps: list[str], target_language: str = ""
+) -> tuple[list[str], dict[str, Any] | None]:
+    """The requested steps nobody is working on yet, plus the job that covers
+    the first requested step when there is one.
+
+    Enqueueing a step twice only overwrites the first result and blocks the LLM
+    lane for nothing — but a step that is merely *next to* a running one has to
+    start, otherwise a translation requested during a cleanup is lost silently.
+    """
+    taken = active_steps(file_id)
+    remaining = [s for s in steps if step_key(s, target_language) not in taken]
+    covering = taken.get(step_key(steps[0], target_language)) if steps else None
+    return remaining, covering
+
+
 # ── automatic chaining after transcription ───────────────────────────
 
 
@@ -222,14 +265,13 @@ def maybe_enqueue_auto_process(file_id: int, session_id: str = "") -> dict[str, 
     if llm.llm_location() == "none":
         return None
 
-    running = job_queue.active_for_file("llm_process", file_id)
-    if running is not None:  # the user already started it by hand
-        return running
-
     steps = ["cleanup"]
     target = file_row.get("target_language") or project.get("auto_language") or ""
     if target:
         steps.append("translate")
+    steps, covering = pending_steps(file_id, steps, target)
+    if not steps:  # the user already started it by hand
+        return covering
     return job_queue.enqueue(
         "llm_process",
         payload={"file_id": file_id, "steps": steps, "target_language": target, "model": ""},
@@ -360,7 +402,7 @@ def handle_llm_process_job(
         if step == "cleanup":
             cleaned = run_cleanup(file_id, type_prompt, model_override, cancel, report, (lo, hi))
         elif step == "translate":
-            target = payload.get("target_language") or "en"
+            target = payload.get("target_language") or DEFAULT_TARGET_LANGUAGE
             source = cleaned
             if source is None:
                 existing = get_text(file_id, "cleanup")
