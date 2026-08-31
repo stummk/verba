@@ -284,6 +284,20 @@ def maybe_enqueue_auto_process(file_id: int, session_id: str = "") -> dict[str, 
 # ── pipeline steps ────────────────────────────────────────────────────
 
 
+NO_TEXT_MESSAGE = "Das Transkript enthält keinen Text — bitte neu transkribieren"
+
+
+def segments_text(segments: list[dict[str, Any]]) -> str:
+    """The transcript as plain text, blank segments left out.
+
+    A recording without speech yields segments that carry no text. Joined
+    unfiltered they look like content ("\\n\\n\\n"), and every step downstream
+    then works on nothing: the LLM answers that it was given no text, and the
+    PDF export puts a header over an empty page.
+    """
+    return "\n".join(s["text"].strip() for s in segments if s["text"].strip())
+
+
 def _refuse_empty(result: str, step: str) -> None:
     """Never store an empty result.
 
@@ -337,6 +351,8 @@ def run_cleanup(
     segments = transcripts.list_segments(file_id)
     if not segments:
         raise RuntimeError("No segments — transcribe the file first")
+    if not segments_text(segments):
+        raise RuntimeError(NO_TEXT_MESSAGE)
 
     result = cleanup_segments(segments, type_prompt, model_override, cancel, report, progress_range)
     _refuse_empty(result, "Bereinigung")
@@ -408,10 +424,9 @@ def handle_llm_process_job(
                 existing = get_text(file_id, "cleanup")
                 source = existing["content"] if existing else None
             if source is None:
-                segments = transcripts.list_segments(file_id)
-                source = "\n".join(s["text"].strip() for s in segments)
+                source = segments_text(transcripts.list_segments(file_id))
             if not source.strip():
-                raise RuntimeError("No text available for translation")
+                raise RuntimeError(NO_TEXT_MESSAGE)
             run_translation(file_id, source, target, model_override, cancel, report, (lo, hi))
         else:
             raise RuntimeError(f"Unknown pipeline step: {step}")

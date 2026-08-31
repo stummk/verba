@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import platform
+import re
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -80,8 +81,11 @@ DEFAULT_OUTPUT_PROMPT = (
 def _base_text(file_id: int, structure: str, language: str) -> str:
     """The text a structure is built from, best variant first.
 
-    A derived text only counts when it actually carries content — an empty one
-    (from a failed LLM run) would otherwise produce an empty PDF.
+    A variant only counts when it actually carries content — an empty derived
+    text (from a failed LLM run) or a transcript whose segments are all blank
+    would otherwise reach the structure stage as nothing but whitespace: the
+    LLM answers that it was given no text, and the rule-based fallback yields
+    no blocks at all. Both end as a PDF with a header and nothing under it.
     """
     if language:
         text = pipeline.get_text(file_id, "translation", language)
@@ -90,12 +94,14 @@ def _base_text(file_id: int, structure: str, language: str) -> str:
         return text["content"]
     if structure in DIALOGUE_STRUCTURES:
         segments = transcripts.list_segments(file_id)
-        if segments:
-            lines = []
-            for segment in segments:
-                speaker = (segment.get("speaker") or "").strip()
-                text = segment["text"].strip()
-                lines.append(f"{speaker}: {text}" if speaker else text)
+        lines = []
+        for segment in segments:
+            speaker = (segment.get("speaker") or "").strip()
+            text = segment["text"].strip()
+            if not text:  # a blank segment carries no contribution
+                continue
+            lines.append(f"{speaker}: {text}" if speaker else text)
+        if lines:
             return "\n".join(lines)
     cleanup = pipeline.get_text(file_id, "cleanup")
     if cleanup is not None and cleanup["content"].strip():
@@ -103,22 +109,42 @@ def _base_text(file_id: int, structure: str, language: str) -> str:
     segments = transcripts.list_segments(file_id)
     if not segments:
         raise RuntimeError("Keine Segmente — die Datei muss zuerst transkribiert werden")
-    return "\n".join(s["text"].strip() for s in segments)
+    text = pipeline.segments_text(segments)
+    if not text:
+        raise RuntimeError(pipeline.NO_TEXT_MESSAGE)
+    return text
+
+
+def _json_arrays(raw: str) -> list[list[Any]]:
+    """Every JSON array in an LLM answer, in order.
+
+    A local model rarely answers with exactly one array: it wraps it in prose
+    or a Markdown fence, or emits one array per paragraph. Decoding from each
+    `[` and skipping what does not parse takes all of those, where taking the
+    span from the first `[` to the last `]` took none of them.
+    """
+    decoder = json.JSONDecoder()
+    arrays: list[list[Any]] = []
+    index = 0
+    while (start := raw.find("[", index)) >= 0:
+        try:
+            data, end = decoder.raw_decode(raw, start)
+        except ValueError:
+            index = start + 1
+            continue
+        index = end
+        if isinstance(data, list):
+            arrays.append(data)
+    return arrays
 
 
 def _parse_blocks(raw: str) -> list[dict[str, Any]] | None:
-    """Extract and validate the JSON block array from an LLM answer."""
-    start, end = raw.find("["), raw.rfind("]")
-    if start < 0 or end <= start:
-        return None
-    try:
-        data = json.loads(raw[start : end + 1])
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(data, list):
+    """Extract and validate the JSON blocks from an LLM answer."""
+    raw_items = [item for array in _json_arrays(raw) for item in array]
+    if not raw_items:
         return None
     blocks: list[dict[str, Any]] = []
-    for item in data:
+    for item in raw_items:
         if not isinstance(item, dict) or item.get("kind") not in BLOCK_KINDS:
             continue
         kind = item["kind"]
@@ -149,6 +175,44 @@ def _parse_blocks(raw: str) -> list[dict[str, Any]] | None:
             if text:
                 blocks.append({"kind": kind, "text": text})
     return blocks or None
+
+
+def blocks_text(blocks: list[dict[str, Any]]) -> str:
+    """All text a block list carries — for checking, not for rendering."""
+    parts: list[str] = []
+    for block in blocks:
+        parts.append(str(block.get("title", "")))
+        parts.append(str(block.get("speaker", "")))
+        parts.append(str(block.get("text", "")))
+        parts.extend(str(line) for line in block.get("lines", []))
+        parts.extend(str(item) for item in block.get("items", []))
+    return " ".join(part for part in parts if part)
+
+
+_WORD_RE = re.compile(r"\w{4,}")
+
+# A model that ignores its input answers *about* the task instead of doing it
+# ("No speech text was provided — please paste the full text of the speech ...").
+# Such an answer parses as valid blocks and would be printed as if it were the
+# document. It gives itself away through its vocabulary: hardly a word of it
+# comes from the transcript. Asking it that way round — how much of the answer
+# is covered by the material, not how much of the material survived — leaves a
+# type that legitimately condenses (meeting minutes) untouched: a summary is
+# written from the transcript's own words.
+MIN_SOURCED_SHARE = 0.5
+MIN_WORDS_TO_JUDGE = 20  # too little material to tell a refusal from a layout
+
+
+def _keeps_the_material(blocks: list[dict[str, Any]], source: str) -> bool:
+    """Whether structured blocks were built from `source` at all."""
+    source_words = set(_WORD_RE.findall(source.lower()))
+    if len(source_words) < MIN_WORDS_TO_JUDGE:
+        return True
+    answer_words = set(_WORD_RE.findall(blocks_text(blocks).lower()))
+    if not answer_words:
+        return False
+    sourced = answer_words & source_words
+    return len(sourced) >= MIN_SOURCED_SHARE * len(answer_words)
 
 
 def _structure_rule_based(text: str, structure: str) -> list[dict[str, Any]]:
@@ -206,13 +270,23 @@ def _structure_llm(
         report(lo + (hi - lo) * i // max(1, len(chunks)), f"Structuring {i + 1}/{len(chunks)}")
         # every answer is parsed on its own: a chunk that had to be split
         # comes back as several JSON arrays, never as one
+        chunk_blocks: list[dict[str, Any]] = []
         for answer in pipeline.chat_pieces(system_prompt, chunk, limit=limit):
             parsed = _parse_blocks(answer)
             if parsed is None:
                 logger.warning("structuring response not parseable — rule-based fallback")
                 return None
-            blocks.extend(parsed)
-    return blocks
+            chunk_blocks.extend(parsed)
+        if not _keeps_the_material(chunk_blocks, chunk):
+            logger.warning(
+                "structuring response is not built from the transcript (%d chars in, "
+                "%d out) — rule-based fallback",
+                len(chunk),
+                len(blocks_text(chunk_blocks)),
+            )
+            return None
+        blocks.extend(chunk_blocks)
+    return blocks or None
 
 
 def build_document(
@@ -242,6 +316,11 @@ def build_document(
         )
     if blocks is None:
         blocks = _structure_rule_based(text, structure)
+    if not blocks:
+        # nothing rendered under the header: fail the job instead of handing
+        # out a PDF that looks like the transcript came out empty
+        name = file_row.get("filename") or Path(file_row["rel_path"]).name
+        raise RuntimeError(f"Kein Inhalt für {name} — der Text ließ sich nicht strukturieren")
 
     return {
         "title": file_row.get("title") or Path(file_row["rel_path"]).stem,
@@ -304,6 +383,28 @@ GAP_AFTER_LIST = 1.5
 GAP_AFTER_SEPARATOR = 2.0
 GAP_AROUND_DIVIDER = 2.0  # the "---" between language versions of one file
 
+_HARD_BREAK_RE = re.compile(r"\s*\n\s*")
+_SPACES_RE = re.compile(r"[^\S\n]{2,}")
+_SPACE_BEFORE_PUNCT_RE = re.compile(r" +([,.;:!?)])")
+_MISSING_SPACE_RE = re.compile(r"([,;:])(?=[^\s\d/])")
+
+
+def flow_text(value: str) -> str:
+    """Running text with sensible spaces and no line breaks of its own.
+
+    Transcripts and LLM answers carry newlines wherever the source happened to
+    wrap — inside a sentence more often than at its end. Rendered as they are,
+    they become hard breaks in the middle of a justified line, which is what
+    makes an exported paragraph look torn apart. The renderer wraps and
+    justifies by itself, so a paragraph is handed over as one line: breaks
+    become spaces, runs of spaces collapse, and a space that ended up in front
+    of its punctuation (or is missing behind it) is put right.
+    """
+    value = _HARD_BREAK_RE.sub(" ", value.strip())
+    value = _SPACES_RE.sub(" ", value)
+    value = _SPACE_BEFORE_PUNCT_RE.sub(r"\1", value)
+    return _MISSING_SPACE_RE.sub(r"\1 ", value).strip()
+
 
 class _Renderer:
     """Deterministic layout of structure blocks according to the type template."""
@@ -324,9 +425,15 @@ class _Renderer:
         pdf.cell(0, 6, self._text("---"), align="C", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(GAP_AROUND_DIVIDER)
 
-    def _write(self, height: float, value: str) -> None:
+    def _write(self, height: float, value: str, align: str = "L") -> None:
         """Full-width wrapped text; cursor continues at the left margin."""
-        self.pdf.multi_cell(0, height, self._text(value), new_x="LMARGIN", new_y="NEXT")
+        self.pdf.multi_cell(
+            0, height, self._text(value), align=align, new_x="LMARGIN", new_y="NEXT"
+        )
+
+    def _flowing(self, height: float, value: str) -> None:
+        """Running text: normalised whitespace, justified like a document."""
+        self._write(height, flow_text(value), align="J")
 
     def section(self, doc: dict[str, Any]) -> None:
         """Render one file's optional header and its blocks."""
@@ -373,30 +480,31 @@ class _Renderer:
         if kind == "heading":
             pdf.ln(GAP_BEFORE_HEADING)
             pdf.set_font(self.family, "B", 12)
-            self._write(7, block["text"])
+            self._write(7, flow_text(block["text"]))
             pdf.ln(GAP_AFTER_HEADING)
         elif kind == "stanza":
+            # the only kind whose line breaks are content, not accidental wrap
             pdf.set_font(self.family, "", 11)
             for line in block["lines"]:
-                self._write(6, line)
+                self._write(6, " ".join(line.split()))
             pdf.ln(GAP_AFTER_STANZA)
         elif kind == "dialogue":
-            speaker = block.get("speaker") or ""
+            speaker = flow_text(block.get("speaker") or "")
             if self.structure == "script":
                 speaker = speaker.upper()
             if speaker:
                 pdf.set_font(self.family, "B", 11)
                 self._write(6, speaker)
             pdf.set_font(self.family, "", 11)
-            self._write(6, block["text"])
+            self._flowing(6, block["text"])
             pdf.ln(GAP_AFTER_DIALOGUE)
         elif kind == "list":
             if block.get("title"):
                 pdf.set_font(self.family, "B", 11)
-                self._write(6, block["title"])
+                self._write(6, flow_text(block["title"]))
             pdf.set_font(self.family, "", 11)
             for item in block["items"]:
-                self._write(6, f"•  {item}")
+                self._write(6, f"•  {flow_text(item)}")
             pdf.ln(GAP_AFTER_LIST)
         elif kind == "separator":
             pdf.set_font(self.family, "", 11)
@@ -404,7 +512,7 @@ class _Renderer:
             pdf.ln(GAP_AFTER_SEPARATOR)
         else:  # paragraph
             pdf.set_font(self.family, "", 11)
-            self._write(6, block["text"])
+            self._flowing(6, block["text"])
             pdf.ln(GAP_AFTER_PARAGRAPH)
 
 

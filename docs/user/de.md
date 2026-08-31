@@ -497,6 +497,15 @@ der Export funktioniert immer. Das Layout richtet sich nach dem Typ, etwa
 unsichtbare Trenner und zusätzlicher Leerraum oder ein
 Skriptlayout beim Rollenspiel. Ohne Typ entsteht ein schlichtes Text-PDF.
 
+Fließtext erscheint im **Blocksatz**. Zeilenumbrüche aus dem Transkript werden
+dabei zu Wortabständen zusammengezogen, damit ein Absatz nicht mitten im Satz
+umbricht — nur Strophen behalten ihre Zeilen. Liefert das Sprachmodell eine
+Antwort, die gar nicht aus dem Transkript stammt (etwa die Rückfrage, es sei
+kein Text übergeben worden), wird sie verworfen und regelbasiert exportiert.
+Enthält das Transkript überhaupt keinen Text — etwa bei einer Aufnahme ohne
+Sprache —, schlägt der Export mit einem Hinweis fehl, statt ein PDF zu
+erzeugen, das nur die Kopfzeile enthält.
+
 **PDF-Export (alle)** erzeugt ein Sammel-PDF: Jede Datei folgt als eigener
 Abschnitt, nur durch Abstand getrennt — ohne Inhaltsverzeichnis und ohne
 zusätzliche Titel. Fertige PDFs erscheinen in der Karte **Exporte (PDF)** zum

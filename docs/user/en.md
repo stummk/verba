@@ -480,6 +480,15 @@ always works. The layout follows the type, e.g. invisible separators and
 extra whitespace or a script layout for role plays.
 Without a type a plain text PDF is produced.
 
+Running text is set **justified**. Line breaks that came from the transcript
+are pulled together into word spacing so a paragraph does not break in the
+middle of a sentence — only stanzas keep their lines. An answer from the
+language model that was not built from the transcript at all (for instance the
+question to please supply a text) is discarded and exported rule-based. If the
+transcript carries no text at all — a recording without speech, say — the
+export fails with a message instead of producing a PDF that holds nothing but
+the header line.
+
 **PDF export (all)** creates one collective PDF: each file follows as its own
 section separated by spacing only — no table of contents and no extra titles.
 Finished PDFs appear in the **Exports (PDF)** card for download or deletion;

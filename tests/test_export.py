@@ -72,6 +72,23 @@ def test_parse_blocks_rejects_garbage():
     assert pdf._parse_blocks('{"kind": "paragraph"}') is None
 
 
+def test_parse_blocks_takes_several_arrays_from_one_answer():
+    """A local model likes to answer one array per paragraph."""
+    raw = (
+        '```json\n[{"kind": "paragraph", "text": "Eins"}]\n```\n'
+        'und weiter:\n[{"kind": "paragraph", "text": "Zwei"}]'
+    )
+    assert pdf._parse_blocks(raw) == [
+        {"kind": "paragraph", "text": "Eins"},
+        {"kind": "paragraph", "text": "Zwei"},
+    ]
+
+
+def test_parse_blocks_ignores_a_bracket_in_the_prose():
+    raw = 'Hinweis [nicht json] danach: [{"kind": "heading", "text": "T"}]'
+    assert pdf._parse_blocks(raw) == [{"kind": "heading", "text": "T"}]
+
+
 # ── rule-based structuring ────────────────────────────────────────────
 
 
@@ -132,6 +149,22 @@ def test_base_text_ignores_an_empty_derived_text(data_env, tmp_path):
         pdf._base_text(file_row["id"], "", "en")
 
 
+def test_base_text_refuses_a_transcript_without_text(data_env, tmp_path):
+    """Blank segments used to reach the renderer as pure whitespace."""
+    file_row, _project = make_done_file(tmp_path, segments=(("", "  "), ("", "")))
+    with pytest.raises(RuntimeError, match="keinen Text"):
+        pdf._base_text(file_row["id"], "paragraphs", "")
+    with pytest.raises(RuntimeError, match="keinen Text"):
+        pdf._base_text(file_row["id"], "dialogue", "")
+
+
+def test_base_text_skips_blank_segments_in_dialogue(data_env, tmp_path):
+    file_row, _project = make_done_file(
+        tmp_path, type_key="interview", segments=(("Anna", "Hallo."), ("Ben", "  "))
+    )
+    assert pdf._base_text(file_row["id"], "dialogue", "") == "Anna: Hallo."
+
+
 # ── stage 1 with LLM (fake chat) ──────────────────────────────────────
 
 
@@ -160,6 +193,51 @@ def test_build_document_falls_back_on_bad_llm_answer(data_env, tmp_path, monkeyp
     monkeypatch.setattr("verba.services.llm.chat", lambda messages, **kw: "kein json")
     doc = pdf.build_document(file_row, project, "", NO_CANCEL, no_report)
     assert doc["blocks"] == [{"kind": "paragraph", "text": "Hallo Welt."}]
+
+
+LONG_TEXT = (
+    "Sehr geehrte Damen und Herren, ich freue mich, heute hier zu sein und "
+    "über die Zukunft unserer Stadt zu sprechen. Verkehr, Wohnraum und "
+    "Bildung bestimmen den Alltag vieler Menschen. Deshalb schlagen wir ein "
+    "Programm vor, das Radwege ausbaut, Schulen saniert und Wohnungen "
+    "bezahlbar hält. Vielen Dank für ihre Aufmerksamkeit."
+)
+
+REFUSAL = (
+    '[{"kind": "heading", "text": "Transcription Status"}, '
+    '{"kind": "paragraph", "text": "No speech text was provided for '
+    "transcription. Please paste the full text of the speech you wish to edit "
+    'so I can format it according to your guidelines."}]'
+)
+
+
+def test_build_document_falls_back_when_the_llm_ignored_the_text(data_env, tmp_path, monkeypatch):
+    """The reported failure: the model answers *about* the task, not with it."""
+    configure_llm()
+    file_row, project = make_done_file(tmp_path, type_key="speech")
+    pipeline.save_text(file_row["id"], "cleanup", LONG_TEXT)
+    monkeypatch.setattr("verba.services.llm.chat", lambda messages, **kw: REFUSAL)
+
+    doc = pdf.build_document(file_row, project, "", NO_CANCEL, no_report)
+
+    assert doc["blocks"] == [{"kind": "paragraph", "text": LONG_TEXT}]
+    assert "Transcription Status" not in pdf.blocks_text(doc["blocks"])
+
+
+def test_build_document_keeps_a_condensed_llm_answer(data_env, tmp_path, monkeypatch):
+    """A protocol type may condense — that must still count as the material."""
+    configure_llm()
+    file_row, project = make_done_file(tmp_path, type_key="protocol")
+    pipeline.save_text(file_row["id"], "cleanup", LONG_TEXT)
+    answer = (
+        '[{"kind": "list", "title": "To-dos", "items": '
+        '["Radwege ausbauen", "Schulen sanieren", "Wohnungen bezahlbar halten"]}]'
+    )
+    monkeypatch.setattr("verba.services.llm.chat", lambda messages, **kw: answer)
+
+    doc = pdf.build_document(file_row, project, "", NO_CANCEL, no_report)
+
+    assert doc["blocks"][0]["kind"] == "list"
 
 
 def test_build_document_without_type_never_calls_llm(data_env, tmp_path, monkeypatch):
@@ -210,6 +288,32 @@ ALL_KINDS_DOC = {
         {"kind": "paragraph", "text": "Schluss."},
     ],
 }
+
+
+def test_flow_text_repairs_wrapped_running_text():
+    assert pdf.flow_text("Ein Satz, der hier\numgebrochen wurde .") == (
+        "Ein Satz, der hier umgebrochen wurde."
+    )
+    assert pdf.flow_text("Hallo,Welt") == "Hallo, Welt"
+    # what must stay untouched: decimals, times, URLs
+    assert pdf.flow_text("1,5 Grad um 10:30 via https://x.y/z") == (
+        "1,5 Grad um 10:30 via https://x.y/z"
+    )
+
+
+def test_running_text_is_justified_but_verses_are_not(tmp_path, monkeypatch):
+    aligns: list[str] = []
+    original = pdf._Renderer._write
+
+    def spy(self, height, value, align="L"):
+        aligns.append(align)
+        return original(self, height, value, align)
+
+    monkeypatch.setattr(pdf._Renderer, "_write", spy)
+    pdf.render_pdf([ALL_KINDS_DOC], "paragraphs", tmp_path / "out.pdf")
+
+    assert aligns.count("J") == 3  # two paragraphs and the spoken contribution
+    assert "J" not in aligns[:1]  # the heading keeps its left alignment
 
 
 @pytest.mark.parametrize("structure", ["", "paragraphs", "stanzas", "dialogue", "script"])

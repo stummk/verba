@@ -120,6 +120,36 @@ def test_cleanup_without_segments_fails(tmp_path, monkeypatch):
         run_job(file_row["id"], {"steps": ["cleanup"]})
 
 
+def test_cleanup_of_a_transcript_without_text_fails(tmp_path, monkeypatch):
+    """A recording without speech: blank segments must not reach the LLM.
+
+    Asked to clean nothing, a model answers that it was given no text — and
+    that answer would be stored as the cleanup and exported as the document.
+    """
+    source = tmp_path / "stille.mp3"
+    source.write_bytes(b"x")
+    project = workspace.create_project("Stille")
+    [file_row] = workspace.import_paths(project, [str(source)])
+    with db.get_conn() as conn:
+        conn.executemany(
+            "INSERT INTO segments (file_id, idx, start_s, end_s, text) VALUES (?, ?, ?, ?, ?)",
+            [(file_row["id"], 0, 0.0, 2.0, "  "), (file_row["id"], 1, 2.0, 4.0, "")],
+        )
+
+    def boom(*args, **kwargs):
+        raise AssertionError("das LLM darf ohne Text nicht aufgerufen werden")
+
+    monkeypatch.setattr(pipeline.llm, "chat", boom)
+
+    with pytest.raises(RuntimeError, match="keinen Text"):
+        run_job(file_row["id"], {"steps": ["cleanup"]})
+
+
+def test_segments_text_drops_blank_segments():
+    segments = [{"text": " a "}, {"text": "   "}, {"text": "b"}]
+    assert pipeline.segments_text(segments) == "a\nb"
+
+
 def test_a_cut_off_answer_splits_the_piece_instead_of_losing_text(monkeypatch):
     """The whole text has to come back — a short context must not shorten it."""
     seen: list[int] = []
