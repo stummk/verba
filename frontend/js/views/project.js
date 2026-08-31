@@ -5,7 +5,7 @@ import { api } from "../api.js";
 import { el, esc, formatDuration, html, raw, toast } from "../dom.js";
 import { iconButton, iconSvg } from "../icons.js";
 import { t } from "../i18n.js";
-import { jobCardHost } from "../jobs.js";
+import { jobCardHost, jobStepLabel } from "../jobs.js";
 import { fillLanguageSelect } from "../languages.js";
 import { on } from "../ws.js";
 
@@ -18,6 +18,9 @@ const COMBINED = "__combined__";
 let fabHandler = null;
 let queueTimerHandle = null;
 const fileJobs = new Map(); // file_id -> latest active job
+// file_id -> reason the last step failed. A failed AI step leaves the file
+// status at "done", so without this the row would give no hint at all.
+const fileJobErrors = new Map();
 
 export async function render(view, _status, params) {
   const projectId = Number(params[0]);
@@ -153,6 +156,7 @@ export async function render(view, _status, params) {
   const files = new Map(project.files.map((f) => [f.id, f]));
   const fileLanguages = new Map();
   fileJobs.clear();
+  fileJobErrors.clear();
   renderRows(files);
 
   function flowOptions() {
@@ -306,13 +310,24 @@ export async function render(view, _status, params) {
       jobEventsSeen.add(job.file_id);
       if (job.status === "queued" || job.status === "running") {
         fileJobs.set(job.file_id, job);
+        fileJobErrors.delete(job.file_id);
       } else {
         fileJobs.delete(job.file_id);
+        if (job.status === "failed" && job.error) fileJobErrors.set(job.file_id, job.error);
       }
       updateProgressRow(job);
       refreshQueuePositions();
     }),
     on("texts.changed", (data) => {
+      // the file status does not change with a derived text, so the row has to
+      // learn about the new one from this event
+      const fileRow = files.get(data.file_id);
+      if (fileRow) {
+        const kinds = new Set((fileRow.derived_kinds ?? "").split(",").filter(Boolean));
+        kinds.add(data.kind);
+        fileRow.derived_kinds = [...kinds].join(",");
+        renderRows(files);
+      }
       if (openTextsRefresh) openTextsRefresh(data.file_id);
     }),
   ];
@@ -345,7 +360,8 @@ export async function render(view, _status, params) {
         const fileId = Number(tr.dataset.fileId);
         const message = tr.querySelector(".job-message");
         if (message && positions.has(fileId)) {
-          message.textContent = t("project.queuePosition", { pos: positions.get(fileId) });
+          const step = fileJobs.has(fileId) ? `${jobStepLabel(fileJobs.get(fileId))} · ` : "";
+          message.textContent = step + t("project.queuePosition", { pos: positions.get(fileId) });
         }
       }
     }, 300);
@@ -364,10 +380,12 @@ export async function render(view, _status, params) {
 
     const nameCell = document.createElement("td");
     nameCell.textContent = fileRow.filename;
-    if (fileRow.status === "failed" && fileRow.error) {
+    const failure = fileRow.status === "failed" ? fileRow.error : fileJobErrors.get(fileRow.id);
+    if (failure) {
       const err = document.createElement("div");
       err.className = "small error-text";
-      err.textContent = fileRow.error;
+      err.textContent = failure;
+      err.title = failure; // the row clamps long endpoint messages
       nameCell.appendChild(err);
     }
 
@@ -390,6 +408,16 @@ export async function render(view, _status, params) {
     badge.textContent = t(`status.${fileRow.status}`);
     statusCell.appendChild(badge);
     const job = fileJobs.get(fileRow.id);
+    // Which steps a file has behind it: without this the row looks identical
+    // before and after the AI step, and the button gets clicked again.
+    const derived = (fileRow.derived_kinds ?? "").split(",").filter(Boolean);
+    for (const kind of ["cleanup", "translation"]) {
+      if (!derived.includes(kind)) continue;
+      const chip = document.createElement("span");
+      chip.className = "badge badge-done";
+      chip.textContent = t(`ai.badge.${kind}`);
+      statusCell.appendChild(chip);
+    }
     if (fileRow.status === "transcribing" || job) {
       const wrap = document.createElement("div");
       wrap.className = "progressbar small-bar";
@@ -397,7 +425,7 @@ export async function render(view, _status, params) {
       statusCell.appendChild(wrap);
       const message = document.createElement("div");
       message.className = "small muted job-message";
-      message.textContent = job?.message ?? "";
+      message.textContent = job ? jobRowMessage(job, fileRow) : "";
       statusCell.appendChild(message);
     }
 
@@ -416,14 +444,16 @@ export async function render(view, _status, params) {
       ));
     }
     if (fileRow.status === "done") {
-      actionCell.append(iconButton("article", t("project.openEditor"), () => {
-        location.hash = `#/editor/${fileRow.id}`;
-      }));
-      if (llmEnabled) {
+      // in the order of the workflow: transcribe → AI processing → check in
+      // the editor → export; the editor button used to disappear between them
+      if (llmEnabled && job?.kind !== "llm_process") {
         actionCell.append(
           iconButton("sparkle", t("ai.title"), () => openAiDialog({ fileId: fileRow.id }))
         );
       }
+      actionCell.append(iconButton("article", t("project.openEditor"), () => {
+        location.hash = `#/editor/${fileRow.id}`;
+      }));
       actionCell.append(
         iconButton("pdf", t("export.file"), () => openExportDialog({ fileId: fileRow.id }))
       );
@@ -462,7 +492,18 @@ export async function render(view, _status, params) {
     }
     bar.style.width = `${job.progress}%`;
     const message = tr.querySelector(".job-message");
-    if (message) message.textContent = job.message ?? "";
+    if (message) message.textContent = jobRowMessage(job, files.get(job.file_id));
+  }
+
+  // "KI-Aufbereitung · Bereinigung 2/5": which step is running is exactly what
+  // the row never said, so a queued cleanup looked like nothing was happening.
+  // The file name is dropped — the first column already carries it.
+  function jobRowMessage(job, fileRow) {
+    const filename = fileRow?.filename ?? "";
+    const detail = (job.message ?? "").replace(`${filename}:`, "").trim();
+    const label = jobStepLabel(job);
+    if (job.status === "queued") return t("app.jobQueuedPlain", { step: label });
+    return detail ? `${label} · ${detail}` : label;
   }
 
   // ── AI processing dialog (cleanup / translation, per file or project) ──
@@ -503,12 +544,16 @@ export async function render(view, _status, params) {
       host.querySelector(".modal-backdrop").onclick = (event) => {
         if (event.target === event.currentTarget) close();
       };
-      el("ai-start").onclick = async () => {
+      el("ai-start").onclick = async (event) => {
         const steps = [];
         if (el("ai-cleanup").checked) steps.push("cleanup");
         if (el("ai-translate").checked) steps.push("translate");
         if (!steps.length) return;
         const options = { steps, target_language: el("ai-language").value };
+        // The dialog closes on start and the progress appears in the file row:
+        // a dialog that stays open reads as "nothing happened" and the next
+        // click queues the same work a second time.
+        event.currentTarget.disabled = true;
         try {
           if (fileId) {
             await api.processFile(fileId, options);
@@ -516,10 +561,12 @@ export async function render(view, _status, params) {
           } else {
             const jobs = await api.processProject(forProject, options);
             toast(t("ai.startedProject", { count: jobs.length }));
-            close();
           }
+          close();
         } catch (error) {
           toast(error.message);
+          const button = el("ai-start");
+          if (button) button.disabled = false;
         }
       };
     }
@@ -845,6 +892,7 @@ export function destroy() {
   unsubscribers = [];
   clearTimeout(queueTimerHandle);
   fileJobs.clear();
+  fileJobErrors.clear();
   if (fabHandler) window.removeEventListener("fab:click", fabHandler);
   fabHandler = null;
 }

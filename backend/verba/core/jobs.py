@@ -153,6 +153,20 @@ class JobQueue:
             row = conn.execute(f"{JOB_SELECT} WHERE j.id = ?", (job_id,)).fetchone()
         return db.row_to_dict(row)
 
+    def active_for_file(self, kind: str, file_id: int) -> dict[str, Any] | None:
+        """A queued or running job of that kind for the file, if there is one.
+
+        Guards against the same step being queued twice for one file — a step
+        whose progress is easy to miss gets clicked again.
+        """
+        with db.get_conn() as conn:
+            row = conn.execute(
+                f"{JOB_SELECT} WHERE j.kind = ? AND j.file_id = ? "
+                "AND j.status IN ('queued', 'running') ORDER BY j.id ASC LIMIT 1",
+                (kind, file_id),
+            ).fetchone()
+        return db.row_to_dict(row)
+
     def list_jobs(self, active_only: bool = False, limit: int = 100) -> list[dict[str, Any]]:
         query = JOB_SELECT
         if active_only:

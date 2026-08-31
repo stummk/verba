@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+
 import pytest
 
 from verba import config, db
@@ -110,3 +112,43 @@ def test_edit_missing_text_404(done_file, client):
         json={"content": "x"},
     )
     assert response.status_code == 404
+
+
+def test_auto_job_does_not_duplicate_a_manual_run(done_file):
+    """The user already started the cleanup by hand — one job is enough."""
+    configure_llm()
+    workspace.update_project(done_file["project_id"], {"auto_process": 1})
+    manual = job_queue.enqueue(
+        "llm_process", payload={"file_id": done_file["id"]}, file_id=done_file["id"]
+    )
+    assert pipeline.maybe_enqueue_auto_process(done_file["id"])["id"] == manual["id"]
+
+
+def test_process_endpoint_returns_the_running_job_instead_of_a_second_one(
+    done_file, client, monkeypatch
+):
+    """Clicking twice must not queue the same step twice (the app registers the
+    real handler, so the job is held here until both requests are through)."""
+    configure_llm()
+    gate = threading.Event()
+    monkeypatch.setitem(
+        job_queue._handlers, "llm_process", lambda job, cancel, report: gate.wait(10)
+    )
+    try:
+        first = client.post(f"/api/files/{done_file['id']}/process", json={"steps": ["cleanup"]})
+        second = client.post(f"/api/files/{done_file['id']}/process", json={"steps": ["cleanup"]})
+        assert first.status_code == 200
+        assert second.json()["id"] == first.json()["id"]
+    finally:
+        gate.set()
+
+
+def test_file_row_names_its_derived_texts(done_file):
+    """The UI can only show "already cleaned" when the row says so."""
+    assert workspace.get_file(done_file["id"])["derived_kinds"] is None
+    pipeline.save_text(done_file["id"], "cleanup", "Bereinigt")
+    assert workspace.get_file(done_file["id"])["derived_kinds"] == "cleanup"
+    # an empty text is a failed run and must not count as done
+    pipeline.save_text(done_file["id"], "translation", "   ", language="en")
+    kinds = workspace.list_files(done_file["project_id"])[0]["derived_kinds"]
+    assert kinds == "cleanup"

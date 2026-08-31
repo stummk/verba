@@ -3,7 +3,7 @@
 import { api } from "./api.js";
 import { el, html, toast } from "./dom.js";
 import { initI18n, t } from "./i18n.js";
-import { isActive, jobStatusLine } from "./jobs.js";
+import { isActive, jobStatusLine, jobStepLabel } from "./jobs.js";
 import * as ws from "./ws.js";
 import * as dashboard from "./views/dashboard.js";
 import * as docs from "./views/docs.js";
@@ -172,6 +172,13 @@ function bindShell() {
     if (isActive(job)) runningJobs.set(job.id, job);
     else runningJobs.delete(job.id);
     renderStatus();
+    // A failed step used to end in silence: the row lost its progress bar and
+    // nothing said why. Only jobs whose file keeps its status (AI processing,
+    // export) would otherwise have no place to show the error at all.
+    if (job.status === "failed") {
+      const detail = [job.filename, job.error].filter(Boolean).join(": ");
+      toast(t("app.jobFailed", { step: jobStepLabel(job), detail }));
+    }
   });
   // jobs that were already running when this tab opened (or a reload)
   api.listJobs(true).then((jobs) => {

@@ -237,6 +237,15 @@ body.nav-hidden { padding-bottom: 0; }
 .muted { color: var(--md-on-surface-variant); }
 .small { font-size: .82rem; }
 .error-text { color: var(--md-error); }
+/* An endpoint quotes its own refusal in full — readable in the row, but the
+   row must not grow to a paragraph; the tooltip carries the rest. */
+td .error-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  max-width: 22rem;
+}
 .hint { font-size: .78rem; color: var(--md-on-surface-variant); margin-top: .25rem; }
 
 /* ── buttons ─────────────────────────────────────────────────────── */

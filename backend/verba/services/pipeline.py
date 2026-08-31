@@ -130,6 +130,80 @@ def _chunk_text(text: str, max_chars: int = chunking.DEFAULT_MAX_CHARS) -> list[
     return parts
 
 
+# ── one piece through the LLM, complete ──────────────────────────────
+
+# Below this a cut-off answer is no longer a size problem — splitting further
+# would only shred the text without ever getting a complete answer.
+MIN_SPLIT_CHARS = 800
+
+
+class SizeLimit:
+    """How much this endpoint managed to answer completely, for one run.
+
+    Once a model has shown that a 6000-character piece is more than it can
+    answer, every following piece is split up front. Without that memory a
+    two-hour recording would pay for a cut-off answer on every single chunk.
+    """
+
+    def __init__(self) -> None:
+        self.max_chars = 0  # 0: nothing learned yet, send the piece as it is
+
+    def too_big(self, text: str) -> bool:
+        return bool(self.max_chars) and len(text) > self.max_chars
+
+    def shrink_to(self, chars: int) -> None:
+        learned = max(MIN_SPLIT_CHARS, chars)
+        self.max_chars = min(self.max_chars, learned) if self.max_chars else learned
+
+
+def chat_pieces(
+    system_prompt: str,
+    user_text: str,
+    model_override: str = "",
+    context: str = "",
+    limit: SizeLimit | None = None,
+) -> list[str]:
+    """Answers for one piece of text — more than one when it had to be split.
+
+    No token cap is sent, so the endpoint answers as far as its context
+    allows. Should the answer still be cut off, the piece is split and sent
+    again instead of storing a shortened transcript: a two-hour recording has
+    to come back complete, whatever context window the model brings. Pass the
+    same `limit` for all pieces of one run so the split size is learned once.
+    """
+    limit = limit if limit is not None else SizeLimit()
+    if not limit.too_big(user_text):
+        content = user_text
+        if context:
+            content = (
+                f"(Kontext des vorherigen Abschnitts, nicht erneut ausgeben: "
+                f"{context})\n\n{content}"
+            )
+        try:
+            return [
+                llm.chat(
+                    [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": content},
+                    ],
+                    model_override=model_override,
+                ).strip()
+            ]
+        except llm.TruncatedAnswer:
+            if len(user_text) <= MIN_SPLIT_CHARS:
+                raise  # even a short piece does not fit: the model is too small
+            limit.shrink_to(len(user_text) // 2)
+
+    pieces: list[str] = []
+    for index, part in enumerate(_chunk_text(user_text, max_chars=limit.max_chars)):
+        # the context belongs to the first part only — the others follow their
+        # own predecessor, which the model has just seen
+        pieces.extend(
+            chat_pieces(system_prompt, part, model_override, context if index == 0 else "", limit)
+        )
+    return pieces
+
+
 # ── automatic chaining after transcription ───────────────────────────
 
 
@@ -148,6 +222,10 @@ def maybe_enqueue_auto_process(file_id: int, session_id: str = "") -> dict[str, 
     if llm.llm_location() == "none":
         return None
 
+    running = job_queue.active_for_file("llm_process", file_id)
+    if running is not None:  # the user already started it by hand
+        return running
+
     steps = ["cleanup"]
     target = file_row.get("target_language") or project.get("auto_language") or ""
     if target:
@@ -162,6 +240,17 @@ def maybe_enqueue_auto_process(file_id: int, session_id: str = "") -> dict[str, 
 
 
 # ── pipeline steps ────────────────────────────────────────────────────
+
+
+def _refuse_empty(result: str, step: str) -> None:
+    """Never store an empty result.
+
+    A stored empty text counts as "done" everywhere afterwards: the PDF export
+    builds on it and comes out blank, and the file looks processed. Failing the
+    job instead puts the reason in front of the user.
+    """
+    if not result.strip():
+        raise RuntimeError(f"{step} ohne Ergebnis — das LLM hat keinen Text geliefert")
 
 
 def cleanup_segments(
@@ -179,6 +268,7 @@ def cleanup_segments(
 
     chunks = chunking.chunk_segments(segments)
     parts: list[str] = []
+    limit = SizeLimit()  # what this model can answer is learned once per run
     lo, hi = progress_range
     for i, chunk in enumerate(chunks):
         if cancel.is_set():
@@ -187,20 +277,8 @@ def cleanup_segments(
             lo + (hi - lo) * i // max(1, len(chunks)),
             f"Bereinigung {i + 1}/{len(chunks)}",
         )
-        user_content = chunk.own_text
-        if chunk.context_text:
-            user_content = (
-                f"(Kontext des vorherigen Abschnitts, nicht erneut ausgeben: "
-                f"{chunk.context_text})\n\n{user_content}"
-            )
-        parts.append(
-            llm.chat(
-                [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_content},
-                ],
-                model_override=model_override,
-            ).strip()
+        parts.extend(
+            chat_pieces(system_prompt, chunk.own_text, model_override, chunk.context_text, limit)
         )
 
     return "\n\n".join(parts)
@@ -219,6 +297,7 @@ def run_cleanup(
         raise RuntimeError("No segments — transcribe the file first")
 
     result = cleanup_segments(segments, type_prompt, model_override, cancel, report, progress_range)
+    _refuse_empty(result, "Bereinigung")
     save_text(file_id, "cleanup", result, model=model_override)
     return result
 
@@ -236,6 +315,7 @@ def run_translation(
 
     chunks = _chunk_text(source_text)
     parts: list[str] = []
+    limit = SizeLimit()
     lo, hi = progress_range
     for i, chunk in enumerate(chunks):
         if cancel.is_set():
@@ -244,17 +324,10 @@ def run_translation(
             lo + (hi - lo) * i // max(1, len(chunks)),
             f"Übersetzung {i + 1}/{len(chunks)}",
         )
-        parts.append(
-            llm.chat(
-                [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": chunk},
-                ],
-                model_override=model_override,
-            ).strip()
-        )
+        parts.extend(chat_pieces(system_prompt, chunk, model_override, limit=limit))
 
     result = "\n\n".join(parts)
+    _refuse_empty(result, "Übersetzung")
     save_text(file_id, "translation", result, language=target_language, model=model_override)
     return result
 

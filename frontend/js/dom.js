@@ -54,5 +54,8 @@ export function toast(message) {
   node.textContent = message;
   node.classList.add("show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => node.classList.remove("show"), 3000);
+  // A short confirmation is read at a glance; an error from the LLM endpoint
+  // can be several lines long and needs the time to actually be read.
+  const readingTime = 3000 + Math.max(0, message.length - 60) * 60;
+  toastTimer = setTimeout(() => node.classList.remove("show"), Math.min(readingTime, 15000));
 }

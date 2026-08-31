@@ -238,9 +238,24 @@ Once a language model is configured (section "Setting up a language model
 - **Translate** renders the cleaned text (or the raw transcript) into nearly
   any language — all ~100 languages Whisper knows are available as targets
 - Long recordings are split automatically along segment boundaries (with
-  overlap) so even local models with small context windows work cleanly
+  overlap) so even local models with small context windows work cleanly — a
+  two-hour recording makes about 17 requests, whose results Verba joins again
+- **Nothing is shortened.** Verba sends no upper limit for the answer length;
+  the model answers as far as its context window reaches. If an answer is cut
+  off mid-text anyway, Verba halves the piece and asks again instead of storing
+  a shortened transcript. Only when even a short piece no longer fits does the
+  step end with an error
 - Results appear as tabs in the AI dialog and in the editor, and are also
   written as Markdown files into the workspace under `transcripts/`
+
+**What is running.** The dialog closes on start — progress then shows in the file
+row and names the step (e.g. "AI processing · Cleanup 2/5"). Finished steps are
+marked in the row as **cleaned** and **translated**, so it is visible whether a
+file already went through the AI step. A second click does not queue the same
+step twice. If a step fails, the reason appears as a message and stays in the
+file row — an empty result is never stored, because every PDF built from it
+would be empty as well. The icons in the file row follow the order of the
+workflow: transcribe → AI processing → editor (checking) → PDF.
 
 **Full automation:** in the transcript view you can enable **"Process
 automatically"** (optionally with a target language). Every finished
@@ -389,6 +404,16 @@ killing the server on startup; a model that fits nowhere means the server is
 not started at all, and says why. Nothing is decided automatically though — you download the
 model yourself and can pick another one at any time; the **local model** field
 shows which one the server uses.
+
+**Models with reasoning.** "Thinking" models (Qwen3, DeepSeek-R1 and others) put
+their reasoning in front of the answer — Verba cuts it away. If a model delivers
+reasoning only, or its token budget ends the answer before it began, the step
+fails with exactly that reason instead of an empty text. In LM Studio & co. it
+is best to turn the thinking mode off or to pick a model without reasoning.
+Errors from the endpoint (such as "model not loaded" or an exceeded context
+length) are shown verbatim — and if the server loads the model only on the first
+call (LM Studio does), that call can take considerably longer than the ones
+after it.
 
 **Your own models and your own directory.** **GGUF directory** sets the folder
 the models live in (e.g. `F:\Models\llm`). Every `.gguf` file in it appears in

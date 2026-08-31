@@ -247,9 +247,26 @@ Schritt 2 der Aktionskarte der Knopf **KI-Aufbereitung (alle)**:
   Whisper kennt
 - Lange Aufnahmen werden automatisch in Abschnitte entlang der Segmentgrenzen
   zerlegt (mit Überlappung), damit auch lokale Modelle mit kleinem Kontext
-  sauber arbeiten
+  sauber arbeiten — eine Zwei-Stunden-Aufnahme sind rund 17 Anfragen, deren
+  Ergebnisse Verba wieder zusammensetzt
+- **Gekürzt wird nichts.** Verba gibt dem Modell keine Obergrenze für die
+  Antwortlänge mit; es antwortet, soweit sein Kontextfenster reicht. Bricht eine
+  Antwort trotzdem mitten im Text ab, halbiert Verba den Abschnitt und fragt
+  erneut, statt ein verkürztes Transkript zu speichern. Erst wenn selbst ein
+  kurzer Abschnitt nicht mehr passt, endet der Schritt mit einem Fehler
 - Ergebnisse erscheinen als Reiter im KI-Dialog und im Editor und werden
   zusätzlich als Markdown-Dateien im Workspace unter `transcripts/` abgelegt
+
+**Was gerade läuft.** Der Dialog schließt sich beim Start — der Fortschritt steht
+danach in der Dateizeile und nennt den Schritt (z. B. „KI-Aufbereitung ·
+Bereinigung 2/5"). Abgeschlossene Schritte markiert die Zeile mit **bereinigt**
+bzw. **übersetzt**; daran ist zu sehen, ob eine Datei die Aufbereitung schon
+hinter sich hat. Ein zweiter Klick stellt denselben Schritt nicht doppelt in die
+Warteschlange. Schlägt ein Schritt fehl, erscheint der Grund als Meldung und
+bleibt in der Dateizeile stehen — ein leeres Ergebnis wird nie gespeichert, denn
+sonst wäre auch jedes daraus gebaute PDF leer. Die Symbole der Dateizeile stehen
+in der Reihenfolge des Ablaufs: transkribieren → KI-Aufbereitung → Editor
+(Gegenprüfung) → PDF.
 
 **Vollautomatik:** In der Transkript-Ansicht lässt sich **„Automatisch aufbereiten"**
 einschalten (optional mit Zielsprache). Dann läuft nach jeder abgeschlossenen
@@ -399,14 +416,19 @@ Whisper-Modellen (geeignet / eingeschränkt / zu groß) — es gilt nur für lok
 Modelle, ein OpenAI-kompatibler Endpunkt läuft auf fremder Hardware und wird
 deshalb nicht bewertet. Passt ein Modell nicht in den Grafikspeicher, bleibt es
 im RAM statt den Server beim Start abzuschießen; passt es nirgends, startet der
-Server gar nicht erst und sagt, woran es liegt. Zusätzlich trägt **jede** Zeile dasselbe Urteil wie bei den
-Whisper-Modellen (geeignet / eingeschränkt / zu groß) — es gilt nur für lokale
-Modelle, ein OpenAI-kompatibler Endpunkt läuft auf fremder Hardware und wird
-deshalb nicht bewertet. Passt ein Modell nicht in den Grafikspeicher, bleibt es
-im RAM statt den Server beim Start abzuschießen; passt es nirgends, startet der
-Server gar nicht erst und sagt, woran es liegt. Entschieden wird aber nichts automatisch — du lädst das Modell
-selbst und kannst jederzeit ein anderes wählen; im Feld **Lokales Modell**
-steht, welches der Server benutzt.
+Server gar nicht erst und sagt, woran es liegt. Entschieden wird aber nichts
+automatisch — du lädst das Modell selbst und kannst jederzeit ein anderes
+wählen; im Feld **Lokales Modell** steht, welches der Server benutzt.
+
+**Modelle mit Reasoning.** „Denkende" Modelle (Qwen3, DeepSeek-R1 u. a.) stellen
+ihre Überlegungen vor die Antwort — Verba schneidet sie weg. Liefert ein Modell
+ausschließlich Überlegungen, oder bricht sein Token-Budget die Antwort ab, bevor
+sie begonnen hat, endet der Schritt mit genau dieser Begründung statt mit einem
+leeren Text. In LM Studio & Co. deshalb am besten den Denkmodus abschalten oder
+ein Modell ohne Reasoning wählen. Fehlermeldungen des Endpunkts (etwa „model not
+loaded" oder eine überschrittene Kontextlänge) zeigt Verba im Wortlaut an —
+lädt der Server das Modell erst beim ersten Aufruf (LM Studio tut das), kann
+dieser Aufruf deutlich länger dauern als die folgenden.
 
 **Eigene Modelle und eigenes Verzeichnis.** Unter **GGUF-Verzeichnis** lässt
 sich der Ordner setzen, in dem die Modelle liegen (z. B. `F:\Models\llm`).

@@ -120,6 +120,78 @@ def test_cleanup_without_segments_fails(tmp_path, monkeypatch):
         run_job(file_row["id"], {"steps": ["cleanup"]})
 
 
+def test_a_cut_off_answer_splits_the_piece_instead_of_losing_text(monkeypatch):
+    """The whole text has to come back — a short context must not shorten it."""
+    seen: list[int] = []
+
+    def chat(messages, model_override="", **kwargs):
+        text = messages[-1]["content"]
+        seen.append(len(text))
+        if len(text) > 1000:  # this model cannot answer more than 1000 chars at once
+            raise pipeline.llm.TruncatedAnswer(text[:100])
+        return f"[ok:{len(text)}]"
+
+    monkeypatch.setattr(pipeline.llm, "chat", chat)
+    long_text = "\n\n".join(f"Absatz {i} " + "wort " * 40 for i in range(20))
+
+    pieces = pipeline.chat_pieces("system", long_text)
+
+    assert len(pieces) > 1  # split until every piece went through
+    assert all(piece.startswith("[ok:") for piece in pieces)
+    assert max(seen) == len(long_text)  # the full piece was tried first
+    # every answer that came back belongs to a piece the model could finish
+    assert sum(int(piece[4:-1]) for piece in pieces) >= len(long_text) - 4 * len(pieces)
+
+
+def test_the_split_size_is_learned_once_per_run(monkeypatch):
+    """A weak model must not cost a cut-off answer on every single chunk."""
+    truncated: list[int] = []
+
+    def chat(messages, model_override="", **kwargs):
+        text = messages[-1]["content"]
+        if len(text) > 1000:
+            truncated.append(len(text))
+            raise pipeline.llm.TruncatedAnswer(text[:100])
+        return "ok"
+
+    monkeypatch.setattr(pipeline.llm, "chat", chat)
+    chunk = "\n\n".join(f"Absatz {i} " + "wort " * 40 for i in range(16))  # ~3.5k chars
+    limit = pipeline.SizeLimit()
+
+    for _ in range(5):  # five chunks of one file, one shared limit
+        assert all(piece == "ok" for piece in pipeline.chat_pieces("system", chunk, limit=limit))
+
+    # learned while working on the first chunk; the other four start pre-split
+    assert len(truncated) == 2
+    assert limit.max_chars <= 1000
+
+
+def test_a_piece_that_stays_truncated_fails_loudly(monkeypatch):
+    def chat(messages, model_override="", **kwargs):
+        raise pipeline.llm.TruncatedAnswer("x")
+
+    monkeypatch.setattr(pipeline.llm, "chat", chat)
+    with pytest.raises(pipeline.llm.TruncatedAnswer):
+        pipeline.chat_pieces("system", "kurz")
+
+
+def test_empty_llm_answer_fails_instead_of_saving_nothing(file_with_segments, monkeypatch):
+    """An empty result must never be stored: it counts as done everywhere."""
+    monkeypatch.setattr(pipeline.llm, "chat", lambda messages, **kwargs: "   ")
+
+    with pytest.raises(RuntimeError, match="ohne Ergebnis"):
+        run_job(file_with_segments["id"], {"steps": ["cleanup"]})
+    assert pipeline.list_texts(file_with_segments["id"]) == []
+
+
+def test_empty_translation_answer_fails(file_with_segments, monkeypatch):
+    monkeypatch.setattr(pipeline.llm, "chat", lambda messages, **kwargs: "")
+
+    with pytest.raises(RuntimeError, match="ohne Ergebnis"):
+        run_job(file_with_segments["id"], {"steps": ["translate"], "target_language": "en"})
+    assert pipeline.get_text(file_with_segments["id"], "translation", "en") is None
+
+
 def test_rerun_overwrites_existing_text(file_with_segments, monkeypatch):
     monkeypatch.setattr(pipeline.llm, "chat", fake_chat([]))
     run_job(file_with_segments["id"], {"steps": ["cleanup"]})

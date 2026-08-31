@@ -198,6 +198,11 @@ def _ensure_llm_available() -> None:
 
 
 def _enqueue_process(file_row: dict, body: ProcessOptions, session_id: str) -> dict:
+    # The same AI step twice on one file is never wanted: the second run would
+    # only overwrite the first result and occupy the LLM lane for nothing.
+    running = job_queue.active_for_file("llm_process", file_row["id"])
+    if running is not None:
+        return running
     payload = {
         "file_id": file_row["id"],
         "steps": body.steps,

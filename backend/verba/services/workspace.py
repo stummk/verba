@@ -175,17 +175,26 @@ def delete_project(project_id: int, delete_files: bool = True) -> None:
 # ── files ─────────────────────────────────────────────────────────────
 
 
+# Every file row carries which derived texts exist for it ("cleanup",
+# "translation"): only that tells the UI whether a file has already been
+# through the AI step — its status stays "done" either way.
+FILE_SELECT = (
+    "SELECT f.*, (SELECT group_concat(DISTINCT kind) FROM derived_texts "
+    "WHERE file_id = f.id AND trim(content) != '') AS derived_kinds FROM files f"
+)
+
+
 def list_files(project_id: int) -> list[dict[str, Any]]:
     with db.get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM files WHERE project_id = ? ORDER BY filename", (project_id,)
+            f"{FILE_SELECT} WHERE f.project_id = ? ORDER BY f.filename", (project_id,)
         ).fetchall()
     return db.rows_to_dicts(rows)
 
 
 def get_file(file_id: int) -> dict[str, Any] | None:
     with db.get_conn() as conn:
-        row = conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
+        row = conn.execute(f"{FILE_SELECT} WHERE f.id = ?", (file_id,)).fetchone()
     return db.row_to_dict(row)
 
 

@@ -117,7 +117,18 @@ def test_base_text_dialogue_structures_use_segment_speakers(data_env, tmp_path):
 
 def test_base_text_missing_translation_raises(data_env, tmp_path):
     file_row, _project = make_done_file(tmp_path)
-    with pytest.raises(RuntimeError, match="translation"):
+    with pytest.raises(RuntimeError, match="Übersetzung"):
+        pdf._base_text(file_row["id"], "", "en")
+
+
+def test_base_text_ignores_an_empty_derived_text(data_env, tmp_path):
+    """An empty cleanup (failed LLM run) must not empty the PDF."""
+    file_row, _project = make_done_file(tmp_path)
+    pipeline.save_text(file_row["id"], "cleanup", "   ")
+    assert pdf._base_text(file_row["id"], "paragraphs", "") == "Hallo Welt."
+
+    pipeline.save_text(file_row["id"], "translation", "  ", language="en")
+    with pytest.raises(RuntimeError, match="Übersetzung"):
         pdf._base_text(file_row["id"], "", "en")
 
 

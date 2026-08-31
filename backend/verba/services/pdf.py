@@ -78,11 +78,15 @@ DEFAULT_OUTPUT_PROMPT = (
 
 
 def _base_text(file_id: int, structure: str, language: str) -> str:
-    """The text a structure is built from, best variant first."""
+    """The text a structure is built from, best variant first.
+
+    A derived text only counts when it actually carries content — an empty one
+    (from a failed LLM run) would otherwise produce an empty PDF.
+    """
     if language:
         text = pipeline.get_text(file_id, "translation", language)
-        if text is None:
-            raise RuntimeError(f"No translation ({language}) available")
+        if text is None or not text["content"].strip():
+            raise RuntimeError(f"Keine Übersetzung ({language}) vorhanden")
         return text["content"]
     if structure in DIALOGUE_STRUCTURES:
         segments = transcripts.list_segments(file_id)
@@ -94,11 +98,11 @@ def _base_text(file_id: int, structure: str, language: str) -> str:
                 lines.append(f"{speaker}: {text}" if speaker else text)
             return "\n".join(lines)
     cleanup = pipeline.get_text(file_id, "cleanup")
-    if cleanup is not None:
+    if cleanup is not None and cleanup["content"].strip():
         return cleanup["content"]
     segments = transcripts.list_segments(file_id)
     if not segments:
-        raise RuntimeError("No segments — transcribe the file first")
+        raise RuntimeError("Keine Segmente — die Datei muss zuerst transkribiert werden")
     return "\n".join(s["text"].strip() for s in segments)
 
 
@@ -194,22 +198,20 @@ def _structure_llm(
     system_prompt = output_system_prompt(output_prompt, type_prompt)
     chunks = pipeline._chunk_text(text)
     blocks: list[dict[str, Any]] = []
+    limit = pipeline.SizeLimit()
     lo, hi = progress_range
     for i, chunk in enumerate(chunks):
         if cancel.is_set():
             raise JobCancelled()
         report(lo + (hi - lo) * i // max(1, len(chunks)), f"Structuring {i + 1}/{len(chunks)}")
-        answer = llm.chat(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": chunk},
-            ]
-        )
-        parsed = _parse_blocks(answer)
-        if parsed is None:
-            logger.warning("structuring response not parseable — rule-based fallback")
-            return None
-        blocks.extend(parsed)
+        # every answer is parsed on its own: a chunk that had to be split
+        # comes back as several JSON arrays, never as one
+        for answer in pipeline.chat_pieces(system_prompt, chunk, limit=limit):
+            parsed = _parse_blocks(answer)
+            if parsed is None:
+                logger.warning("structuring response not parseable — rule-based fallback")
+                return None
+            blocks.extend(parsed)
     return blocks
 
 
