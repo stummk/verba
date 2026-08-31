@@ -192,3 +192,131 @@ def test_filename_scheme_parses_languages_and_header_fields(tmp_path):
     assert result["title"] == "Titel"
     assert result["addition"] == "Zusatz"
     assert metadata.format_display_date(result["recorded_at"]) == "01.04.2026"
+
+
+# ── turning a reasoning model down ─────────────────────────────────────
+
+
+def capture_bodies(monkeypatch, payload=None, status_code=200):
+    """Record every request body chat() sends."""
+    bodies: list[dict] = []
+
+    def post(url, json=None, headers=None, timeout=None):
+        bodies.append(json)
+        return httpx.Response(
+            status_code,
+            json=payload if payload is not None else completion("Antwort."),
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(llm.httpx, "post", post)
+    return bodies
+
+
+def test_reasoning_is_switched_off_by_default(monkeypatch):
+    """Verba only ever asks for transformations — thinking costs the answer."""
+    configure_endpoint(monkeypatch)
+    bodies = capture_bodies(monkeypatch)
+
+    llm.chat([{"role": "user", "content": "x"}])
+
+    assert bodies[0]["reasoning_effort"] == "none"
+    # llama.cpp/vLLM templates look here instead, and only at a real boolean
+    assert bodies[0]["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+def test_low_asks_for_little_thinking_instead_of_none(monkeypatch):
+    configure_endpoint(monkeypatch)
+    config.get_settings().llm.reasoning = "low"
+    bodies = capture_bodies(monkeypatch)
+
+    llm.chat([{"role": "user", "content": "x"}])
+
+    assert bodies[0]["reasoning_effort"] == "low"
+    assert "chat_template_kwargs" not in bodies[0]
+
+
+def test_auto_leaves_the_model_alone(monkeypatch):
+    configure_endpoint(monkeypatch)
+    config.get_settings().llm.reasoning = "auto"
+    bodies = capture_bodies(monkeypatch)
+
+    llm.chat([{"role": "user", "content": "x"}])
+
+    assert "reasoning_effort" not in bodies[0]
+    assert "chat_template_kwargs" not in bodies[0]
+
+
+def test_a_caller_may_override_the_setting(monkeypatch):
+    configure_endpoint(monkeypatch)
+    bodies = capture_bodies(monkeypatch)
+
+    llm.chat([{"role": "user", "content": "x"}], reasoning="auto")
+
+    assert "reasoning_effort" not in bodies[0]
+
+
+def test_an_endpoint_that_refuses_the_controls_is_retried_without_them(monkeypatch):
+    """api.openai.com does not know chat_template_kwargs and says so."""
+    configure_endpoint(monkeypatch)
+    llm._reasoning_unsupported.clear()
+    bodies: list[dict] = []
+
+    def post(url, json=None, headers=None, timeout=None):
+        bodies.append(json)
+        if "chat_template_kwargs" in json:
+            return httpx.Response(
+                400,
+                json={
+                    "error": {
+                        "message": "Unrecognized request argument supplied: chat_template_kwargs"
+                    }
+                },
+                request=httpx.Request("POST", url),
+            )
+        return httpx.Response(200, json=completion("Antwort."), request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(llm.httpx, "post", post)
+
+    assert llm.chat([{"role": "user", "content": "x"}]) == "Antwort."
+    assert len(bodies) == 2  # refused once, then without the fields
+    assert "chat_template_kwargs" not in bodies[1]
+
+
+def test_the_refusal_is_remembered_per_endpoint(monkeypatch):
+    configure_endpoint(monkeypatch)
+    llm._reasoning_unsupported.clear()
+    bodies: list[dict] = []
+
+    def post(url, json=None, headers=None, timeout=None):
+        bodies.append(json)
+        if "chat_template_kwargs" in json:
+            return httpx.Response(
+                400,
+                json={"error": {"message": "unknown field chat_template_kwargs"}},
+                request=httpx.Request("POST", url),
+            )
+        return httpx.Response(200, json=completion("Antwort."), request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(llm.httpx, "post", post)
+    llm.chat([{"role": "user", "content": "x"}])
+    llm.chat([{"role": "user", "content": "y"}])
+
+    # the second call does not pay for the discovery again
+    assert len(bodies) == 3
+    assert "chat_template_kwargs" not in bodies[2]
+    llm._reasoning_unsupported.clear()
+
+
+def test_an_unrelated_bad_request_does_not_disable_the_controls(monkeypatch):
+    """One bad request must not silently switch reasoning control off for good."""
+    configure_endpoint(monkeypatch)
+    llm._reasoning_unsupported.clear()
+    capture_bodies(
+        monkeypatch, payload={"error": {"message": "context length exceeded"}}, status_code=400
+    )
+
+    with pytest.raises(llm.LLMError, match="context length"):
+        llm.chat([{"role": "user", "content": "x"}])
+
+    assert llm._reasoning_unsupported == set()

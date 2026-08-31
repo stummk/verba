@@ -86,8 +86,16 @@ full access to all transcripts and settings — which is the right default for a
 local desktop install and the wrong one for a server. Create the first
 administrator in the setup wizard (step "Access") or later under Settings →
 User management; existing transcripts stay untouched and are assigned to that
-account. Put the server behind HTTPS while you are at it: the session cookie is
-only marked `Secure` over https.
+account. It can be switched off again at any time, and back on without setting
+anybody up a second time.
+
+Terminating TLS at the proxy is the normal setup and works as it should: Verba
+takes the browser's scheme from `X-Forwarded-Proto` and marks the session
+cookie `Secure` from it, so the connection to Verba itself may stay plain HTTP.
+The header is trusted from `127.0.0.1` only — with the proxy on another host,
+start Verba with `FORWARDED_ALLOW_IPS=<proxy ip>` or set
+`auth.cookie_secure` to `"always"`. Both example configurations under
+[`deploy/`](deploy/) send the header already.
 
 More options: `python run.py --help` (`--host`, `--port`, `--no-browser`, `--data-dir`).
 

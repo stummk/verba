@@ -395,41 +395,72 @@ def purge_expired_sessions() -> None:
 # ── switching the feature on and off ──────────────────────────────────
 
 
-def enable(username: str, password: str, display_name: str = "") -> dict[str, Any]:
-    """Create the first administrator and switch the user management on.
+def enable(username: str = "", password: str = "", display_name: str = "") -> dict[str, Any]:
+    """Switch the user management on.
 
-    Everything that already exists keeps existing: the transcripts stay
-    exactly where they are, keep their (public) visibility and are handed to
-    this first administrator, who can then sort out who owns what.
+    Two cases, because switching it off is meant to be reversible:
+
+    - No accounts yet: the given credentials become the first administrator,
+      and every transcript that has no owner is handed to them.
+    - Accounts already exist (it was switched off earlier): the switch simply
+      goes back on and the credentials are ignored — those people still have
+      their passwords. Transcripts created while it was off have no owner, so
+      they go to the longest-serving administrator; they are public, so nobody
+      loses access over it.
+
+    Nothing is deleted or rewritten in either case.
     """
     if enabled():
         raise AuthError("Die Nutzerverwaltung ist bereits aktiv.")
-    if user_count():
-        raise AuthError("Es existieren bereits Nutzerkonten.")
-    admin = create_user(
-        username,
-        password,
-        role=ROLE_ADMIN,
-        display_name=display_name,
-        must_change_password=False,
-    )
+
+    reenabled = user_count() > 0
+    if reenabled:
+        owner = oldest_admin()
+        if owner is None:
+            raise AuthError(
+                "Es existieren Konten, aber kein Administrator — bitte ein Konto in der "
+                "Datenbank zum Administrator machen, sonst wäre die Anwendung nicht mehr "
+                "verwaltbar."
+            )
+    else:
+        owner = create_user(
+            username,
+            password,
+            role=ROLE_ADMIN,
+            display_name=display_name,
+            must_change_password=False,
+        )
+
     with db.get_conn() as conn:
         adopted = conn.execute(
-            "UPDATE projects SET owner_id = ? WHERE owner_id IS NULL", (admin["id"],)
+            "UPDATE projects SET owner_id = ? WHERE owner_id IS NULL", (owner["id"],)
         ).rowcount
     settings = config.get_settings()
     settings.auth.enabled = True
     config.save_settings(settings)
-    logger.info("user management enabled; %d existing transcripts adopted by %s", adopted, username)
-    return {"user": admin, "adopted_projects": adopted}
+    logger.info(
+        "user management %s; %d ownerless transcripts adopted by %s",
+        "re-enabled" if reenabled else "enabled",
+        adopted,
+        owner["username"],
+    )
+    # Re-enabling hands out no session: those accounts have their own
+    # passwords, and whoever flipped the switch has to prove they own one.
+    return {
+        "user": None if reenabled else owner,
+        "adopted_projects": adopted,
+        "reenabled": reenabled,
+    }
 
 
 def disable() -> None:
     """Switch the user management off again (administrators only).
 
     The accounts survive so it can be switched back on without setting
-    everybody up a second time; the live sessions do not, because from now on
-    there is nothing left for them to authorise.
+    everybody up a second time (`enable()` without credentials); the live
+    sessions do not, because from now on there is nothing left for them to
+    authorise. Owners and visibilities stay in the database untouched, so
+    switching back on restores exactly the previous state.
     """
     settings = config.get_settings()
     settings.auth.enabled = False

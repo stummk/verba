@@ -18,8 +18,14 @@ class LoginRequest(BaseModel):
 
 
 class EnableRequest(BaseModel):
-    username: str = Field(min_length=1, max_length=64)
-    password: str = Field(min_length=1, max_length=1024)
+    """Credentials for the very first administrator.
+
+    Empty when the switch is only going back on after having been off:
+    the accounts from before are still there with their own passwords.
+    """
+
+    username: str = Field(default="", max_length=64)
+    password: str = Field(default="", max_length=1024)
     display_name: str = Field(default="", max_length=200)
 
 
@@ -34,15 +40,25 @@ class DeleteMeRequest(BaseModel):
 
 def _set_session_cookie(request: Request, response: Response, token: str) -> None:
     """HttpOnly so no script can read it, SameSite=Lax so a foreign page
-    cannot make the browser act as this user, Secure only behind https —
-    a plain-http LAN install would otherwise never receive the cookie."""
+    cannot make the browser act as this user, and Secure whenever the browser
+    is on https.
+
+    `request.url.scheme` is the scheme the *browser* used, not the one of the
+    hop to this process: uvicorn rewrites it from X-Forwarded-Proto, so TLS
+    terminated at a reverse proxy is recognised as https. It trusts that
+    header from 127.0.0.1 only — a proxy on another host needs
+    FORWARDED_ALLOW_IPS, or `auth.cookie_secure = "always"`.
+    """
+    settings = config.get_settings()
+    mode = settings.auth.cookie_secure
+    secure = request.url.scheme == "https" if mode == "auto" else mode == "always"
     response.set_cookie(
         auth.COOKIE_NAME,
         token,
-        max_age=config.get_settings().auth.session_days * 24 * 3600,
+        max_age=settings.auth.session_days * 24 * 3600,
         httponly=True,
         samesite="lax",
-        secure=request.url.scheme == "https",
+        secure=secure,
         path="/",
     )
 
@@ -80,17 +96,26 @@ def logout(request: Request, response: Response) -> dict:
 
 @router.post("/enable")
 def enable(body: EnableRequest, request: Request, response: Response) -> dict:
-    """Create the first administrator and switch the protection on.
+    """Switch the protection on — creating the first administrator if needed.
 
-    Callable while the app is still unprotected — at that point everyone
+    Callable while the app is still unprotected: at that point everyone
     reaching it is effectively an administrator anyway, and refusing here
-    would leave no way to ever secure an existing installation.
+    would leave no way to ever secure an existing installation — nor to undo
+    a switch-off.
     """
+    if not auth.user_count() and not (body.username.strip() and body.password):
+        raise HTTPException(
+            status_code=422,
+            detail="Benutzername und Passwort für das erste Administratorkonto fehlen.",
+        )
     try:
         result = auth.enable(body.username, body.password, body.display_name)
     except auth.AuthError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    _set_session_cookie(request, response, auth.create_session(result["user"]["id"]))
+    # only the freshly created first administrator is signed in right away;
+    # after a re-enable everybody logs in with the password they already have
+    if result["user"]:
+        _set_session_cookie(request, response, auth.create_session(result["user"]["id"]))
     return result
 
 

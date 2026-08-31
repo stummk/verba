@@ -447,6 +447,31 @@ nothing is downloaded twice. That is also how to use a model that is not in
 the list at all: drop the file into the folder, pick it under **local
 model**, done.
 
+### Reasoning (thinking mode)
+
+Some language models "think" before they answer — visible as `<think>` blocks,
+or simply as an answer that takes its time. For Verba that buys nothing:
+cleanup, translation and PDF structuring are transformations with an explicit
+instruction, not problems to deliberate over. It costs twice — time, and the
+token budget the answer itself needs. That is exactly where the message "the
+model used up its token budget before an answer began" comes from.
+
+Under Settings → AI processing there is **Reasoning** for this:
+
+- **Off** (default) — Verba explicitly asks the model not to think. Noticeably
+  faster and the most reliable setting.
+- **Low** — a little thinking stays allowed. Worth it if you weigh the AI
+  answers in search and help higher than the speed of the processing.
+- **Let the model decide** — Verba does not interfere (the behaviour before
+  this setting existed).
+
+The setting applies to everything: processing, PDF structuring, the AI answers
+in the search and questions about the guide. Technically Verba sends
+`reasoning_effort` and — for templates that only look there —
+`chat_template_kwargs`. Endpoints that do not know these fields (the OpenAI API
+itself, for one) refuse them once; Verba remembers that and leaves them out
+afterwards. Models without a thinking mode ignore them anyway.
+
 ## PDF export {#pdf}
 
 Transcribed files can be exported as PDF — via the PDF icon in the file row
@@ -687,14 +712,32 @@ application names the number of affected transcripts before deleting.
   management is on — otherwise the sign-in could simply be bypassed there.
 - Signing in uses a session cookie. Passwords are stored hashed with scrypt,
   sessions only as a checksum; neither is in the database in clear text.
-- Behind a reverse proxy Verba should run over **HTTPS**: only then is the
-  session cookie marked `Secure`.
+- **A reverse proxy terminating TLS** is the normal setup and works: Verba
+  takes the browser's scheme from `X-Forwarded-Proto` and marks the cookie
+  `Secure` from it — the hop from the proxy to Verba may stay plain HTTP.
+  The header is accepted from `127.0.0.1` only; with the proxy on another
+  machine, start Verba with `FORWARDED_ALLOW_IPS=<proxy ip>` or set
+  `auth.cookie_secure` to `always` in the settings.
 
-### Switching it off again
+### Switching it off again — and back on
 
-Under User management → **Disable user management**. The accounts are kept and
-can be re-enabled at any time; until then Verba is open again to anyone who
-reaches the address.
+Under User management → **Disable user management**. Verba is then open again
+to anyone who reaches the address. What happens:
+
+- Every active sign-in ends immediately.
+- The accounts are kept, with their passwords and roles.
+- Owners, visibilities and share lists stay in the database — they are only
+  no longer enforced. A private transcript is reachable by anyone again, but
+  it stays stored as private.
+- The public API (`/v1`) falls back to its old rule: open as long as no API
+  key exists.
+
+The same button switches it back on — it then reads **Switch user management
+back on** and asks for nothing: no second administrator account is created,
+everybody signs in with the password they already had, and owners and
+visibilities apply again as before. Transcripts created while it was off have
+no owner; they go to the longest-serving administrator and stay public, so
+they lock nobody out.
 
 ## Public API {#api}
 

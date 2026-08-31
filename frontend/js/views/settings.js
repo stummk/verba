@@ -110,6 +110,16 @@ export async function render(view) {
           <p class="hint">${t("settings.llmOffHint")}</p>
         </div>
 
+        <div id="llm-reasoning-field" hidden>
+          <label for="llm-reasoning">${t("settings.reasoning")}</label>
+          <select id="llm-reasoning">
+            <option value="off">${t("settings.reasoningOff")}</option>
+            <option value="low">${t("settings.reasoningLow")}</option>
+            <option value="auto">${t("settings.reasoningAuto")}</option>
+          </select>
+          <p class="hint">${t("settings.reasoningHint")}</p>
+        </div>
+
         <div id="llm-local-section" hidden>
           <p class="small" id="llm-hardware"></p>
           <div id="llm-binary"></div>
@@ -271,6 +281,7 @@ export async function render(view) {
     selected: settings.whisper.language ?? "",
   });
 
+  el("llm-reasoning").value = settings.llm.reasoning ?? "off";
   el("whisper-device").value = settings.whisper.device;
   el("whisper-compute").value = settings.whisper.compute_type;
   el("log-level").value = settings.logging.level;
@@ -283,6 +294,9 @@ export async function render(view) {
     el("llm-none-section").hidden = mode !== "none";
     el("llm-local-section").hidden = mode !== "local";
     el("llm-openai-section").hidden = mode !== "openai";
+    // the reasoning control applies to both paths, so it hangs off "is there
+    // an LLM at all" rather than off one of them
+    el("llm-reasoning-field").hidden = mode === "none";
   }
   (modeRadios.find((r) => r.value === settings.llm.mode) ?? modeRadios[0]).checked = true;
   modeRadios.forEach((radio) => radio.addEventListener("change", showLlmSection));
@@ -413,6 +427,7 @@ export async function render(view) {
         base_url: el("llm-base-url").value.trim(),
         api_key: el("llm-api-key").value,
         models_dir: el("llm-models-dir").value.trim(),
+        reasoning: el("llm-reasoning").value,
         model:
           currentMode() === "local"
             ? el("llm-local-model").value

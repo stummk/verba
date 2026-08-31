@@ -451,5 +451,12 @@
   "setup.accessHint": "Weitere Nutzer legen Sie später unter Einstellungen → Nutzerverwaltung an. Mindestens 8 Zeichen für das Passwort.",
   "setup.accessSkipWarning": "Wenn Sie diesen Schritt überspringen, wird kein Konto angelegt: Jeder, der die Adresse erreicht, hat vollen Zugriff. Das ist nur für die lokale Nutzung auf diesem Rechner sinnvoll.",
   "setup.accessAlready": "Weitere Nutzer legen Sie unter Einstellungen → Nutzerverwaltung an.",
-  "setup.accessMissing": "Bitte Benutzername und Passwort ausfüllen."
+  "setup.accessMissing": "Bitte Benutzername und Passwort ausfüllen.",
+  "users.reenable": "Nutzerverwaltung wieder aktivieren",
+  "users.reenableHint": "Es sind bereits Konten angelegt — sie behalten ihre Passwörter, Eigentümer und Sichtbarkeiten. Nach dem Aktivieren müssen sich alle neu anmelden.",
+  "settings.reasoning": "Reasoning (Denkmodus)",
+  "settings.reasoningOff": "Aus — schneller, empfohlen",
+  "settings.reasoningLow": "Wenig",
+  "settings.reasoningAuto": "Modell entscheidet",
+  "settings.reasoningHint": "Bereinigung, Übersetzung und PDF-Strukturierung sind Umformungen mit klarer Anweisung — Nachdenken bringt dort nichts, kostet aber Zeit und das Token-Budget, das die Antwort selbst braucht. Wird das Feld vom Endpunkt nicht unterstützt, schickt Verba es künftig nicht mehr mit."
 }

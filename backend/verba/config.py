@@ -159,6 +159,12 @@ class LLMSettings(BaseModel):
     base_url: str = ""  # OpenAI-compatible endpoint, e.g. http://localhost:8000/v1
     api_key: str = ""
     model: str = ""
+    # How much a reasoning model may think before answering. Verba's work is
+    # transformation with an explicit prompt — cleaning up, translating,
+    # structuring — where thinking buys nothing and costs the token budget the
+    # answer itself needs, which is where EmptyAnswer/TruncatedAnswer come
+    # from. Hence "off" by default; "auto" leaves the model alone.
+    reasoning: Literal["off", "low", "auto"] = "off"
     # empty = <data>/models/llm; GGUF files already lying in the configured
     # directory are used from there, never copied or downloaded again
     models_dir: str = ""
@@ -294,6 +300,14 @@ class AuthSettings(BaseModel):
     # What a newly created transcript gets when the owner does not choose.
     default_visibility: Literal["private", "shared", "public"] = "private"
     session_days: int = Field(default=30, ge=1, le=365)
+    # Whether the session cookie is marked Secure (https only).
+    # "auto" follows the request scheme, which behind a TLS-terminating proxy
+    # is the scheme the *browser* used, taken from X-Forwarded-Proto — uvicorn
+    # trusts that header from 127.0.0.1 by default (widen with the
+    # FORWARDED_ALLOW_IPS environment variable for a proxy on another host).
+    # "always" is for a setup where that header cannot be relied on; "never"
+    # only for a deliberately plain-http installation.
+    cookie_secure: Literal["auto", "always", "never"] = "auto"
 
 
 class SetupState(BaseModel):

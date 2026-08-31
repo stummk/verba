@@ -32,6 +32,12 @@ Environment=PYTHONUNBUFFERED=1
 # Runtime data (settings, database, models, logs) lives under /opt/verba/data.
 Environment=VERBA_DATA_DIR=/opt/verba/data
 
+# Behind a reverse proxy that terminates TLS, Verba reads the browser's
+# scheme from X-Forwarded-Proto and marks the session cookie Secure from it.
+# That header is trusted from 127.0.0.1 only; uncomment and set the proxy's
+# address if it runs on another host.
+# Environment=FORWARDED_ALLOW_IPS=10.0.0.2
+
 # Hardening — relax if a workspace outside /opt/verba is configured.
 NoNewPrivileges=true
 PrivateTmp=true

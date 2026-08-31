@@ -212,6 +212,61 @@ def test_disabling_reopens_the_app_and_keeps_the_accounts(client, fresh):
     assert client.get("/api/auth/state").json()["enabled"] is False
 
 
+def test_disabling_keeps_owners_and_visibilities_in_place(client, fresh):
+    enable_admin(client)
+    project = client.post("/api/projects", json={"name": "Privat", "visibility": "private"}).json()
+
+    client.post("/api/auth/disable")
+
+    stored = workspace.get_project(project["id"])
+    assert stored["visibility"] == "private"  # only unenforced, not forgotten
+    assert stored["owner_id"] == auth.get_user_by_name("chef")["id"]
+    # while it is off, that private transcript is reachable by anyone again
+    assert client.get(f"/api/projects/{project['id']}").status_code == 200
+
+
+def test_it_can_be_switched_back_on_without_setting_everybody_up_again(client, fresh):
+    enable_admin(client)
+    client.post("/api/users", json={"username": "mira", "password": "start1234"})
+    client.post("/api/auth/disable")
+    client.cookies.clear()
+
+    # no credentials: the accounts from before still have their passwords
+    result = client.post("/api/auth/enable", json={})
+
+    assert result.status_code == 200
+    assert result.json()["reenabled"] is True
+    assert result.json()["user"] is None  # nobody is signed in by flipping a switch
+    assert client.get("/api/projects").status_code == 401
+    assert (
+        client.post(
+            "/api/auth/login", json={"username": "chef", "password": "geheim1234"}
+        ).status_code
+        == 200
+    )
+
+
+def test_transcripts_created_while_it_was_off_get_an_owner_on_the_way_back_in(client, fresh):
+    enable_admin(client)
+    client.post("/api/auth/disable")
+    orphan = client.post("/api/projects", json={"name": "Zwischendurch"}).json()
+    assert orphan["owner_id"] is None
+
+    result = client.post("/api/auth/enable", json={})
+
+    assert result.json()["adopted_projects"] == 1
+    stored = workspace.get_project(orphan["id"])
+    assert stored["owner_id"] == auth.get_user_by_name("chef")["id"]
+    # it was created public, so re-enabling locks nobody out of it
+    assert stored["visibility"] == "public"
+
+
+def test_the_first_setup_still_needs_credentials(client, fresh):
+    response = client.post("/api/auth/enable", json={})
+    assert response.status_code == 422
+    assert auth.user_count() == 0
+
+
 def test_the_settings_form_cannot_switch_the_protection_off(client, fresh):
     enable_admin(client)
     payload = client.get("/api/settings").json()

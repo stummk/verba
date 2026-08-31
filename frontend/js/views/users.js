@@ -18,6 +18,7 @@ export async function render(view) {
   ]);
   state = {
     enabled: authState.enabled,
+    hasUsers: authState.has_users,
     me: authState.user,
     users: authState.enabled ? await api.listUsers().catch(() => []) : [],
     defaultVisibility: settings?.auth?.default_visibility ?? "private",
@@ -98,10 +99,13 @@ function renderAccess() {
     return;
   }
 
+  // Two different situations behind the same switch: a fresh installation
+  // needs a first administrator, one that was switched off again only needs
+  // the switch — those accounts still have their passwords.
   host.replaceChildren(html`
     <h2>${t("users.accessTitle")}</h2>
     <p class="warning-box">${t("users.accessOff")}</p>
-    <form id="auth-enable-form" class="form-grid">
+    <form id="auth-enable-form" class="form-grid" ${state.hasUsers ? "hidden" : ""}>
       <div>
         <label for="enable-username">${t("login.username")}</label>
         <input id="enable-username" autocomplete="username" required>
@@ -111,19 +115,23 @@ function renderAccess() {
         <input id="enable-password" type="password" autocomplete="new-password" required>
       </div>
     </form>
-    <p class="hint">${t("users.enableHint")}</p>
+    <p class="hint">${state.hasUsers ? t("users.reenableHint") : t("users.enableHint")}</p>
     <div class="actions">
-      <button type="button" class="btn primary" id="auth-enable">${t("users.enable")}</button>
+      <button type="button" class="btn primary" id="auth-enable">
+        ${state.hasUsers ? t("users.reenable") : t("users.enable")}
+      </button>
     </div>
   `);
   el("users-list-card").hidden = true;
   el("auth-enable").onclick = async () => {
-    const username = el("enable-username").value.trim();
-    const password = el("enable-password").value;
-    if (!username || !password) return;
+    const username = state.hasUsers ? "" : el("enable-username").value.trim();
+    const password = state.hasUsers ? "" : el("enable-password").value;
+    if (!state.hasUsers && (!username || !password)) return;
     try {
       const result = await api.enableAuth(username, password);
       toast(t("users.enabled", { count: result.adopted_projects }));
+      // after a re-enable nobody is signed in yet — the reload lands on the
+      // login screen, which is exactly where it should land
       location.reload();
     } catch (error) {
       toast(error.message);

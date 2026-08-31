@@ -451,5 +451,12 @@
   "setup.accessHint": "Further users are created later under Settings → User management. At least 8 characters for the password.",
   "setup.accessSkipWarning": "If you skip this step no account is created: anyone who reaches the address has full access. That only makes sense for local use on this machine.",
   "setup.accessAlready": "Further users are created under Settings → User management.",
-  "setup.accessMissing": "Please fill in username and password."
+  "setup.accessMissing": "Please fill in username and password.",
+  "users.reenable": "Switch user management back on",
+  "users.reenableHint": "Accounts already exist — they keep their passwords, owners and visibilities. Everyone has to sign in again once it is on.",
+  "settings.reasoning": "Reasoning (thinking mode)",
+  "settings.reasoningOff": "Off — faster, recommended",
+  "settings.reasoningLow": "Low",
+  "settings.reasoningAuto": "Let the model decide",
+  "settings.reasoningHint": "Cleanup, translation and PDF structuring are transformations with an explicit instruction — thinking buys nothing there but costs time and the token budget the answer itself needs. If the endpoint does not support the field, Verba stops sending it."
 }

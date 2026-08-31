@@ -238,11 +238,16 @@ const LANGUAGE_KEY = "verba.language";
 
 async function loadLanguage() {
   let uiLanguage = localStorage.getItem(LANGUAGE_KEY) || "de";
-  try {
-    const stored = await api.getSettings();
-    uiLanguage = stored.general?.ui_language || uiLanguage;
-    localStorage.setItem(LANGUAGE_KEY, uiLanguage);
-  } catch { /* not reachable or not logged in — the stored value has to do */ }
+  // No session means no settings to read — asking anyway would only produce a
+  // 401 in the console of every login screen. The remembered choice is what
+  // the login screen is rendered in.
+  if (!authState.enabled || authState.user) {
+    try {
+      const stored = await api.getSettings();
+      uiLanguage = stored.general?.ui_language || uiLanguage;
+      localStorage.setItem(LANGUAGE_KEY, uiLanguage);
+    } catch { /* not reachable — the stored value has to do */ }
+  }
   await initI18n(uiLanguage);
 }
 

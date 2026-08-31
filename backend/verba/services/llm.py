@@ -6,6 +6,12 @@ mode the managed llama.cpp server is started on demand and used as endpoint.
 
 Status changes are broadcast as "engine.status" events (engine "llm") so
 the AI status monitor in the UI stays live.
+
+Reasoning models are turned down (or off) from `settings.llm.reasoning`,
+because nothing Verba asks an LLM for benefits from deliberation: cleaning up,
+translating and structuring are transformations with an explicit prompt. What
+thinking does cost is the token budget the answer itself needs — which is
+exactly where EmptyAnswer and TruncatedAnswer come from.
 """
 
 from __future__ import annotations
@@ -29,6 +35,22 @@ RETRY_BACKOFF_S = 2.0
 ERROR_BODY_CHARS = 400  # LM Studio & co. explain a refusal in the response body
 
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"}
+
+# Two levers, because no single one reaches every server:
+# - `reasoning_effort` is the OpenAI parameter; llama.cpp reads "none" from it
+#   as "do not think at all".
+# - `chat_template_kwargs.enable_thinking` is what the Qwen3-style templates
+#   look at, used by llama.cpp, vLLM and LM Studio. It has to be a real JSON
+#   boolean — a string is rejected.
+# Sending both is safe for those servers and rejected by api.openai.com, which
+# does not know the second one; `_reasoning_unsupported` remembers that after
+# the first refusal so the detour is paid once per endpoint, not per call.
+REASONING_FIELDS: dict[str, dict[str, Any]] = {
+    "off": {"reasoning_effort": "none", "chat_template_kwargs": {"enable_thinking": False}},
+    "low": {"reasoning_effort": "low"},
+    "auto": {},
+}
+_reasoning_unsupported: set[str] = set()
 
 # A reasoning model puts its chain of thought in front of the answer. Some
 # servers hand it over unchanged, others strip only the opening tag — and an
@@ -107,6 +129,23 @@ def _message_content(message: dict[str, Any]) -> str:
     return content if isinstance(content, str) else ""
 
 
+def _thinking_advice() -> str:
+    """What to do about a model that thinks instead of answering.
+
+    Only worth saying while the switch is not already off — otherwise the
+    server ignored it and the model itself is the problem.
+    """
+    if config.get_settings().llm.reasoning == "off":
+        return (
+            " Der Denkmodus ist bereits abgeschaltet — dieses Modell oder dieser Endpunkt "
+            "ignoriert die Einstellung. Bitte ein Modell ohne Reasoning verwenden."
+        )
+    return (
+        " Bitte unter Einstellungen → KI-Aufbereitung „Reasoning“ auf „Aus“ stellen "
+        "oder ein Modell ohne Reasoning verwenden."
+    )
+
+
 def _empty_answer_reason(message: dict[str, Any], raw: str, finish_reason: str) -> str:
     """Why an answer carries no text — shown verbatim in the web UI (German)."""
     thinking = bool(raw.strip()) or bool(message.get("reasoning_content"))
@@ -114,12 +153,12 @@ def _empty_answer_reason(message: dict[str, Any], raw: str, finish_reason: str) 
         return (
             "Das Modell hat sein Token-Budget aufgebraucht, bevor eine Antwort begann"
             + (" — es hat nur nachgedacht." if thinking else ".")
-            + " Bitte ein Modell ohne Reasoning verwenden oder dessen Denkmodus abschalten."
+            + _thinking_advice()
         )
     if thinking:
         return (
-            "Das Modell hat nur interne Überlegungen geliefert, keinen Antworttext. "
-            "Bitte ein Modell ohne Reasoning verwenden oder dessen Denkmodus abschalten."
+            "Das Modell hat nur interne Überlegungen geliefert, keinen Antworttext."
+            + _thinking_advice()
         )
     return "Das Modell hat eine leere Antwort geliefert."
 
@@ -162,6 +201,7 @@ def chat(
     model_override: str = "",
     temperature: float = 0.2,
     max_tokens: int | None = None,
+    reasoning: str = "",
 ) -> str:
     """One chat completion with retries; returns the assistant message text.
 
@@ -171,6 +211,9 @@ def chat(
     piece it was given, so a cap here would silently shorten the transcript —
     only callers that genuinely want a short answer (a question about the
     guide) pass a number.
+
+    `reasoning` overrides the configured setting for this one call; empty
+    means "whatever the settings say".
     """
     settings = config.get_settings()
     base_url, api_key, model = _resolve_endpoint(settings)
@@ -189,14 +232,18 @@ def chat(
     }
     if max_tokens:
         body["max_tokens"] = max_tokens
+    extras = REASONING_FIELDS.get(reasoning or settings.llm.reasoning, {})
 
     last_error: Exception | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
+        # re-evaluated per attempt: a refusal in the previous one may just
+        # have taught us that this endpoint does not take the controls
+        sent_extras = bool(extras) and base_url not in _reasoning_unsupported
         try:
             _publish_status("busy", f"{model} (attempt {attempt}/{MAX_ATTEMPTS})")
             response = httpx.post(
                 f"{base_url}/chat/completions",
-                json=body,
+                json={**body, **extras} if sent_extras else body,
                 headers=headers,
                 timeout=REQUEST_TIMEOUT,
             )
@@ -221,6 +268,15 @@ def chat(
             return text
         except (httpx.HTTPError, EmptyAnswer, KeyError, IndexError, ValueError) as exc:
             last_error = exc
+            if sent_extras and _rejects_reasoning_controls(exc):
+                # not a failure of the request, only of one of its fields:
+                # retry immediately without them instead of burning a backoff
+                _reasoning_unsupported.add(base_url)
+                logger.info(
+                    "%s does not accept the reasoning controls — retrying without them",
+                    base_url,
+                )
+                continue
             logger.warning(
                 "LLM call failed (attempt %d/%d, model %s): %s",
                 attempt,
@@ -234,6 +290,19 @@ def chat(
     detail = _error_detail(last_error) if last_error else ""
     _publish_status("error", detail)
     raise LLMError(f"LLM-Aufruf fehlgeschlagen ({model}): {detail}") from last_error
+
+
+def _rejects_reasoning_controls(exc: Exception) -> bool:
+    """Did the endpoint answer 400 because of the reasoning fields?
+
+    Deliberately narrow: a 400 for any other reason must stay a 400, or one
+    bad request would silently switch the reasoning control off for good.
+    Every server that rejects an unknown parameter names it in the message.
+    """
+    if not isinstance(exc, httpx.HTTPStatusError) or exc.response.status_code != 400:
+        return False
+    body = exc.response.text.lower()
+    return "chat_template_kwargs" in body or "reasoning_effort" in body
 
 
 def probe(base_url: str, api_key: str = "") -> dict[str, Any]:

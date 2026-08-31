@@ -58,7 +58,9 @@ python -m ruff format --check backend/ tests/ run.py
     `visibility_clause()` that every cross-project query must join; deleting an
     account removes its private transcripts and hands the shared and public ones
     to the longest-serving admin, and the last admin can neither be deleted nor
-    demoted), workspace (project folders, import, moving the workspaces
+    demoted; switching the feature off keeps accounts, owners and visibilities
+    in the database, so `enable()` without credentials switches it straight
+    back on), workspace (project folders, import, moving the workspaces
     root incl. DB repointing via job kind `move_workspace`),
     hardware (the single RAM/VRAM probe — `setup_check`, whisper and llamacpp all
     read it; per-model memory verdicts `ok`/`tight`/`no` in German for local
@@ -67,7 +69,10 @@ python -m ruff format --check backend/ tests/ run.py
     CPU fallback for broken CUDA and for a full VRAM, preflight refusal of a
     model that fits nowhere, range transcription), transcripts
     (segment CRUD + workspace JSON sync), audio (ffmpeg cutting), media (duration probe),
-    llm (OpenAI-compatible client), llamacpp (local LLM: hardware probe,
+    llm (OpenAI-compatible client; `settings.llm.reasoning` turns a
+    reasoning model down or off via `reasoning_effort` plus
+    `chat_template_kwargs` — an endpoint that refuses those is remembered and
+    served without them from then on), llamacpp (local LLM: hardware probe,
     binary/GGUF download into the configured directory — files already there
     are loaded in place, `recommended` entries drive the hardware suggestion),
     pipeline (cleanup/translation,
@@ -130,6 +135,11 @@ python -m ruff format --check backend/ tests/ run.py
 - **Runtime data** only under `data/` (gitignored) or the configured
   workspace directory. Never write into the repo.
 - Settings changes always go through the `config.py` models (validation), never raw JSON.
+- The session cookie is marked `Secure` from `request.url.scheme`, which uvicorn
+  rewrites from `X-Forwarded-Proto` — TLS terminated at a reverse proxy is
+  therefore recognised. That header is trusted from `127.0.0.1` only
+  (`FORWARDED_ALLOW_IPS` widens it); `auth.cookie_secure` overrides the whole
+  decision.
 - Status-relevant operations (jobs, setup, AI calls) report progress through the
   EventHub (`events.py`) so the UI stays live. A job's `report()` message is
   shown verbatim in the web UI: German, and naming the file whenever the

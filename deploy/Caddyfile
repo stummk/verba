@@ -1,6 +1,12 @@
 # Verba behind Caddy — complete example.
-# Caddy proxies WebSockets automatically and provisions TLS certificates
-# itself; only the upload size and long /v1 requests need explicit settings.
+# Caddy proxies WebSockets automatically, provisions TLS certificates itself
+# and sends X-Forwarded-Proto without being asked; only the upload size and
+# long /v1 requests need explicit settings.
+#
+# TLS ending here is the normal setup: Verba reads X-Forwarded-Proto and marks
+# the session cookie Secure from it. uvicorn trusts that header from 127.0.0.1
+# only — with Caddy on another host, start Verba with
+# FORWARDED_ALLOW_IPS=<proxy ip> (or set auth.cookie_secure to "always").
 
 verba.example.com {
 	request_body {

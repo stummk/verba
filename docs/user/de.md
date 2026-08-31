@@ -464,6 +464,33 @@ geladen** — nichts wird kopiert und nichts erneut heruntergeladen. So lässt
 sich auch ein Modell verwenden, das gar nicht in der Liste steht: Datei in den
 Ordner legen, unter **Lokales Modell** auswählen, fertig.
 
+### Reasoning (Denkmodus)
+
+Manche Sprachmodelle „denken" vor der Antwort — sichtbar an `<think>`-Blöcken
+oder daran, dass die Antwort lange auf sich warten lässt. Für Verba bringt das
+nichts: Bereinigung, Übersetzung und PDF-Strukturierung sind Umformungen mit
+einer klaren Anweisung, keine Aufgaben, über die man nachdenken müsste. Kosten
+tut es doppelt — Zeit, und das Token-Budget, das die Antwort selbst braucht.
+Genau daher kommt die Meldung „Das Modell hat sein Token-Budget aufgebraucht,
+bevor eine Antwort begann".
+
+Unter Einstellungen → KI-Aufbereitung steht dafür **Reasoning**:
+
+- **Aus** (Standard) — Verba bittet das Modell ausdrücklich, nicht
+  nachzudenken. Spürbar schneller und die zuverlässigste Einstellung.
+- **Wenig** — ein bisschen Nachdenken bleibt erlaubt. Sinnvoll, wenn Sie die
+  KI-Antworten in Suche und Hilfe stärker gewichten als die Geschwindigkeit
+  der Aufbereitung.
+- **Modell entscheidet** — Verba mischt sich nicht ein (Verhalten vor dieser
+  Einstellung).
+
+Die Einstellung gilt für alles: Aufbereitung, PDF-Strukturierung, KI-Antworten
+der Suche und Fragen zur Hilfe. Technisch schickt Verba `reasoning_effort` und
+— für Vorlagen, die nur dort nachsehen — `chat_template_kwargs`. Endpunkte, die
+diese Felder nicht kennen (etwa die OpenAI-API selbst), lehnen sie einmal ab;
+Verba merkt sich das und lässt sie danach weg. Modelle ohne Denkmodus ignorieren
+die Angabe ohnehin.
+
 ## PDF-Export {#pdf}
 
 Fertig transkribierte Dateien lassen sich als PDF exportieren — über das
@@ -715,14 +742,34 @@ Anwendung nennt vor dem Löschen die betroffene Anzahl.
 - Die Anmeldung läuft über ein Sitzungs-Cookie. Passwörter werden mit scrypt
   gehasht gespeichert, von Sitzungen nur eine Prüfsumme; im Klartext liegt
   weder das eine noch das andere in der Datenbank.
-- Hinter einem Reverse-Proxy sollte Verba über **HTTPS** laufen: das
-  Sitzungs-Cookie wird nur dann als `Secure` markiert.
+- **Reverse-Proxy mit TLS-Terminierung** ist der Normalfall und funktioniert:
+  Verba liest das Schema des Browsers aus `X-Forwarded-Proto` und markiert
+  das Cookie danach als `Secure` — die Verbindung vom Proxy zu Verba darf
+  einfaches HTTP bleiben. Der Header wird nur von `127.0.0.1` akzeptiert;
+  läuft der Proxy auf einem anderen Rechner, Verba mit
+  `FORWARDED_ALLOW_IPS=<Proxy-IP>` starten oder in den Einstellungen
+  `auth.cookie_secure` auf `always` setzen.
 
-### Wieder ausschalten
+### Wieder ausschalten — und wieder ein
 
-Unter Nutzerverwaltung → **Nutzerverwaltung deaktivieren**. Die Konten bleiben
-erhalten und lassen sich jederzeit wieder aktivieren; bis dahin ist Verba
-wieder für jeden offen, der die Adresse erreicht.
+Unter Nutzerverwaltung → **Nutzerverwaltung deaktivieren**. Danach ist Verba
+wieder für jeden offen, der die Adresse erreicht. Was dabei passiert:
+
+- Alle laufenden Anmeldungen enden sofort.
+- Die Konten bleiben mit ihren Passwörtern und Rollen erhalten.
+- Eigentümer, Sichtbarkeiten und Freigaben bleiben in der Datenbank stehen —
+  sie werden nur nicht mehr durchgesetzt. Ein privates Transkript ist also
+  wieder für jeden erreichbar, aber es bleibt als privat gespeichert.
+- Die öffentliche API (`/v1`) fällt auf ihre alte Regel zurück: offen,
+  solange kein API-Schlüssel angelegt ist.
+
+Zum Wiedereinschalten genügt derselbe Knopf — er heißt dann
+**Nutzerverwaltung wieder aktivieren** und fragt nach nichts: Es wird kein
+zweites Administratorkonto angelegt, alle melden sich mit ihrem bisherigen
+Passwort an, und Eigentümer wie Sichtbarkeiten gelten wieder wie vorher.
+Transkripte, die währenddessen ohne Nutzerverwaltung angelegt wurden, haben
+keinen Eigentümer; sie gehen an den dienstältesten Administrator und bleiben
+öffentlich, sperren also niemanden aus.
 
 ## Öffentliche API {#api}
 

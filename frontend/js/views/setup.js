@@ -541,11 +541,14 @@ async function renderAccessStep(body) {
     return;
   }
 
+  // accounts without the switch being on: it was disabled at some point, so
+  // this is a re-enable, not a first setup
+  const reenable = Boolean(state.has_users);
   body.replaceChildren(html`
     <div class="card">
       <h2>${t("setup.step.access")}</h2>
-      <p class="muted">${t("setup.accessIntro")}</p>
-      <div class="form-grid">
+      <p class="muted">${reenable ? t("users.reenableHint") : t("setup.accessIntro")}</p>
+      <div class="form-grid" ${reenable ? "hidden" : ""}>
         <div>
           <label for="wizard-admin-user">${t("login.username")}</label>
           <input id="wizard-admin-user" autocomplete="username">
@@ -555,10 +558,10 @@ async function renderAccessStep(body) {
           <input id="wizard-admin-password" type="password" autocomplete="new-password">
         </div>
       </div>
-      <p class="hint">${t("setup.accessHint")}</p>
+      <p class="hint" ${reenable ? "hidden" : ""}>${t("setup.accessHint")}</p>
       <div class="actions">
         <button type="button" class="btn primary" id="wizard-admin-create">
-          ${t("users.enable")}
+          ${reenable ? t("users.reenable") : t("users.enable")}
         </button>
       </div>
       <p class="warning-box">${t("setup.accessSkipWarning")}</p>
@@ -566,9 +569,9 @@ async function renderAccessStep(body) {
   `);
 
   el("wizard-admin-create").onclick = async () => {
-    const username = el("wizard-admin-user").value.trim();
-    const password = el("wizard-admin-password").value;
-    if (!username || !password) {
+    const username = reenable ? "" : el("wizard-admin-user").value.trim();
+    const password = reenable ? "" : el("wizard-admin-password").value;
+    if (!reenable && (!username || !password)) {
       toast(t("setup.accessMissing"));
       return;
     }
@@ -607,6 +610,9 @@ async function saveCurrentStep() {
     )?.value;
     payload.llm = {
       mode: mode ?? "none",
+      // not offered in the wizard — carry the configured value through
+      // instead of resetting it to the default on every run
+      reasoning: settings.llm.reasoning,
       base_url: el("wizard-base-url")?.value.trim() ?? settings.llm.base_url,
       api_key: el("wizard-api-key")?.value ?? settings.llm.api_key,
       models_dir: el("wizard-llm-dir")?.value.trim() ?? settings.llm.models_dir,
