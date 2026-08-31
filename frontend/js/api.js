@@ -1,5 +1,7 @@
 // REST client — relative URLs, damit Reverse-Proxy-Setups funktionieren.
 
+import { t } from "./i18n.js";
+
 // Stable per-browser session id: the queue schedules FIFO per session so one
 // user's bulk import cannot starve the others.
 function sessionId() {
@@ -29,16 +31,31 @@ async function request(method, path, body) {
   return response.json();
 }
 
-async function upload(path, file) {
-  const form = new FormData();
-  form.append("file", file, file.name);
-  const response = await fetch(path, { method: "POST", body: form });
-  if (!response.ok) {
-    let detail = `${response.status} ${response.statusText}`;
-    try { detail = (await response.json()).detail ?? detail; } catch { /* keep */ }
-    throw new Error(detail);
-  }
-  return response.json();
+// XHR instead of fetch: only XHR reports how many bytes of the request body
+// have gone out, and an audio upload is long enough that the UI has to show it.
+function upload(path, file, onProgress = null) {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", path);
+    if (onProgress) {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) onProgress(event.loaded, event.total);
+      };
+      // body handed over completely — from here the server is working on it
+      xhr.upload.onload = () => onProgress(file.size, file.size);
+    }
+    xhr.onload = () => {
+      let data = null;
+      try { data = JSON.parse(xhr.responseText); } catch { /* keep null */ }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+      else reject(new Error(data?.detail ?? `${xhr.status} ${xhr.statusText}`));
+    };
+    xhr.onerror = () => reject(new Error(t("app.networkError")));
+    xhr.onabort = () => reject(new Error(t("app.networkError")));
+    xhr.send(form);
+  });
 }
 
 export const api = {
@@ -66,7 +83,8 @@ export const api = {
     request("DELETE", `/api/projects/${id}?delete_files=${deleteFiles}`),
   importFiles: (projectId, paths) =>
     request("POST", `/api/projects/${projectId}/files/import`, { paths }),
-  uploadFile: (projectId, file) => upload(`/api/projects/${projectId}/files/upload`, file),
+  uploadFile: (projectId, file, onProgress) =>
+    upload(`/api/projects/${projectId}/files/upload`, file, onProgress),
   deleteFile: (fileId) => request("DELETE", `/api/files/${fileId}`),
   updateFileHeader: (fileId, header) =>
     request("PUT", `/api/files/${fileId}/header`, header),

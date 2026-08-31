@@ -68,7 +68,12 @@ Die Ersteinrichtung führt in fünf Schritten durch alles, was Verba braucht:
 1. **Komponenten installieren** — Verba prüft das System (Python, ffmpeg, GPU,
    KI-Komponenten) und installiert Fehlendes automatisch. Der Fortschritt läuft
    live mit: der Balken zeigt die gesamte Einrichtung, und jede Komponente
-   bekommt ihren Haken, sobald sie installiert und geprüft ist.
+   bekommt ihren Haken, sobald sie installiert und geprüft ist — auch die
+   optionale semantische Suche, die deshalb jederzeit nachinstallierbar
+   bleibt. Während die
+   Installation läuft, sind **Weiter**, **Schritt überspringen** und **Später
+   einrichten** gesperrt — sie werden wieder nutzbar, sobald die Installation
+   fertig ist oder mit einem Fehler endet.
 2. **Arbeitsbereich** — wohin Verba die Transkript-Ordner legt (Abschnitt
    „Transkripte").
 3. **Transkription** — Standard-Modell, Modellverzeichnis, Gerät und
@@ -182,6 +187,10 @@ Drei Wege, alle gleichwertig:
 
 Unterstützte Formate: mp3, wav, m4a, flac, ogg, opus, aac, wma, webm, mp4.
 Importieren kopiert immer — die Originaldateien bleiben unangetastet.
+
+Beim Hochladen (auch per Drag & Drop) zeigt eine Fortschrittskarte, welche
+Datei gerade übertragen wird („Datei 2 von 7“), wie weit die gesamte
+Auswahl gediehen ist und wann der Server die Datei speichert.
 
 ## Transkribieren {#transcribe}
 
@@ -455,19 +464,35 @@ und per Volltext (Eigennamen und seltene Begriffe treffen exakt). Unter
 **Filter** lässt sich die Suche auf ein Transkript, einen Typ, Sprache,
 Sprecher und einen Zeitraum einschränken.
 
-Jeder Treffer zeigt Transkript, Datei, Zeitstempel und Textpassage — ein Klick
-öffnet den Editor genau an dieser Stelle, das Audio startet dort.
+**Die Trefferliste.** Jede Datei steht genau einmal in der Liste, darunter
+alle ihre Treffer in zeitlicher Reihenfolge — jeder mit Zeitstempel, ein Klick
+öffnet den Editor genau an dieser Stelle, das Audio startet dort. Von der
+Textpassage stehen nur die Fundstellen da: ein bis drei Zeilen um jede
+Fundstelle, die Suchbegriffe darin farbig markiert, alles dazwischen mit „…"
+ausgelassen. Leert man das Suchfeld, verschwindet die Liste mit der Frage.
 
-Mit konfiguriertem LLM erzeugt **„KI-Antwort mit Quellen"** eine Antwort, die
-jede Aussage mit nummerierten Quellen belegt; die Quellen sind klickbar wie
-Treffer. Die KI antwortet ausschließlich aus den gefundenen Passagen — gibt
-es keine, sagt sie das ehrlich statt zu raten.
+**Auch die Kopfzeile wird durchsucht.** Name, Datum und Zusatzhinweis stehen
+im Kopf einer Datei, nicht im gesprochenen Text — deshalb sucht Verba dort
+mit: Titel, die drei Kopfzeilenfelder, Aufnahmedatum und Dateiname. Ein
+solcher Treffer erscheint mit der Marke **Kopfzeile** über den Textstellen
+derselben Datei. Gesucht wird wörtlich und mit allen Suchbegriffen zugleich,
+damit „Meier 2024" genau diese Datei findet und nicht jede, in der irgendwo
+eine 2024 vorkommt; das Datum darf deutsch geschrieben sein („12.05.2024").
+
+Mit konfiguriertem LLM steht **„KI-Antwort"** direkt neben **Suchen** und
+erzeugt eine Antwort, die jede Aussage mit nummerierten Quellen belegt. Die
+Quellenliste nennt nur Nummer, Transkript, Datei und Stelle — die Passage
+selbst steht in der Antwort darüber — und ist klickbar wie ein Treffer. Die KI
+antwortet ausschließlich aus den gefundenen Passagen; gibt es keine, sagt sie
+das ehrlich statt zu raten.
 
 Neue Transkriptionen und Segment-Änderungen werden automatisch indiziert,
 gelöschte Dateien sofort aus dem Index entfernt. Unter **Einstellungen →
 Suche** stehen der Index-Status, das Embedding-Modell und ein Knopf für den
 manuellen Neuaufbau. Die Suchkomponenten installiert die Einrichtung
-(Feature-Gruppe „Semantische Suche").
+(Feature-Gruppe „Semantische Suche"). Fehlen sie noch, bleibt in Schritt 1 der
+Einrichtung **Einrichtung starten** anklickbar, auch wenn sonst alles
+installiert ist.
 
 **Embedding-Modell.** Zur Auswahl steht eine feste Liste geprüfter Modelle —
 alle mehrsprachig (deutsche Fragen finden englische und russische Inhalte) und

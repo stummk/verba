@@ -136,6 +136,97 @@ def test_search_filters(tmp_path):
     assert {r["file_id"] for r in by_date} == {file_b["id"]}
 
 
+# ── header search & grouping ──────────────────────────────────────────
+
+
+def set_header(file_id, **fields):
+    assignments = ", ".join(f"{name} = ?" for name in fields)
+    with db.get_conn() as conn:
+        conn.execute(f"UPDATE files SET {assignments} WHERE id = ?", (*fields.values(), file_id))
+
+
+def test_header_search_finds_name_note_and_date(tmp_path):
+    """A name, an extra note and a date live in the header, not in the text."""
+    file_row, _ = make_done_file(tmp_path, "rede.mp3", segments=(("", "Guten Abend.", 0, 3),))
+    set_header(
+        file_row["id"],
+        header_left="Max Mustermann",
+        header_right="Zusatzhinweis: Entwurf",
+        recorded_at="2024-05-12",
+    )
+    vectorstore.index_file(file_row["id"])
+
+    for query in ("Mustermann", "Zusatzhinweis", "12.05.2024"):
+        hits = vectorstore.search(query)
+        header_hits = [hit for hit in hits if hit["source"] == "header"]
+        assert header_hits, f"{query}: Kopfzeile wird nicht gefunden"
+        assert header_hits[0]["file_id"] == file_row["id"]
+        assert header_hits[0]["start_s"] == 0.0
+        assert "Mustermann" in header_hits[0]["text"]
+
+
+def test_header_search_ignores_case_beyond_ascii(tmp_path):
+    """German and Russian names in caps have to match too."""
+    file_row, _ = make_done_file(tmp_path, "u.mp3", segments=(("", "Inhalt.", 0, 3),))
+    set_header(file_row["id"], header_left="MÜLLER", header_right="МОСКВА")
+    vectorstore.index_file(file_row["id"])
+
+    for query in ("müller", "москва"):
+        assert any(h["source"] == "header" for h in vectorstore.search(query)), query
+
+
+def test_header_search_needs_every_token(tmp_path):
+    """AND semantics: a whole question must not drag files in by one word."""
+    file_row, _ = make_done_file(tmp_path, "h.mp3", segments=(("", "Inhalt.", 0, 3),))
+    set_header(file_row["id"], header_left="Anna Berg", title="Interview")
+    vectorstore.index_file(file_row["id"])
+
+    assert any(h["source"] == "header" for h in vectorstore.search("Anna Berg"))
+    assert not any(h["source"] == "header" for h in vectorstore.search("Anna Berg über das Budget"))
+
+
+def test_header_search_respects_the_filters(tmp_path):
+    file_a, project_a = make_done_file(tmp_path, "a.mp3", segments=(("", "Eins.", 0, 3),))
+    file_b, _ = make_done_file(tmp_path, "b.mp3", segments=(("", "Zwei.", 0, 3),))
+    for file_row in (file_a, file_b):
+        set_header(file_row["id"], header_left="Mustermann")
+        vectorstore.index_file(file_row["id"])
+
+    hits = vectorstore.search("Mustermann", {"project_id": project_a["id"]})
+    assert {h["file_id"] for h in hits if h["source"] == "header"} == {file_a["id"]}
+
+
+def test_transcript_hits_are_marked_as_such(tmp_path):
+    file_row, _ = make_done_file(tmp_path, segments=(("", "Ein seltenes Nashorn.", 0, 3),))
+    vectorstore.index_file(file_row["id"])
+    hits = vectorstore.search("Nashorn")
+    assert hits and all(hit["source"] == "transcript" for hit in hits)
+
+
+def test_group_by_file_lists_every_file_once(tmp_path):
+    long_text = "Wort " * 120  # several chunks, so one file can match twice
+    file_row, _ = make_done_file(
+        tmp_path,
+        "lang.mp3",
+        segments=tuple(("", long_text.strip(), i * 10.0, (i + 1) * 10.0) for i in range(4)),
+    )
+    set_header(file_row["id"], header_left="Mustermann", title="Langes Gespräch")
+    vectorstore.index_file(file_row["id"])
+
+    # the vector half ranks every chunk of the file, the header matches too
+    groups = vectorstore.group_by_file(vectorstore.search("Mustermann"))
+
+    assert [group["file_id"] for group in groups] == [file_row["id"]]  # exactly once
+    group = groups[0]
+    assert group["title"] == "Langes Gespräch"
+    assert group["header"] == "Mustermann"
+    assert len(group["hits"]) > 1
+    # the header leads, the passages follow in timeline order
+    assert group["hits"][0]["source"] == "header"
+    starts = [hit["start_s"] for hit in group["hits"]]
+    assert starts == sorted(starts)
+
+
 def test_delete_file_removes_index_entries_immediately(tmp_path):
     file_row, _ = make_done_file(tmp_path, segments=(("", "Einzigartiger Flamingo.", 0, 3),))
     vectorstore.index_file(file_row["id"])
@@ -197,6 +288,23 @@ def test_rag_ask_answers_from_sources(monkeypatch, tmp_path):
     assert "[1]" in seen["user"] and "Freitag" in seen["user"]
 
 
+def test_rag_marks_a_header_source_as_metadata(monkeypatch, tmp_path):
+    """The model must not quote a name from the header as spoken text."""
+    file_row, _ = make_done_file(tmp_path, segments=(("", "Guten Tag.", 0, 3),))
+    set_header(file_row["id"], header_left="Mustermann")
+    vectorstore.index_file(file_row["id"])
+
+    seen = {}
+
+    def fake_chat(messages, **kwargs):
+        seen["user"] = messages[-1]["content"]
+        return "Antwort [1]."
+
+    monkeypatch.setattr("verba.services.llm.chat", fake_chat)
+    rag.ask("Mustermann")
+    assert "Kopfdaten" in seen["user"]
+
+
 def test_rag_ask_without_hits_never_calls_llm(monkeypatch):
     def boom(*args, **kwargs):
         raise AssertionError("LLM darf ohne Treffer nicht aufgerufen werden")
@@ -245,6 +353,25 @@ def test_model_change_triggers_reindex(client, monkeypatch):
     assert client.put("/api/settings", json=settings).status_code == 200
     jobs = client.get("/api/jobs").json()
     assert any(j["kind"] == "reindex_search" for j in jobs)
+
+
+def test_search_endpoint_returns_files_with_their_hits(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(vectorstore, "available", lambda: True)
+    file_row, _ = make_done_file(tmp_path, segments=(("", "Der Termin ist am Freitag.", 0, 3),))
+    vectorstore.index_file(file_row["id"])
+
+    data = client.post("/api/search", json={"query": "Termin"}).json()
+
+    assert len(data["results"]) == 1
+    group = data["results"][0]
+    assert group["file_id"] == file_row["id"]
+    assert group["hits"] and group["hits"][0]["source"] == "transcript"
+    assert "Freitag" in group["hits"][0]["text"]
+
+
+def test_status_endpoint_says_whether_an_llm_is_available(client):
+    """The AI-answer button sits next to the search button — before any search."""
+    assert client.get("/api/search/status").json()["llm_available"] is False
 
 
 def test_cleanup_pipeline_available_flag_in_search_response(client, monkeypatch, tmp_path):

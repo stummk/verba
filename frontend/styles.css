@@ -1004,17 +1004,57 @@ dialog textarea {
 }
 
 /* ── phase 7: semantic search ──────────────────────────────────────── */
-.search-form { display: flex; gap: .6rem; align-items: center; }
-.search-form input[type="search"] { flex: 1; min-width: 0; }
+.search-form { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
+.search-form input[type="search"] { flex: 1 1 10rem; min-width: 0; }
+/* one card per file: heading, then its hits in timeline order */
+.search-file-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .1rem .7rem;
+  align-items: baseline;
+  margin-bottom: .35rem;
+}
+.search-file-name { font-weight: 600; overflow-wrap: anywhere; }
+.search-file-count { margin-left: auto; white-space: nowrap; }
+.search-hit-list { list-style: none; margin: 0; padding: 0; }
+.search-hit-list > li + li { border-top: .0625rem solid var(--md-outline-variant); }
 .search-hit {
-  display: block;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .1rem .7rem;
+  padding: .5rem .4rem;
+  border-radius: var(--shape-sm);
   text-decoration: none;
   color: var(--md-on-surface);
   transition: background .15s;
 }
 .search-hit:hover { background: var(--md-surface-container-high); }
-.search-hit-meta { margin-bottom: .35rem; }
-.search-hit-text { margin: 0; font-size: .92rem; white-space: pre-wrap; }
+.search-hit-time {
+  flex: 0 0 auto;
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--md-primary);
+  font-variant-numeric: tabular-nums;
+  padding-top: .1rem;
+}
+.search-hit-text { flex: 1 1 14rem; margin: 0; font-size: .92rem; }
+.search-hit-text mark {
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+  border-radius: var(--shape-xs);
+  padding: 0 .1rem;
+}
+.search-source-list { list-style: none; margin: 0; padding: 0; }
+.search-source {
+  display: block;
+  padding: .3rem .4rem;
+  border-radius: var(--shape-sm);
+  font-size: .88rem;
+  text-decoration: none;
+  color: var(--md-on-surface-variant);
+  overflow-wrap: anywhere;
+}
+.search-source:hover { background: var(--md-surface-container-high); }
 /* the RAG answer is markdown (lists, emphasis), rendered like the guide */
 .search-answer-text > :first-child { margin-top: .25rem; }
 .search-answer-text > :last-child { margin-bottom: .75rem; }

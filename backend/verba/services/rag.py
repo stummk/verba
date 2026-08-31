@@ -26,8 +26,11 @@ def ask(query: str, filters: dict[str, Any] | None = None, limit: int = 8) -> di
     if not sources:
         return {"answer": "", "sources": []}
 
+    # a header hit is metadata, not spoken text — say so, or the model quotes a
+    # name or a date as if someone had said it out loud
     passages = "\n\n".join(
-        f"[{index + 1}] ({source['project_name']} — {source['title'] or source['filename']}) "
+        f"[{index + 1}] ({source['project_name']} — {source['title'] or source['filename']}"
+        f"{', Kopfdaten' if source.get('source') == 'header' else ''}) "
         f"{source['text']}"
         for index, source in enumerate(sources)
     )

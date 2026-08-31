@@ -62,11 +62,25 @@ FFMPEG_URLS = {
 
 @dataclass
 class FeatureGroup:
+    """One pip-installable feature group.
+
+    `import_name` is the module the group is named after; `extra_imports` lists
+    further modules the feature needs at runtime. A group counts as installed
+    only when *all* of them are there — otherwise the checklist would tick a
+    feature off that the app still refuses to use (semantic search needs both
+    sentence-transformers and sqlite-vec).
+    """
+
     key: str
     label: str
     packages: list[str]
     import_name: str
     required: bool = True
+    extra_imports: list[str] = field(default_factory=list)
+
+    @property
+    def import_names(self) -> list[str]:
+        return [self.import_name, *self.extra_imports]
 
 
 FEATURE_GROUPS: list[FeatureGroup] = [
@@ -90,6 +104,7 @@ FEATURE_GROUPS: list[FeatureGroup] = [
         packages=["sentence-transformers>=3.0", "sqlite-vec>=0.1.6"],
         import_name="sentence_transformers",
         required=False,
+        extra_imports=["sqlite_vec"],
     ),
 ]
 
@@ -187,7 +202,7 @@ def check_ffmpeg() -> CheckResult:
         ok=path is not None,
         required=True,
         installable=platform.system() in FFMPEG_URLS,
-        detail=path or "not found — will be installed automatically",
+        detail=path or "nicht gefunden — wird automatisch installiert",
     )
 
 
@@ -197,15 +212,15 @@ def check_gpu() -> CheckResult:
     detail = (
         f"{gpu['name']}, {gpu['vram_total_mb']} MiB"
         if ok
-        else "no NVIDIA GPU detected — transcription will run on the CPU"
+        else "keine NVIDIA-GPU erkannt — die Transkription läuft auf der CPU"
     )
     return CheckResult(
         id="gpu", label="GPU (optional)", ok=ok, required=False, installable=False, detail=detail
     )
 
 
-def group_installed(group: FeatureGroup) -> bool:
-    """Whether the group's top-level module can be located.
+def _module_installed(name: str) -> bool:
+    """Whether a top-level module can be located.
 
     Deliberately does not import it: importing pulls in binary dependencies
     (numpy via ctranslate2, …) which Windows then locks for the lifetime of
@@ -215,10 +230,15 @@ def group_installed(group: FeatureGroup) -> bool:
     package resolves as a namespace package, which would look installed
     while its actual code is gone."""
     try:
-        spec = find_spec(group.import_name)
+        spec = find_spec(name)
     except (ImportError, ValueError):
         return False
     return spec is not None and spec.origin is not None
+
+
+def group_installed(group: FeatureGroup) -> bool:
+    """Whether every module of the group can be located."""
+    return all(_module_installed(name) for name in group.import_names)
 
 
 def check_groups() -> list[CheckResult]:
@@ -232,7 +252,7 @@ def check_groups() -> list[CheckResult]:
                 ok=ok,
                 required=group.required,
                 installable=True,
-                detail="installed" if ok else "will be installed during setup",
+                detail="installiert" if ok else "wird bei der Einrichtung installiert",
             )
         )
     return results
@@ -522,11 +542,14 @@ def _verify_import(group: FeatureGroup) -> None:
     process' lifetime and break the pip run for the next group.
     """
     invalidate_caches()
-    code, output = _run_child(_import_check_command(group.import_name), lambda line: None)
-    if code != 0:
-        detail = " | ".join(output[-3:]) or f"Code {code}"
-        logger.error("import of %s failed after installation: %s", group.import_name, detail)
-        raise RuntimeError(f"{group.label}: Import nach der Installation fehlgeschlagen: {detail}")
+    for name in group.import_names:
+        code, output = _run_child(_import_check_command(name), lambda line: None)
+        if code != 0:
+            detail = " | ".join(output[-3:]) or f"Code {code}"
+            logger.error("import of %s failed after installation: %s", name, detail)
+            raise RuntimeError(
+                f"{group.label}: Import nach der Installation fehlgeschlagen: {detail}"
+            )
 
 
 def install_group(group: FeatureGroup) -> None:

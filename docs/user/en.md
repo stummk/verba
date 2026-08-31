@@ -67,7 +67,11 @@ The first-run setup walks through everything Verba needs, in five steps:
 1. **Install components** — Verba checks the system (Python, ffmpeg, GPU, AI
    components) and installs whatever is missing. Progress is live: the bar
    covers the whole setup, and every component gets its tick as soon as it is
-   installed and verified.
+   installed and verified — the optional semantic search included, which
+   therefore stays installable at any time. While the installation runs,
+   **Next**, **Skip this
+   step** and **Set up later** are locked — they become usable again as soon as
+   the installation has finished or has failed.
 2. **Workspace** — where Verba keeps the transcript folders (section
    "Transcripts").
 3. **Transcription** — default model, models directory, device and recording
@@ -179,6 +183,10 @@ Three equivalent ways:
 
 Supported formats: mp3, wav, m4a, flac, ogg, opus, aac, wma, webm, mp4.
 Importing always copies — your original files stay untouched.
+
+While files are uploading (drag & drop included) a progress card shows which
+file is going over the wire (“File 2 of 7”), how far the whole selection has
+come and when the server is storing the file.
 
 ## Transcribing {#transcribe}
 
@@ -437,18 +445,34 @@ text (proper names and rare terms match exactly). Under **Filters** the
 search can be narrowed to one transcript, a type, language, speaker and a
 date range.
 
-Every hit shows transcript, file, timestamp and passage — a click opens the
-editor exactly there, and the audio starts at that position.
+**The hit list.** Every file appears exactly once, with all of its hits below
+it in timeline order — each with a timestamp; a click opens the editor exactly
+there, and the audio starts at that position. Of the passage only the matches
+are shown: one to three lines around each match, the search terms highlighted
+inside them, everything in between elided with “…”. Emptying the search field
+clears the list along with the question.
 
-With an LLM configured, **“AI answer with sources”** produces an answer that
-backs every statement with numbered sources; sources are clickable like hits.
-The AI answers only from the retrieved passages — if there are none, it says
-so honestly instead of guessing.
+**The header is searched too.** A name, a date or an extra note lives in a
+file's header, not in the spoken text — so Verba searches there as well:
+title, the three header fields, recording date and file name. Such a hit
+appears marked **Header** above the passages of the same file. It is matched
+literally and with all search terms at once, so “Meier 2024” finds that one
+file instead of every file with a 2024 somewhere in it; the date may be
+written in German notation (“12.05.2024”).
+
+With an LLM configured, **“AI answer”** sits right next to **Search** and
+produces an answer that backs every statement with numbered sources. The
+source list gives number, transcript, file and position only — the passage
+itself stands in the answer above — and is clickable like a hit. The AI
+answers only from the retrieved passages; if there are none, it says so
+honestly instead of guessing.
 
 New transcriptions and segment edits are indexed automatically; deleted files
 disappear from the index immediately. **Settings → Search** shows the index
 status, the embedding model and a button for a manual rebuild. The search
-components are installed by the setup (feature group “Semantic search”).
+components are installed by the setup (feature group “Semantic search”). While
+they are missing, **Start setup** in step 1 stays clickable even when
+everything else is installed.
 
 **Embedding model.** The choice is a fixed list of vetted models — all
 multilingual (German queries find English and Russian content) and

@@ -20,7 +20,9 @@ class SearchRequest(BaseModel):
     speaker: str = Field(default="", max_length=200)
     date_from: str = Field(default="", max_length=10)
     date_to: str = Field(default="", max_length=10)
-    limit: int = Field(default=10, ge=1, le=50)
+    # hits, not files: they are grouped per file afterwards, so a handful of
+    # files with several hits each still fits in the default
+    limit: int = Field(default=24, ge=1, le=50)
 
     def filters(self) -> dict:
         return {
@@ -43,28 +45,36 @@ def _ensure_available() -> None:
 
 @router.post("")
 def search(body: SearchRequest) -> dict:
+    """Hit list grouped by file: one entry per file, its hits in timeline order."""
     _ensure_available()
     try:
-        results = vectorstore.search(body.query, body.filters(), limit=body.limit)
+        hits = vectorstore.search(body.query, body.filters(), limit=body.limit)
     except vectorstore.EmbeddingUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    return {"results": results, "llm_available": llm_location() != "none"}
+    return {
+        "results": vectorstore.group_by_file(hits),
+        "llm_available": llm_location() != "none",
+    }
 
 
 @router.post("/ask")
 def ask(body: SearchRequest) -> dict:
+    """RAG answer plus the same grouped hit list, so one call fills both."""
     _ensure_available()
     if llm_location() == "none":
         raise HTTPException(status_code=409, detail="No LLM configured — set one up in Settings")
     try:
-        return rag.ask(body.query, body.filters(), limit=min(body.limit, 12))
+        answer = rag.ask(body.query, body.filters(), limit=min(body.limit, 12))
     except vectorstore.EmbeddingUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {**answer, "results": vectorstore.group_by_file(answer["sources"])}
 
 
 @router.get("/status")
 def get_status() -> dict:
-    return vectorstore.status()
+    # the UI shows the AI-answer button next to the search button, so it has to
+    # know about the LLM before the first search
+    return {**vectorstore.status(), "llm_available": llm_location() != "none"}
 
 
 @router.get("/models")

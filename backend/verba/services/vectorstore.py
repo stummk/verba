@@ -8,7 +8,10 @@ audio position. Two halves per chunk:
   rare words match even when embeddings miss them)
 - an embedding in a sqlite-vec table (multilingual model, CPU-friendly)
 
-Results are fused with reciprocal rank fusion. Each chunk records the
+Beside the transcript text, a file's header (title, the three header fields,
+date, file name) is searched directly in SQL: a name, a date or an extra note
+lives there, not in the spoken text, and an exact lookup beats a semantic one
+for those. Results are fused with reciprocal rank fusion. Each chunk records the
 embedding model it was built with; changing the model in the settings
 triggers a full reindex job. Both heavy imports (sentence-transformers,
 sqlite-vec) belong to the optional "search" feature group — every entry
@@ -39,6 +42,21 @@ logger = logging.getLogger(__name__)
 # readable passage, not a page.
 CHUNK_MAX_CHARS = 800
 CHUNK_OVERLAP_SEGMENTS = 1
+
+# Header fields of a file: the name, date and extra note a transcript carries
+# around its text. They are searched literally (every token has to appear),
+# which is what a lookup for "Meier 2024" expects.
+HEADER_FIELDS = (
+    "title",
+    "header_left",
+    "header_middle",
+    "header_right",
+    "recorded_at",
+    "filename",
+)
+MAX_HEADER_TOKENS = 8
+# a header lookup answers "which file is this?" — a handful is plenty
+MAX_HEADER_HITS = 5
 
 VEC_DIM_KEY = "search_vec_dim"
 LAST_INDEX_KEY = "search_last_index"
@@ -347,23 +365,61 @@ def search(query: str, filters: dict[str, Any] | None = None, limit: int = 10) -
                 )
             ]
         fused = _rrf(vec_ids, fts_ids)
-        if not fused:
-            return []
-        return _load_results(conn, fused, filters, limit)
+        results = _load_results(conn, fused, filters, limit) if fused else []
+        # header matches are exact and few: they lead, the passages follow
+        headers = _header_hits(conn, query, filters, min(limit, MAX_HEADER_HITS))
+        return headers + results
 
 
-def _load_results(
-    conn: sqlite3.Connection, chunk_ids: list[int], filters: dict[str, Any], limit: int
-) -> list[dict]:
-    marks = ",".join("?" for _ in chunk_ids)
-    sql = (
-        "SELECT c.id, c.file_id, c.start_s, c.end_s, c.text, c.speakers, "
-        "f.filename, f.title, f.recorded_at, f.language, f.project_id, "
-        "p.name AS project_name, p.type_id "
-        f"FROM chunks c JOIN files f ON f.id = c.file_id "
-        f"JOIN projects p ON p.id = f.project_id WHERE c.id IN ({marks})"
-    )
-    params: list[Any] = list(chunk_ids)
+def group_by_file(results: list[dict]) -> list[dict]:
+    """One entry per file with all its hits — the shape the hit list needs.
+
+    A file that matches several times is one result with a list of positions,
+    not the same file over and over. Group order follows relevance (a file's
+    best hit decides), the hits inside a file follow the timeline.
+    """
+    groups: dict[int, dict[str, Any]] = {}
+    for hit in results:
+        group = groups.get(hit["file_id"])
+        if group is None:
+            group = {
+                "file_id": hit["file_id"],
+                "filename": hit["filename"],
+                "title": hit["title"],
+                "project_id": hit["project_id"],
+                "project_name": hit["project_name"],
+                "language": hit["language"],
+                "recorded_at": hit["recorded_at"],
+                "header": header_line(hit),
+                "hits": [],
+            }
+            groups[hit["file_id"]] = group
+        group["hits"].append(
+            {
+                "chunk_id": hit["id"],
+                "start_s": hit["start_s"],
+                "end_s": hit["end_s"],
+                "text": hit["text"],
+                "speakers": hit["speakers"],
+                "source": hit.get("source", "transcript"),
+            }
+        )
+    for group in groups.values():
+        group["hits"].sort(key=lambda hit: (hit["source"] != "header", hit["start_s"]))
+    return list(groups.values())
+
+
+FILE_COLUMNS = (
+    "f.filename, f.title, f.recorded_at, f.language, f.project_id, "
+    "f.header_left, f.header_middle, f.header_right, "
+    "p.name AS project_name, p.type_id"
+)
+
+
+def _filter_clause(filters: dict[str, Any], speaker_sql: str) -> tuple[str, list[Any]]:
+    """The shared file/project filters; `speaker_sql` differs per hit source."""
+    sql = ""
+    params: list[Any] = []
     if filters.get("project_id"):
         sql += " AND f.project_id = ?"
         params.append(filters["project_id"])
@@ -374,7 +430,7 @@ def _load_results(
         sql += " AND f.language = ?"
         params.append(filters["language"])
     if filters.get("speaker"):
-        sql += " AND c.speakers LIKE ?"
+        sql += f" AND {speaker_sql}"
         params.append(f"%{filters['speaker']}%")
     if filters.get("date_from"):
         sql += " AND f.recorded_at >= ?"
@@ -382,9 +438,99 @@ def _load_results(
     if filters.get("date_to"):
         sql += " AND f.recorded_at <= ?"
         params.append(filters["date_to"])
+    return sql, params
 
-    by_id = {row["id"]: dict(row) for row in conn.execute(sql, params)}
+
+def _load_results(
+    conn: sqlite3.Connection, chunk_ids: list[int], filters: dict[str, Any], limit: int
+) -> list[dict]:
+    marks = ",".join("?" for _ in chunk_ids)
+    sql = (
+        "SELECT c.id, c.file_id, c.start_s, c.end_s, c.text, c.speakers, "
+        f"{FILE_COLUMNS} "
+        f"FROM chunks c JOIN files f ON f.id = c.file_id "
+        f"JOIN projects p ON p.id = f.project_id WHERE c.id IN ({marks})"
+    )
+    params: list[Any] = list(chunk_ids)
+    clause, filter_params = _filter_clause(filters, "c.speakers LIKE ?")
+    sql += clause
+    params += filter_params
+
+    by_id = {row["id"]: dict(row) | {"source": "transcript"} for row in conn.execute(sql, params)}
     return [by_id[cid] for cid in chunk_ids if cid in by_id][:limit]
+
+
+# ── header search ─────────────────────────────────────────────────────
+
+
+def _header_tokens(query: str) -> list[str]:
+    """The query tokens a header lookup is run with.
+
+    Every token has to appear, so a whole question simply finds nothing here
+    instead of dragging unrelated files in. Very short words are dropped —
+    they would match inside longer names — except numbers, which carry the
+    parts of a date ("12.05.2024").
+    """
+    tokens = []
+    for token in re.findall(r"\w+", query.lower(), re.UNICODE):
+        if len(token) >= 3 or (token.isdigit() and len(token) >= 2):
+            tokens.append(token)
+    return tokens[:MAX_HEADER_TOKENS]
+
+
+def header_line(row: dict[str, Any]) -> str:
+    """The header as one readable line (what the UI shows under a file)."""
+    parts = [
+        str(row.get(field) or "").strip()
+        for field in ("header_left", "header_middle", "header_right")
+    ]
+    return " · ".join(part for part in parts if part)
+
+
+def _sql_lower(value: str | None) -> str:
+    """Unicode-aware lowercase for the header match (SQL helper)."""
+    return (value or "").lower()
+
+
+def _header_hits(
+    conn: sqlite3.Connection, query: str, filters: dict[str, Any], limit: int
+) -> list[dict]:
+    """Files whose header (name, date, note, title) matches the query itself."""
+    tokens = _header_tokens(query)
+    if not tokens or limit <= 0:
+        return []
+    # SQLite's own LOWER() only folds ASCII, which would make "MUELLER" match
+    # but "MULLER" (with an umlaut) or a Cyrillic name not
+    conn.create_function("verba_lower", 1, _sql_lower, deterministic=True)
+    haystack = " || ' ' || ".join(f"COALESCE(f.{field}, '')" for field in HEADER_FIELDS)
+    conditions = " AND ".join(f"INSTR(verba_lower({haystack}), ?) > 0" for _ in tokens)
+    clause, filter_params = _filter_clause(
+        filters,
+        "EXISTS (SELECT 1 FROM chunks c WHERE c.file_id = f.id AND c.speakers LIKE ?)",
+    )
+    sql = (
+        f"SELECT f.id AS file_id, {FILE_COLUMNS} "
+        "FROM files f JOIN projects p ON p.id = f.project_id "
+        f"WHERE f.status = 'done' AND ({conditions}){clause} "
+        "ORDER BY f.recorded_at DESC, f.id DESC LIMIT ?"
+    )
+    params = [*tokens, *filter_params, limit]
+    hits = []
+    for row in conn.execute(sql, params):
+        hit = dict(row)
+        title = (hit["title"] or hit["filename"]).strip()
+        date = (hit["recorded_at"] or "").strip()
+        header = header_line(hit)
+        hit |= {
+            "id": None,
+            "start_s": 0.0,
+            "end_s": 0.0,
+            "speakers": "",
+            "source": "header",
+            "text": " · ".join(part for part in (title, date, header) if part),
+        }
+        hits.append(hit)
+    return hits
 
 
 # ── status ────────────────────────────────────────────────────────────

@@ -14,12 +14,14 @@ import { on } from "../ws.js";
 const STEPS = ["install", "workspace", "whisper", "llm", "search"];
 
 let unsubscribe = null;
+let installRunning = false;
 let stepIndex = 0;
 let settings = null;
 let paths = null;
 
 export async function render(view) {
   stepIndex = 0; // entering the wizard always starts at the beginning
+  installRunning = false; // a running install is picked up from the status below
   const status = await api.systemStatus();
   settings = await api.getSettings();
   paths = await api.getPaths().catch(() => null);
@@ -112,10 +114,21 @@ function renderStepIndicator() {
   );
 }
 
+// While the installer runs, leaving the step would strand it: the wizard
+// would move on (or close) while pip is still writing into the venv. So the
+// navigation stays locked until the run is done or has failed.
+function setNavLocked(locked) {
+  for (const id of ["wizard-next", "wizard-skip-step", "wizard-skip-all"]) {
+    const button = el(id);
+    if (button) button.disabled = locked;
+  }
+}
+
 async function renderStep(status) {
   const body = el("wizard-body");
   const step = STEPS[stepIndex];
   el("wizard-skip-step").hidden = false;
+  setNavLocked(step === "install" && installRunning);
   if (step === "install") return renderInstallStep(body, status);
   if (step === "workspace") return renderWorkspaceStep(body);
   if (step === "whisper") return renderWhisperStep(body);
@@ -146,24 +159,30 @@ function renderInstallStep(body, status) {
   const runButton = el("setup-run");
   const progressCard = el("setup-progress-card");
 
-  if (status.ready) {
+  if (!installablePending(status.checks)) {
     runButton.disabled = true;
     runButton.textContent = t("setup.ready");
   } else {
     runButton.onclick = async () => {
       runButton.disabled = true;
+      installRunning = true;
+      setNavLocked(true);
       progressCard.hidden = false;
       try {
         await api.runSetup(true);
       } catch (error) {
         toast(t("setup.startError", { message: error.message }));
         runButton.disabled = false;
+        installRunning = false;
+        setNavLocked(false);
       }
     };
   }
 
   if (status.setup?.running) {
     runButton.disabled = true;
+    installRunning = true;
+    setNavLocked(true);
     progressCard.hidden = false;
     applyProgress(status.setup);
   }
@@ -173,11 +192,13 @@ function renderInstallStep(body, status) {
     if (!el("setup-progress-card")) return; // the user moved on to another step
     progressCard.hidden = false;
     applyProgress(progress);
-    if (!progress.running) {
+    installRunning = Boolean(progress.running);
+    setNavLocked(installRunning);
+    if (!installRunning) {
       const fresh = await api.systemStatus();
       Object.assign(status, fresh);
       renderChecklist(fresh.checks);
-      if (fresh.ready && !progress.error) {
+      if (!installablePending(fresh.checks) && !progress.error) {
         runButton.textContent = t("setup.ready");
         toast(t("setup.installDone"));
       } else {
@@ -186,6 +207,14 @@ function renderInstallStep(body, status) {
       }
     }
   });
+}
+
+// Whether the setup still has something to install. Optional components
+// (semantic search) count: the wizard used to go by the backend's `ready`,
+// which only looks at the required ones — the search row then stayed unticked
+// with the install button disabled, and the search stayed uninstallable.
+function installablePending(checks) {
+  return (checks ?? []).some((check) => check.installable && !check.ok);
 }
 
 function renderChecklist(checks) {

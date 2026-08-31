@@ -123,6 +123,44 @@ def test_group_check_finds_an_installed_module():
     assert setup_check.group_installed(missing) is False
 
 
+def test_a_group_needs_every_one_of_its_modules():
+    """One module of the group is not enough for the tick.
+
+    Semantic search needs sentence-transformers *and* sqlite-vec; the
+    checklist used to go by the first one alone and ticked the search off
+    while the search itself still refused to run.
+    """
+    group = setup_check.FeatureGroup(
+        key="mixed",
+        label="Mixed",
+        packages=["json", "nope"],
+        import_name="json",
+        extra_imports=["verba_does_not_exist"],
+    )
+    assert group.import_names == ["json", "verba_does_not_exist"]
+    assert setup_check.group_installed(group) is False
+
+
+def test_search_group_covers_both_search_modules():
+    """What the checklist checks has to be what vectorstore.available() needs."""
+    [group] = [g for g in setup_check.FEATURE_GROUPS if g.key == "search"]
+    assert set(group.import_names) == {"sentence_transformers", "sqlite_vec"}
+
+
+def test_import_verification_covers_every_module(monkeypatch):
+    checked: list[str] = []
+
+    def fake_run_child(cmd, on_line):
+        checked.append(cmd[-1])
+        return 0, []
+
+    monkeypatch.setattr(setup_check, "_run_child", fake_run_child)
+    [group] = [g for g in setup_check.FEATURE_GROUPS if g.key == "search"]
+    setup_check._verify_import(group)
+
+    assert checked == ["import sentence_transformers", "import sqlite_vec"]
+
+
 def test_a_half_deleted_package_does_not_count_as_installed(tmp_path, monkeypatch):
     """What a locked pip run leaves behind: the directory without the code.
 

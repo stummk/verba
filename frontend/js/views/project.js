@@ -100,6 +100,7 @@ export async function render(view, _status, params) {
         </div>
       </div>
     </div>
+    <div id="upload-progress" hidden></div>
     <div id="project-jobs" hidden></div>
     <div class="card">
       <table class="filetable">
@@ -151,20 +152,50 @@ export async function render(view, _status, params) {
     };
   }
 
+  // An upload has no job behind it, so nothing in the UI would move while a
+  // large file (or a whole folder) goes over the wire — hence its own card.
+  const uploadProgress = uploadProgressCard(el("upload-progress"));
+
   async function uploadFiles(fileList) {
     const audioFiles = [...fileList].filter((f) => AUDIO_RE.test(f.name));
     const skipped = fileList.length - audioFiles.length;
-    for (const file of audioFiles) {
-      try {
-        const row = await api.uploadFile(projectId, file);
-        files.set(row.id, row);
-        renderRows(files);
-      } catch (error) {
-        toast(`${file.name}: ${error.message}`);
+    const totalBytes = audioFiles.reduce((sum, f) => sum + f.size, 0);
+    let sentBytes = 0;
+    let uploaded = 0;
+    uploadProgress.start(audioFiles.length);
+    try {
+      for (const [index, file] of audioFiles.entries()) {
+        uploadProgress.update({
+          index: index + 1,
+          name: file.name,
+          bytes: sentBytes,
+          totalBytes,
+        });
+        try {
+          const row = await api.uploadFile(projectId, file, (loaded) => {
+            uploadProgress.update({
+              index: index + 1,
+              name: file.name,
+              bytes: sentBytes + loaded,
+              totalBytes,
+              // the browser is done, the server still stores and probes the file
+              processing: loaded >= file.size,
+            });
+          });
+          sentBytes += file.size;
+          uploaded += 1;
+          files.set(row.id, row);
+          renderRows(files);
+        } catch (error) {
+          sentBytes += file.size;
+          toast(`${file.name}: ${error.message}`);
+        }
       }
+    } finally {
+      uploadProgress.stop();
     }
-    if (audioFiles.length) toast(t("project.uploaded", { count: audioFiles.length }));
-    else if (skipped) toast(t("project.noAudio"));
+    if (uploaded) toast(t("project.uploaded", { count: uploaded }));
+    else if (skipped && !audioFiles.length) toast(t("project.noAudio"));
   }
 
   el("file-upload").onchange = async (event) => {
@@ -614,6 +645,49 @@ function fillAdvancedSelects(models) {
   }
 
   fillLanguageSelect(languageSelect, { placeholder: t("project.advAuto") });
+}
+
+// ── upload progress card ──────────────────────────────────────────────
+
+// The percentage counts bytes over the whole selection, so one bar covers a
+// single file as well as a dropped folder with fifty of them.
+function uploadProgressCard(host) {
+  let total = 0;
+
+  return {
+    start(count) {
+      total = count;
+      if (!count) return;
+      host.replaceChildren(html`
+        <div class="card job-card">
+          <div class="job-card-head">
+            <strong>${t("project.uploading")}</strong>
+            <span class="spacer"></span>
+            <span class="small muted" id="upload-percent">0 %</span>
+          </div>
+          <div class="progressbar small-bar"><div id="upload-bar"></div></div>
+          <div class="small muted job-message" id="upload-message"></div>
+        </div>
+      `);
+      host.hidden = false;
+      host.scrollIntoView({ block: "nearest" });
+    },
+
+    update({ index, name, bytes, totalBytes, processing = false }) {
+      if (host.hidden) return;
+      const percent = totalBytes ? Math.min(100, Math.round((bytes / totalBytes) * 100)) : 0;
+      el("upload-bar").style.width = `${percent}%`;
+      el("upload-percent").textContent = `${percent} %`;
+      el("upload-message").textContent = processing
+        ? t("project.uploadProcessing", { name })
+        : t("project.uploadFile", { index, total, name });
+    },
+
+    stop() {
+      host.replaceChildren();
+      host.hidden = true;
+    },
+  };
 }
 
 // ── drag & drop upload (files and whole folders) ──────────────────────
