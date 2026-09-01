@@ -28,15 +28,28 @@ python -m ruff format --check backend/ tests/ run.py
   the journal
 - `backend/verba/` — entire backend
   - `config.py` — settings (pydantic) ↔ `data/settings.json`; `auth.enabled` is
-    backend-owned (only `/api/auth` writes it, never the settings form); path resolution
+    backend-owned (only `/api/auth` writes it, never the settings form);
+    `base_data_dir()` (env/frozen/repo) belongs to the installation and keeps
+    settings.json, site-packages, tools and the models; `data_dir()` holds the
+    database and the logs and is configurable (`general.data_dir`), answering
+    with `general.data_dir_active` — where the data is right now; path resolution
     (configured directories are normalised to absolute paths; workspaces,
     whisper models, embeddings and GGUF each have their own configurable
     directory), curated `EMBEDDING_MODELS` catalog for the search
   - `db.py` — SQLite (`data/app.db`): projects, files, segments, jobs, users,
-    sessions, project_shares; short-lived connections. Every schema change is
+    sessions, project_shares; short-lived connections. `vacuum_if_needed()`
+    compacts the file, but only once the freed pages are worth a full rewrite
+    (`VACUUM_MIN_BYTES`/`VACUUM_MIN_SHARE`) — deleting rows never shrinks
+    SQLite on its own. Every schema change is
     additive (`_migrate`/`add_missing`) so an installation upgrades in place —
     an index on a migrated column belongs in `_migrate`, not in `_SCHEMA`, which
     runs first (`tests/test_auth_migration.py`)
+  - `datamove.py` — moving the data directory: `general.data_dir` is the wish,
+    `general.data_dir_active` the reality, and `apply_pending_move()`
+    reconciles them at the next start, before the first DB connection and
+    before logging — nothing is open then. Moved are `app.db` (+ WAL
+    sidecars), `logs/` and the default `workspaces/`, whose absolute paths in
+    `projects.workspace` are rewritten
   - `logging_setup.py` — log rotation (retention from settings)
   - `procutil.py` — every subprocess spawn goes through here: a child console
     program would otherwise flash its own window on a Windows build that has
@@ -62,6 +75,9 @@ python -m ruff format --check backend/ tests/ run.py
     in the database, so `enable()` without credentials switches it straight
     back on), workspace (project folders, import, moving the workspaces
     root incl. DB repointing via job kind `move_workspace`),
+    maintenance (the `vacuum` job: `request_vacuum()` after a project/file
+    deletion and after a reindex, deduplicated via `job_queue.has_active`, and
+    once more at startup where nothing else holds the database),
     hardware (the single RAM/VRAM probe — `setup_check`, whisper and llamacpp all
     read it; per-model memory verdicts `ok`/`tight`/`no` in German for local
     engines only, plus the OOM classifier that turns an allocation failure into
@@ -105,8 +121,8 @@ python -m ruff format --check backend/ tests/ run.py
     Routers: auth (login/logout/state/enable/disable/own password/own account),
     users (admin CRUD + `users/directory` for the share picker),
     system incl. `setup/complete` for the six-step wizard,
-    settings incl. `settings/paths` and the workspace-move/reindex side effects of
-    PUT, projects, types, files, segments, jobs, models, docs incl. `docs/ask`,
+    settings incl. `settings/paths` and the data-dir/workspace-move/reindex
+    side effects of PUT, projects, types, files, segments, jobs, models, docs incl. `docs/ask`,
     export, search incl. `search/models`, apikeys, openai_compat →
     `/v1/audio/transcriptions`: Bearer auth as soon as a key exists or the user
     management is on, otherwise open)

@@ -74,8 +74,10 @@ Die Ersteinrichtung führt in sechs Schritten durch alles, was Verba braucht:
    Installation läuft, sind **Weiter**, **Schritt überspringen** und **Später
    einrichten** gesperrt — sie werden wieder nutzbar, sobald die Installation
    fertig ist oder mit einem Fehler endet.
-2. **Arbeitsbereich** — wohin Verba die Transkript-Ordner legt (Abschnitt
-   „Transkripte").
+2. **Speicherorte** — das Datenverzeichnis (Datenbank und Protokolle) und der
+   Arbeitsbereich, in den Verba die Transkript-Ordner legt (Abschnitt
+   „Transkripte"). Ein hier geändertes Datenverzeichnis wird beim nächsten
+   Start bezogen — siehe „Einstellungen".
 3. **Transkription** — Standard-Modell, Modellverzeichnis, Gerät und
    Aufnahmesprache (Abschnitt „Whisper-Modelle").
 4. **Sprachmodell** — optional: aus, lokal oder OpenAI-kompatibler Endpunkt
@@ -640,8 +642,26 @@ steht die Bereichsliste als Seitenleiste neben dem gewählten Bereich.
   (herunterladen/löschen) im selben Bereich
 - **KI-Aufbereitung (LLM):** Aus / Lokal / Endpunkt, GGUF-Verzeichnis
   (Abschnitt „Sprachmodell (LLM) einrichten")
-- **Speicherorte & Protokolle:** Workspace-Verzeichnis, Server-Port, Log-Level
-  und Aufbewahrungsdauer (ältere Logs werden automatisch gelöscht)
+- **Speicherorte & Protokolle:** Datenverzeichnis, Workspace-Verzeichnis,
+  Server-Port, Log-Level und Aufbewahrungsdauer (ältere Logs werden
+  automatisch gelöscht). Das **Datenverzeichnis** enthält Datenbank und
+  Protokolle — also den Teil, der in eine Sicherung gehört; ein Pfad auf ein
+  gesichertes Laufwerk ist genau der Zweck. Einstellungen, das
+  heruntergeladene ffmpeg und die Modellverzeichnisse bleiben beim Programm,
+  weil sie sich jederzeit neu beschaffen lassen. Ein neuer Pfad wird
+  gespeichert wie jede andere Einstellung, ausgeführt wird der Umzug aber
+  erst beim **nächsten Start**: Datenbank und Protokolldateien sind im
+  laufenden Betrieb geöffnet und lassen sich nicht darunter wegziehen. Bis
+  dahin steht unter dem Feld, wohin der Umzug geht, auf der Startseite bleibt
+  ein Hinweis stehen, und alles arbeitet unverändert am bisherigen Ort weiter.
+  Liegen die Transkript-Ordner an ihrem Standardplatz im Datenverzeichnis,
+  wandern sie mit.
+- **Platzbedarf der Datenbank:** Beim Löschen eines Transkripts gibt SQLite die
+  Seiten frei, verkleinert die Datei aber nicht — der Platz wird beim nächsten
+  Schreiben wiederverwendet. Ist genug davon frei geworden, verdichtet Verba
+  die Datenbank von selbst: als Hintergrundschritt „Datenbank verdichten" nach
+  dem Löschen und beim nächsten Start. Kleine Reste bleiben liegen, weil ein
+  vollständiges Neuschreiben der Datei dafür nicht lohnt.
 - **Suche:** Index-Status, Embedding-Modell (Auswahlliste),
   Modellverzeichnis, Index neu aufbauen
 - **API:** Schlüssel für die öffentliche Transkriptions-API (Abschnitt

@@ -1,12 +1,24 @@
-"""Application settings, persisted as JSON in the data directory.
+"""Application settings, persisted as JSON in the base directory.
 
-The data directory is resolved in this order:
+The *base* directory is resolved in this order:
 1. VERBA_DATA_DIR environment variable (also used by tests)
 2. TRANSKRIPTOR_DATA_DIR (legacy fallback for pre-rename installations)
 3. <project root>/data
 
-All other configurable paths (models, workspaces, tools) default to
-subdirectories of the data directory but can be overridden in the settings.
+It belongs to the installation and never moves: settings.json (the file that
+says where everything else goes), `site-packages` (frozen builds put it on
+sys.path at startup), the downloaded ffmpeg and the model directories — all
+re-downloadable, none of it worth a backup.
+
+The *data* directory holds what is: the database and the logs. It defaults to
+the base directory and can be pointed at a backed-up drive
+(`general.data_dir`). Because the database and the log files are open while
+the app runs, a change only takes effect at the next start — `data_dir()`
+therefore answers with `general.data_dir_active`, which is where the data
+really is, and `datamove.py` reconciles the two at startup.
+
+The workspaces, the whisper models, the embeddings and the GGUF files each
+have their own setting on top of that.
 """
 
 from __future__ import annotations
@@ -54,11 +66,13 @@ def _frozen_data_dir() -> Path:
 
 
 def runtime_site_packages() -> Path:
-    return data_dir() / "site-packages"
+    # deliberately the *base* directory: this one is on sys.path while the
+    # process runs, so it must not travel with a relocated data directory
+    return base_data_dir() / "site-packages"
 
 
 def site_packages_repair_marker() -> Path:
-    return data_dir() / "site-packages-repair"
+    return base_data_dir() / "site-packages-repair"
 
 
 def mark_site_packages_repair(names: list[str]) -> None:
@@ -143,7 +157,7 @@ class LoggingSettings(BaseModel):
 
 class WhisperSettings(BaseModel):
     model: str = "small"
-    models_dir: str = ""  # empty = <data>/models; subfolders are scanned for models
+    models_dir: str = ""  # empty = <base>/models; subfolders are scanned for models
     device: Literal["auto", "cpu", "cuda"] = "auto"
     compute_type: Literal["auto", "int8", "int8_float16", "float16", "float32"] = "auto"
     language: str = ""  # empty = automatic detection; otherwise ISO code like "de"
@@ -165,7 +179,7 @@ class LLMSettings(BaseModel):
     # answer itself needs, which is where EmptyAnswer/TruncatedAnswer come
     # from. Hence "off" by default; "auto" leaves the model alone.
     reasoning: Literal["off", "low", "auto"] = "off"
-    # empty = <data>/models/llm; GGUF files already lying in the configured
+    # empty = <base>/models/llm; GGUF files already lying in the configured
     # directory are used from there, never copied or downloaded again
     models_dir: str = ""
 
@@ -280,11 +294,19 @@ class SearchSettings(BaseModel):
 class GeneralSettings(BaseModel):
     ui_language: str = "de"
     workspaces_dir: str = ""  # empty = <project root>/workspaces
+    # Where the database and the logs live — the part worth putting on a
+    # backed-up drive. Empty = the base directory. Changing it does not move
+    # anything right away: `data_dir_active` says where the data is *now*, and
+    # the next start reconciles the two (see datamove.py).
+    data_dir: str = ""
+    # Backend-owned, like auth.enabled: written only after a move has actually
+    # happened, never by the settings form.
+    data_dir_active: str = ""
     browse_roots: list[str] = Field(default_factory=list)  # empty = user home dir only
 
-    @field_validator("workspaces_dir")
+    @field_validator("workspaces_dir", "data_dir", "data_dir_active")
     @classmethod
-    def _absolute_workspaces_dir(cls, value: str) -> str:
+    def _absolute_dir(cls, value: str) -> str:
         return normalize_dir(value)
 
 
@@ -312,7 +334,7 @@ class AuthSettings(BaseModel):
 
 class SetupState(BaseModel):
     completed: bool = False
-    ffmpeg_path: str = ""  # filled when ffmpeg was auto-installed to <data>/tools
+    ffmpeg_path: str = ""  # filled when ffmpeg was auto-installed to <base>/tools
 
 
 class Settings(BaseModel):
@@ -331,7 +353,12 @@ _cached: Settings | None = None
 _cached_data_dir: Path | None = None
 
 
-def data_dir() -> Path:
+def base_data_dir() -> Path:
+    """The installation's own directory: settings.json, site-packages, tools
+    and the downloaded models.
+
+    Not necessarily where the database and the logs are — see data_dir().
+    """
     env = os.environ.get("VERBA_DATA_DIR") or os.environ.get("TRANSKRIPTOR_DATA_DIR")
     if env:
         path = Path(env)
@@ -343,20 +370,50 @@ def data_dir() -> Path:
     return path
 
 
+def data_dir(settings: Settings | None = None) -> Path:
+    """Where the database and the logs are *right now*.
+
+    This is `general.data_dir_active`, not `general.data_dir`: a directory
+    chosen in the settings form only takes effect at the next start, because
+    the database and the log files are open while the app runs. Until then
+    everything keeps reading and writing where the data actually is.
+    """
+    settings = settings or get_settings()
+    active = settings.general.data_dir_active
+    path = Path(active) if active else base_data_dir()
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def configured_data_dir(settings: Settings | None = None) -> Path:
+    """Where the data is meant to be — the next start moves it there."""
+    settings = settings or get_settings()
+    configured = settings.general.data_dir
+    return Path(configured) if configured else base_data_dir()
+
+
 def settings_path() -> Path:
-    return data_dir() / "settings.json"
+    # deliberately the base directory: this file is what says where the data
+    # directory is, so it cannot live inside it
+    return base_data_dir() / "settings.json"
 
 
 def models_dir(settings: Settings) -> Path:
     path = (
-        Path(settings.whisper.models_dir) if settings.whisper.models_dir else data_dir() / "models"
+        Path(settings.whisper.models_dir)
+        if settings.whisper.models_dir
+        else base_data_dir() / "models"
     )
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 def default_workspaces_dir() -> Path:
-    """Where projects live when no directory is configured."""
+    """Where projects live when no directory is configured.
+
+    Follows the data directory in an installed build — transcript folders are
+    the bulk of what a backup is for, so they belong next to the database.
+    """
     return data_dir() / "workspaces" if FROZEN else PROJECT_ROOT / "workspaces"
 
 
@@ -374,7 +431,7 @@ def workspaces_dir(settings: Settings) -> Path:
 
 
 def default_embeddings_dir() -> Path:
-    return data_dir() / "models" / "embeddings"
+    return base_data_dir() / "models" / "embeddings"
 
 
 def embeddings_dir(settings: Settings | None = None) -> Path:
@@ -392,7 +449,7 @@ def embeddings_dir(settings: Settings | None = None) -> Path:
 
 
 def default_llm_models_dir() -> Path:
-    return data_dir() / "models" / "llm"
+    return base_data_dir() / "models" / "llm"
 
 
 def llm_models_dir(settings: Settings | None = None) -> Path:
@@ -410,7 +467,8 @@ def llm_models_dir(settings: Settings | None = None) -> Path:
 
 
 def tools_dir() -> Path:
-    path = data_dir() / "tools"
+    # ffmpeg is re-downloadable installation state, not data worth backing up
+    path = base_data_dir() / "tools"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -435,7 +493,9 @@ def get_settings() -> Settings:
     """Return the cached settings, reloading if the data dir changed (tests)."""
     global _cached, _cached_data_dir
     with _lock:
-        current_dir = data_dir()
+        # keyed on the base directory: that is what decides which
+        # settings.json is read, and it only changes in tests
+        current_dir = base_data_dir()
         if _cached is None or _cached_data_dir != current_dir:
             _cached = _load_from_disk()
             _cached_data_dir = current_dir
@@ -447,7 +507,7 @@ def save_settings(settings: Settings) -> None:
     with _lock:
         settings_path().write_text(settings.model_dump_json(indent=2), encoding="utf-8")
         _cached = settings
-        _cached_data_dir = data_dir()
+        _cached_data_dir = base_data_dir()
 
 
 def reset_cache() -> None:

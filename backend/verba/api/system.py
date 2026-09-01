@@ -7,7 +7,7 @@ import threading
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from .. import __version__, config, lifecycle, setup_check
+from .. import __version__, config, datamove, lifecycle, setup_check
 from .deps import AdminUser
 
 router = APIRouter(prefix="/api/system", tags=["system"])
@@ -17,11 +17,22 @@ class SetupRunRequest(BaseModel):
     include_optional: bool = True
 
 
+def _data_move_pending() -> bool:
+    """Whether a chosen data directory is still waiting for a restart.
+
+    A boolean, not the path: the dashboard only needs to know that it has to
+    remind, and the location is an administrator's business.
+    """
+    settings = config.get_settings()
+    return not datamove.same_path(config.configured_data_dir(settings), config.data_dir(settings))
+
+
 @router.get("/status")
 def get_status() -> dict:
     status = setup_check.system_status()
     status["version"] = __version__
     status["desktop_mode"] = lifecycle.desktop_mode()
+    status["data_move_pending"] = _data_move_pending()
     return status
 
 
@@ -63,6 +74,7 @@ def complete_setup(user: dict = AdminUser) -> dict:
     status = setup_check.system_status()
     status["version"] = __version__
     status["desktop_mode"] = lifecycle.desktop_mode()
+    status["data_move_pending"] = _data_move_pending()
     return status
 
 

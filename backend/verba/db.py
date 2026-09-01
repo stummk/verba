@@ -215,6 +215,63 @@ def init_db() -> None:
         _migrate(conn)
 
 
+# ── compaction ────────────────────────────────────────────────────────
+#
+# Deleting a transcript does not shrink the file: SQLite keeps the freed pages
+# on a freelist and reuses them for the next insert. That is the right default
+# — but after a large deletion (a project with its segments, chunks and
+# embeddings) the file can stay several times bigger than its contents, which
+# is exactly what someone looking at their backup notices.
+#
+# VACUUM rewrites the whole file without the free pages, so it costs a full
+# read and write of the database and needs the same amount of temporary disk
+# space. Both thresholds have to be met before that is worth doing: a fixed
+# floor (rewriting a small file to save a megabyte is pointless) and a share of
+# the file (a large database with a little slack will refill it anyway).
+VACUUM_MIN_BYTES = 16 * 1024 * 1024
+VACUUM_MIN_SHARE = 0.2
+
+
+def space_stats() -> dict[str, int]:
+    """How much of the database file is in use, and how much is free space."""
+    with get_conn() as conn:
+        page_size = conn.execute("PRAGMA page_size").fetchone()[0]
+        pages = conn.execute("PRAGMA page_count").fetchone()[0]
+        free_pages = conn.execute("PRAGMA freelist_count").fetchone()[0]
+    return {"total": page_size * pages, "free": page_size * free_pages}
+
+
+def vacuum_worthwhile() -> bool:
+    stats = space_stats()
+    if stats["total"] <= 0:
+        return False
+    return stats["free"] >= VACUUM_MIN_BYTES and stats["free"] / stats["total"] >= VACUUM_MIN_SHARE
+
+
+def vacuum() -> int:
+    """Rewrite the database without its free pages; returns the bytes reclaimed.
+
+    Own connection in autocommit mode: VACUUM cannot run inside a transaction.
+    The checkpoint afterwards truncates the write-ahead log, which would
+    otherwise keep the reclaimed space occupied next to the database file.
+    """
+    path = Path(db_path())
+    before = path.stat().st_size if path.exists() else 0
+    conn = sqlite3.connect(db_path(), timeout=120, isolation_level=None)
+    try:
+        conn.execute("VACUUM")
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        conn.close()
+    after = path.stat().st_size if path.exists() else 0
+    return max(0, before - after)
+
+
+def vacuum_if_needed() -> int:
+    """Compact the database when enough of it has become free space."""
+    return vacuum() if vacuum_worthwhile() else 0
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
     """Additive migrations for databases created by older versions."""
 

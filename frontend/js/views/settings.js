@@ -220,6 +220,14 @@ export async function render(view) {
         <div id="storage-jobs" hidden></div>
         <div class="form-grid">
           <div>
+            <label for="general-data-dir">${t("settings.dataDir")}</label>
+            <input id="general-data-dir" value="${settings.general.data_dir}">
+            <p class="hint" id="data-dir-hint"></p>
+            <p class="hint">${t("settings.dataDirHint")}</p>
+            <p class="hint">${t("settings.dataDirRestartHint")}</p>
+            <p class="warning-box" id="data-dir-pending" hidden></p>
+          </div>
+          <div>
             <label for="general-workspaces">${t("settings.workspacesDir")}</label>
             <input id="general-workspaces" value="${settings.general.workspaces_dir}"
                    placeholder="${t("settings.workspacesDirPlaceholder")}">
@@ -440,6 +448,7 @@ export async function render(view) {
       general: {
         ...settings.general,
         ui_language: el("ui-language").value,
+        data_dir: el("general-data-dir").value.trim(),
         workspaces_dir: el("general-workspaces").value.trim(),
       },
       server: { port: Number(el("server-port").value) },
@@ -460,8 +469,21 @@ export async function render(view) {
         toast(t("settings.workspaceMoveStarted", { count: saved.workspace_move.projects }));
       }
       if (saved.reindex_started) toast(t("settings.reindexStarted"));
-      // keep the settings only: the two job flags are not part of them
-      const { workspace_move: _move, reindex_started: _reindex, ...stored } = saved;
+      // the data directory is the one change that waits for a restart: say so
+      // here, and refresh the shell's status so the reminder on the start page
+      // appears right away instead of only after the next page load
+      if (saved.data_move) {
+        toast(t("settings.dataDirStaged"));
+        const status = await api.systemStatus().catch(() => null);
+        if (status) window.dispatchEvent(new CustomEvent("system:status", { detail: status }));
+      }
+      // keep the settings only: the side-effect flags are not part of them
+      const {
+        workspace_move: _move,
+        data_move: _dataMove,
+        reindex_started: _reindex,
+        ...stored
+      } = saved;
       settings = stored;
       await Promise.all([
         refreshPaths(),
@@ -827,6 +849,21 @@ async function refreshEmbeddingModels(selected) {
   }
 }
 
+// The data directory is answered by /paths, not by the settings document —
+// the field, the "currently" line and the staged-move notice all come from
+// there, so they stay in step after a move has been scheduled or cancelled.
+function applyDataDir(paths) {
+  const field = el("general-data-dir");
+  if (!field) return;
+  field.placeholder = paths.data_default ?? "";
+  el("data-dir-hint").textContent = t("settings.dataDirCurrent", { path: paths.data_dir });
+  const pending = el("data-dir-pending");
+  pending.hidden = !paths.data_pending;
+  pending.textContent = paths.data_pending
+    ? t("settings.dataDirPending", { path: paths.data_pending })
+    : "";
+}
+
 async function refreshPaths() {
   const host = el("workspaces-hint");
   if (!host) return;
@@ -840,6 +877,7 @@ async function refreshPaths() {
     if (llmDir) {
       llmDir.textContent = t("settings.pathInUse", { path: paths.llm_models_dir });
     }
+    applyDataDir(paths);
   } catch {
     host.textContent = "";
   }

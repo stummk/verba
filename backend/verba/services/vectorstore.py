@@ -34,7 +34,7 @@ from typing import Any
 from .. import config, db
 from ..core.jobs import JobCancelled, job_queue
 from ..events import hub
-from . import chunking, hardware, transcripts, workspace
+from . import chunking, hardware, maintenance, transcripts, workspace
 
 logger = logging.getLogger(__name__)
 
@@ -638,3 +638,6 @@ def handle_reindex_job(
         )
         total_chunks += index_file(file_id)
     report(100, f"Neu indiziert: {len(file_ids)} Datei(en), {total_chunks} Abschnitte")
+    # the old index was dropped wholesale — a differently sized model can leave
+    # a great deal of the file unused
+    maintenance.request_vacuum(job.get("session_id", ""))

@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from . import __version__, config, db, lifecycle
+from . import __version__, config, datamove, db, lifecycle
 from .api import apikeys as apikeys_api
 from .api import auth as auth_api
 from .api import docs as docs_api
@@ -34,6 +34,7 @@ from .events import hub
 from .logging_setup import setup_logging
 from .services import auth, llamacpp
 from .services.audio import handle_audio_edit_job
+from .services.maintenance import handle_vacuum_job
 from .services.pdf import handle_export_job
 from .services.pipeline import handle_llm_process_job
 from .services.project_types import seed_builtin_types
@@ -51,6 +52,12 @@ FRONTEND_DIR = config.bundle_root() / "frontend"
 async def _lifespan(app: FastAPI):
     hub.bind_loop(asyncio.get_running_loop())
     db.init_db()
+    # nothing else is touching the database yet, so this is the one moment a
+    # rewrite is free of lock contention — it only runs when a previous session
+    # left enough free space behind to be worth it
+    reclaimed = db.vacuum_if_needed()
+    if reclaimed:
+        logger.info("database compacted at startup, %.1f MiB reclaimed", reclaimed / 1048576)
     seed_builtin_types()
     job_queue.register("transcribe", handle_transcribe_job)
     job_queue.register("transcribe_range", handle_transcribe_range_job)
@@ -61,6 +68,7 @@ async def _lifespan(app: FastAPI):
     job_queue.register("reindex_search", handle_reindex_job)
     job_queue.register("api_transcribe", handle_api_transcribe_job)
     job_queue.register("move_workspace", handle_move_workspace_job)
+    job_queue.register("vacuum", handle_vacuum_job)
     job_queue.start()
     # run.py records the bound address here, so the log line answers "which
     # port is it on?" for a service started long ago
@@ -77,6 +85,11 @@ async def _lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    # a data directory chosen in the settings takes effect here, before the
+    # first database connection. run.py already does this before printing the
+    # address block; repeated because the app is also started directly
+    # (uvicorn, tests, an ASGI server) and the call is idempotent
+    datamove.apply_pending_move()
     settings = config.get_settings()
     setup_logging(settings)
 

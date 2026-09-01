@@ -22,6 +22,7 @@ from typing import Any, BinaryIO
 from .. import config, db
 from ..core.jobs import JobCancelled
 from ..events import hub
+from . import maintenance
 from .media import is_audio_file, probe_duration
 from .metadata import extract_metadata, format_display_date
 
@@ -223,6 +224,9 @@ def delete_project(project_id: int, delete_files: bool = True) -> None:
         conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
     if delete_files:
         shutil.rmtree(project_dir(project), ignore_errors=True)
+    # segments, chunks and embeddings of a whole project leave a lot of free
+    # space behind — give the file a chance to shrink back
+    maintenance.request_vacuum()
 
 
 # ── files ─────────────────────────────────────────────────────────────
@@ -393,6 +397,7 @@ def delete_file(file_id: int) -> None:
         conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
     if path.exists():
         path.unlink()
+    maintenance.request_vacuum()
 
 
 def set_file_status(

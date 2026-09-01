@@ -158,6 +158,19 @@ class JobQueue:
             row = conn.execute(f"{JOB_SELECT} WHERE j.id = ?", (job_id,)).fetchone()
         return db.row_to_dict(row)
 
+    def has_active(self, kind: str) -> bool:
+        """Whether a job of that kind is already queued or running.
+
+        For work that is pointless to schedule twice — a second compaction
+        behind the first would find nothing left to do.
+        """
+        with db.get_conn() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM jobs WHERE kind = ? AND status IN ('queued', 'running') LIMIT 1",
+                (kind,),
+            ).fetchone()
+        return row is not None
+
     def active_jobs_for_file(self, kind: str, file_id: int) -> list[dict[str, Any]]:
         """Every queued or running job of that kind for the file, in queue order.
 

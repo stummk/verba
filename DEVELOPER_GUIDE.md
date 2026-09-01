@@ -159,6 +159,17 @@ Die Laufzeitdaten liegen während der Entwicklung unter `data/` und sind vom
 Quellcode getrennt. Tests überschreiben diesen Pfad über `VERBA_DATA_DIR` und
 verwenden niemals die echte Entwicklungsdatenbank.
 
+Dieses Verzeichnis ist das *Basisverzeichnis* und gehört zur Installation:
+`settings.json`, `site-packages` (liegt zur Laufzeit auf `sys.path`), das
+heruntergeladene ffmpeg und die Modellverzeichnisse — alles nachladbar.
+
+Das *Datenverzeichnis* enthält Datenbank und Protokolle und ist über
+`general.data_dir` konfigurierbar. Weil beide im Betrieb geöffnet sind, wirkt
+eine Änderung erst beim nächsten Start: `config.data_dir()` antwortet mit
+`general.data_dir_active` (wo die Daten wirklich liegen), und
+`datamove.apply_pending_move()` gleicht beide beim Start ab — vor der ersten
+Datenbankverbindung und vor dem Logging.
+
 ### 7. Tests und Codequalität ausführen
 
 Mit aktivierter `.venv`:

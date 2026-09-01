@@ -39,6 +39,7 @@ export async function render(view, systemStatus) {
   view.replaceChildren(html`
     <h1>${t("dashboard.title")}</h1>
     <div id="setup-hint"></div>
+    <div id="restart-hint"></div>
     <div id="project-list"></div>
     <dialog id="create-dialog">
       <h2>${t("dashboard.create")}</h2>
@@ -120,6 +121,16 @@ export async function render(view, systemStatus) {
         <p><strong>${t("dashboard.setupHintTitle")}</strong></p>
         <p class="muted small">${t("dashboard.setupHintText")}</p>
         <p><a class="btn tonal" href="#/setup">${t("dashboard.setupHintAction")}</a></p>
+      </div>
+    `);
+  }
+
+  // a new data directory only takes effect at the next start — the reminder
+  // stays until it has, so nobody wonders why the path did not change
+  if (systemStatus?.data_move_pending) {
+    el("restart-hint").replaceChildren(html`
+      <div class="card">
+        <p class="warning-box">${t("dashboard.restartHint")}</p>
       </div>
     `);
   }

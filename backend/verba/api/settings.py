@@ -7,6 +7,11 @@ Two settings have consequences beyond the file they are stored in, so PUT
 acts on them: a new embedding model invalidates every stored vector (full
 reindex), and a new workspaces directory has to take the existing project
 folders with it (move job). Both are reported back in the response.
+
+A third has a delay built in: a new data directory is validated here but only
+moved at the next start, because the database and the logs are open while the
+app runs (see datamove.py). Until then `general.data_dir_active` keeps naming
+the location actually in use.
 """
 
 from __future__ import annotations
@@ -14,7 +19,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, ValidationError
 
-from .. import config
+from .. import config, datamove
 from ..core.jobs import job_queue
 from ..services import auth, llm, vectorstore, workspace
 from .deps import AdminUser, current_user
@@ -71,7 +76,14 @@ def get_paths(user: dict = AdminUser) -> dict:
     """
     settings = config.get_settings()
     return {
-        "data_dir": str(config.data_dir()),
+        "data_dir": str(config.data_dir(settings)),
+        "data_default": str(config.base_data_dir()),
+        # set while a move is waiting for the next start; "" the rest of the time
+        "data_pending": (
+            ""
+            if datamove.same_path(config.configured_data_dir(settings), config.data_dir(settings))
+            else str(config.configured_data_dir(settings))
+        ),
         "workspaces_dir": str(config.workspaces_root(settings)),
         "workspaces_default": str(config.default_workspaces_dir()),
         "workspaces_configured": bool(settings.general.workspaces_dir),
@@ -106,6 +118,17 @@ def update_settings(
     # unlock the whole installation
     updated.auth.enabled = current.auth.enabled
 
+    # the data directory cannot move while the app runs — validate it now and
+    # let the next start do the work; data_dir_active stays backend-owned
+    updated.general.data_dir_active = current.general.data_dir_active
+    data_move = None
+    new_data_dir = config.configured_data_dir(updated)
+    if not datamove.same_path(new_data_dir, config.data_dir(current)):
+        plan = datamove.move_plan(new_data_dir, current)
+        if plan["problems"]:
+            raise HTTPException(status_code=409, detail=" ".join(plan["problems"]))
+        data_move = {"target": str(new_data_dir), "entries": plan["entries"]}
+
     old_root = config.workspaces_root(current)
     new_root = config.workspaces_root(updated)
     move = None
@@ -134,6 +157,7 @@ def update_settings(
         job_queue.enqueue("move_workspace", payload={"root": move["root"]}, session_id=x_session_id)
 
     data = _masked(updated)
+    data["data_move"] = data_move
     data["workspace_move"] = move
     data["reindex_started"] = reindex
     return data

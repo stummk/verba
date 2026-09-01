@@ -90,6 +90,8 @@ async function advance(status) {
   } catch (error) {
     toast(error.message);
   }
+  // the data directory is the one setting the wizard cannot finish on its own
+  if (paths?.data_pending) toast(t("settings.dataDirStaged"));
   location.hash = "#/";
   // after the hash change, so the shell brings the tabs back on the new view
   if (fresh) window.dispatchEvent(new CustomEvent("system:status", { detail: fresh }));
@@ -284,12 +286,24 @@ function renderWorkspaceStep(body) {
   body.replaceChildren(html`
     <div class="card">
       <h2>${t("setup.step.workspace")}</h2>
-      <p class="muted">${t("setup.workspaceIntro")}</p>
+      <p class="muted">${t("setup.dataDirHint")}</p>
       <div class="form-grid">
+        <div>
+          <label for="wizard-data-dir">${t("settings.dataDir")}</label>
+          <input id="wizard-data-dir" value="${settings.general.data_dir}"
+                 placeholder="${paths ? paths.data_default : ""}">
+          <p class="hint">${t("settings.dataDirCurrent", {
+            path: paths ? paths.data_dir : "…",
+          })}</p>
+          <p class="hint">${t("settings.dataDirHint")}</p>
+          <p class="hint">${t("settings.dataDirRestartHint")}</p>
+          <p class="warning-box" id="wizard-data-dir-pending" hidden></p>
+        </div>
         <div>
           <label for="wizard-workspaces">${t("settings.workspacesDir")}</label>
           <input id="wizard-workspaces" value="${settings.general.workspaces_dir}"
                  placeholder="${paths ? paths.workspaces_default : ""}">
+          <p class="hint">${t("setup.workspaceIntro")}</p>
           <p class="hint">${t("setup.workspaceHint", {
             path: paths ? paths.workspaces_dir : "…",
           })}</p>
@@ -298,6 +312,18 @@ function renderWorkspaceStep(body) {
       <p class="hint">${t("setup.workspaceContents")}</p>
     </div>
   `);
+  showPendingMove();
+}
+
+// A move scheduled in this step (or in the settings) only happens at the next
+// start, so the wizard has to keep saying so — otherwise the next screen looks
+// as if the new path were already in use.
+function showPendingMove() {
+  const host = el("wizard-data-dir-pending");
+  if (!host) return;
+  const pending = paths?.data_pending;
+  host.hidden = !pending;
+  host.textContent = pending ? t("settings.dataDirPending", { path: pending }) : "";
 }
 
 // ── step 3: whisper ───────────────────────────────────────────────────
@@ -595,7 +621,11 @@ async function saveCurrentStep() {
   const payload = { ...settings };
 
   if (step === "workspace") {
-    payload.general = { ...settings.general, workspaces_dir: el("wizard-workspaces").value.trim() };
+    payload.general = {
+      ...settings.general,
+      data_dir: el("wizard-data-dir").value.trim(),
+      workspaces_dir: el("wizard-workspaces").value.trim(),
+    };
   } else if (step === "whisper") {
     payload.whisper = {
       ...settings.whisper,
@@ -630,9 +660,10 @@ async function saveCurrentStep() {
   }
 
   const saved = await api.updateSettings(payload);
-  const { workspace_move: move, reindex_started: _reindex, ...stored } = saved;
+  const { workspace_move: move, data_move: dataMove, reindex_started: _reindex, ...stored } = saved;
   settings = stored;
   paths = await api.getPaths().catch(() => paths);
+  if (dataMove) toast(t("settings.dataDirStaged"));
   if (move?.projects) {
     toast(t("settings.workspaceMoveStarted", { count: move.projects }));
   }

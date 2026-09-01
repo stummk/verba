@@ -269,6 +269,12 @@ def main() -> None:
     repair_site_packages()  # before anything imports (and locks) from there
     ensure_runtime_site_packages()
 
+    # a relocation staged in the UI happens here: no database connection, no
+    # log file and no model subprocess exists yet, so nothing is open
+    from verba.datamove import apply_pending_move
+
+    apply_pending_move()
+
     settings = get_settings()
     host = args.host or ("0.0.0.0" if args.server else "127.0.0.1")
     port = args.port or settings.server.port

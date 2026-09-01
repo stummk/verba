@@ -72,8 +72,9 @@ The first-run setup walks through everything Verba needs, in six steps:
    **Next**, **Skip this
    step** and **Set up later** are locked — they become usable again as soon as
    the installation has finished or has failed.
-2. **Workspace** — where Verba keeps the transcript folders (section
-   "Transcripts").
+2. **Storage** — the data directory (database and logs) and the workspace
+   Verba keeps the transcript folders in (section "Transcripts"). A data
+   directory changed here is used from the next start on — see "Settings".
 3. **Transcription** — default model, models directory, device and recording
    language (section "Whisper models").
 4. **Language model** — optional: off, local or an OpenAI-compatible endpoint
@@ -614,8 +615,24 @@ the selected section.
   management (download/delete) in the same section
 - **AI processing (LLM):** off / local / endpoint, GGUF directory (section
   "Setting up a language model (LLM)")
-- **Storage & logs:** workspace directory, server port, log level and
-  retention (older logs are deleted automatically)
+- **Storage & logs:** data directory, workspace directory, server port, log
+  level and retention (older logs are deleted automatically). The **data
+  directory** holds the database and the logs — the part that belongs in a
+  backup, which is exactly what pointing it at a backed-up drive is for. The
+  settings, the downloaded ffmpeg and the model directories stay with the
+  installation, because all of those can be fetched again. A new path is
+  saved like any other setting, but the move itself happens at the **next
+  start**: the database and the log files are open while the app runs and
+  cannot be pulled out from under it. Until then the line below the field
+  says where the move goes, a reminder stays on the start page, and everything
+  keeps working in the old location. Transcript folders sitting at their
+  default place inside the data directory move along with it.
+- **Database size:** deleting a transcript frees pages inside the database but
+  does not shrink the file — the space is reused by the next write. Once
+  enough of it is free, Verba compacts the database on its own: as the
+  background step "Compact database" after a deletion, and at the next start.
+  Small remainders are left alone, because rewriting the whole file for them
+  would not pay off.
 - **Search:** index status, embedding model (pick list), models directory,
   rebuild index
 - **API:** keys for the public transcription API (section "Public API")
