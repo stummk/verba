@@ -46,8 +46,15 @@ def configure_llm():
     config.save_settings(settings)
 
 
+def test_new_project_processes_automatically(done_file):
+    configure_llm()
+    assert workspace.get_project(done_file["project_id"])["auto_process"] == 1
+    assert pipeline.maybe_enqueue_auto_process(done_file["id"]) is not None
+
+
 def test_no_auto_job_when_disabled(done_file):
     configure_llm()
+    workspace.update_project(done_file["project_id"], {"auto_process": 0})
     assert pipeline.maybe_enqueue_auto_process(done_file["id"]) is None
 
 

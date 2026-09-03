@@ -69,9 +69,12 @@ def create_project(
     with db.get_conn() as conn:
         slug = _unique_slug(conn, slugify(name))
         workspace = config.workspaces_dir(settings) / slug
+        # A new project processes automatically: the cleanup after a finished
+        # transcription is what almost every project wants, and it is one click
+        # to switch off. Existing projects keep whatever they were set to.
         cursor = conn.execute(
-            "INSERT INTO projects (name, slug, workspace, type_id, owner_id, visibility) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO projects (name, slug, workspace, type_id, owner_id, visibility, "
+            "auto_process) VALUES (?, ?, ?, ?, ?, ?, 1)",
             (name, slug, str(workspace), type_id, owner_id, visibility),
         )
         project_id = cursor.lastrowid

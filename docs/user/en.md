@@ -263,8 +263,9 @@ file row — an empty result is never stored, because every PDF built from it
 would be empty as well. The icons in the file row follow the order of the
 workflow: transcribe → AI processing → editor (checking) → PDF.
 
-**Full automation:** in the transcript view you can enable **"Process
-automatically"** (optionally with a target language). Every finished
+**Full automation:** **"Process automatically"** is already switched on in the
+transcript view for every new project (optionally with a target language); one
+click switches it off again. Every finished
 transcription then triggers the cleanup — and, if set, the translation — on its
 own, without a single further click. Triggering individual steps manually
 remains possible at any time.

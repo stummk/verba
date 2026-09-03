@@ -276,8 +276,9 @@ sonst wäre auch jedes daraus gebaute PDF leer. Die Symbole der Dateizeile stehe
 in der Reihenfolge des Ablaufs: transkribieren → KI-Aufbereitung → Editor
 (Gegenprüfung) → PDF.
 
-**Vollautomatik:** In der Transkript-Ansicht lässt sich **„Automatisch aufbereiten"**
-einschalten (optional mit Zielsprache). Dann läuft nach jeder abgeschlossenen
+**Vollautomatik:** **„Automatisch aufbereiten"** ist in der Transkript-Ansicht
+bei jedem neuen Projekt bereits eingeschaltet (optional mit Zielsprache);
+ein Klick schaltet es wieder ab. Dann läuft nach jeder abgeschlossenen
 Transkription die Bereinigung — und auf Wunsch die Übersetzung — von selbst an,
 ganz ohne weiteren Klick. Manuelles Anstoßen einzelner Schritte bleibt daneben
 jederzeit möglich.
