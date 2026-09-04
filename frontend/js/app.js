@@ -202,6 +202,19 @@ function bindShell() {
     renderStatus();
   }).catch(() => {});
 
+  // A new release announces itself once the background check finds one. Only
+  // an administrator can install it, so only they are told; the reminder on
+  // the start page repeats it on every later visit.
+  ws.on("update.available", (info) => {
+    if (!isAdmin()) return;
+    // the status may have failed to load — the toast is the message either way
+    if (systemStatus) {
+      systemStatus.update_available = true;
+      systemStatus.update_version = info.version;
+    }
+    toast(t("app.updateAvailable", { version: info.version }));
+  });
+
   // browser-level offline/online transitions re-render the current view
   window.addEventListener("online", navigate);
   window.addEventListener("offline", () => {

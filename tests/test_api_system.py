@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from verba import procutil, setup_check
+from verba.services import updates
 
 
 def test_health(client):
@@ -106,6 +107,51 @@ def test_frozen_build_never_calls_ensurepip(monkeypatch):
     monkeypatch.setattr(setup_check.subprocess, "run", fail)
     monkeypatch.setattr(setup_check, "_run_child", lambda command, on_line: (0, []))
     setup_check._pip_install(["example"], "Testgruppe")
+
+
+def test_update_endpoint_reports_the_running_version(client, monkeypatch):
+    from verba import __version__
+
+    monkeypatch.setattr(updates, "check", lambda force=False: {"current": __version__})
+    response = client.get("/api/system/update")
+    assert response.status_code == 200
+    assert response.json()["current"] == __version__
+
+
+def test_update_endpoint_refreshes_only_when_asked(client, monkeypatch):
+    forced = []
+    monkeypatch.setattr(updates, "check", lambda force=False: forced.append(force) or {})
+
+    client.get("/api/system/update")
+    client.get("/api/system/update?refresh=true")
+
+    assert forced == [False, True]
+
+
+def test_starting_an_update_answers_with_the_reason_it_refused(client, monkeypatch):
+    monkeypatch.setattr(
+        updates, "start_update", lambda: {"started": False, "reason": "Verba ist aktuell."}
+    )
+    response = client.post("/api/system/update")
+    assert response.status_code == 200
+    assert response.json() == {"started": False, "reason": "Verba ist aktuell."}
+
+
+def test_the_status_carries_a_known_update_without_asking_github(client, monkeypatch):
+    """The status is read on every page load — it must never wait for a request."""
+
+    def fail(*args, **kwargs):
+        raise AssertionError("the status must not check for updates")
+
+    monkeypatch.setattr(updates, "check", fail)
+    monkeypatch.setattr(
+        updates, "summary", lambda: {"update_available": True, "update_version": "9.9.9"}
+    )
+
+    data = client.get("/api/system/status").json()
+
+    assert data["update_available"] is True
+    assert data["update_version"] == "9.9.9"
 
 
 def test_shutdown_endpoint_is_disabled_outside_desktop_mode(client, monkeypatch):

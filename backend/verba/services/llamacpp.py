@@ -33,7 +33,7 @@ import httpx
 
 from .. import config, procutil
 from ..events import hub
-from . import hardware
+from . import download, hardware
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +46,6 @@ NIGHTLY_POINTER = "nightly-tag.txt"
 #: The Windows CUDA runtime archive is the largest single download.
 MAX_BINARY_BYTES = 900 * 1024 * 1024
 MAX_MODEL_BYTES = 12 * 1024 * 1024 * 1024
-#: A multi-gigabyte download over a shaky line gets more than one chance.
-DOWNLOAD_ATTEMPTS = 4
-DOWNLOAD_RETRY_DELAY_S = 3
 SERVER_PORT = 8711
 SERVER_STARTUP_TIMEOUT_S = 180  # first start loads the model from disk
 
@@ -463,7 +460,7 @@ def start_binary_install() -> bool:
             install_binary()
         except Exception as exc:
             logger.exception("llama.cpp installation failed")
-            _install_event(0, _download_error(exc), state="error")
+            _install_event(0, download.error_message(exc), state="error")
         finally:
             _install_state["running"] = False
             with _download_lock:
@@ -500,7 +497,7 @@ def install_binary(report: Any = None) -> str:
     dest = binary_dir()
     dest.mkdir(parents=True, exist_ok=True)
     # archive plus unpacked content, and only the compressed size is known
-    _require_free_space(dest, sum(int(item.get("size", 0)) for item, _ in downloads) * 3)
+    download.require_free_space(dest, sum(int(item.get("size", 0)) for item, _ in downloads) * 3)
 
     span = 96 // len(downloads)
     for index, (item, label) in enumerate(downloads):
@@ -512,11 +509,11 @@ def install_binary(report: Any = None) -> str:
         # a leftover from an earlier run cannot be verified — only resume within this one
         archive.unlink(missing_ok=True)
         emit(base, f"Lade {label} ({size // (1024 * 1024)} MB) ...")
-        _download_file(
+        download.fetch(
             item["browser_download_url"],
             archive,
             MAX_BINARY_BYTES,
-            _phase(emit, base, span, f"Lade {label} ..."),
+            download.phase(emit, base, span, f"Lade {label} ..."),
         )
         emit(base + span, f"Entpacke {label} ...")
         _extract_archive(archive, dest)
@@ -756,90 +753,6 @@ def _linux_hint(lowered: str) -> str:
     return ""
 
 
-def _phase(emit: Any, base: int, span: int, label: str) -> Any:
-    """Map one download's 0-98 progress into its slice of the overall bar."""
-
-    def report(percent: int, message: str, state: str = "running") -> None:
-        emit(base + percent * span // 100, message or label, state)
-
-    return report
-
-
-def _require_free_space(target: Path, needed_bytes: int) -> None:
-    """Refuse up front instead of dying with a full disk mid-download."""
-    if needed_bytes <= 0:
-        return
-    try:
-        free = shutil.disk_usage(target).free
-    except OSError:  # the directory does not exist yet, or is not a real mount
-        return
-    if free < needed_bytes:
-        raise RuntimeError(
-            f"Zu wenig Speicherplatz in {target}: "
-            f"{needed_bytes // (1024 * 1024)} MB nötig, {free // (1024 * 1024)} MB frei"
-        )
-
-
-class _Interrupted(RuntimeError):
-    """A download that stopped early — worth another attempt, unlike an HTTP error."""
-
-
-def _download_file(url: str, target: Path, max_bytes: int, emit: Any) -> None:
-    """Download `url` to `target`, continuing after a dropped connection.
-
-    A GGUF model is several gigabytes, and a connection that drops at 90 %
-    used to mean starting over. Every attempt after the first asks for the
-    rest of the file (HTTP Range), so only the missing part is fetched again.
-    A refusal from the server (404, 401 …) is final and not retried.
-    """
-    target.parent.mkdir(parents=True, exist_ok=True)
-    for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
-        have = target.stat().st_size if target.exists() else 0
-        try:
-            _download_stream(url, target, max_bytes, emit, have)
-            return
-        except (_Interrupted, httpx.TransportError) as exc:
-            if attempt == DOWNLOAD_ATTEMPTS:
-                raise
-            logger.warning("download attempt %d failed (%s), continuing: %s", attempt, exc, url)
-            emit(0, f"Verbindung abgebrochen — neuer Versuch {attempt + 1}/{DOWNLOAD_ATTEMPTS} ...")
-            time.sleep(DOWNLOAD_RETRY_DELAY_S)
-
-
-def _download_stream(url: str, target: Path, max_bytes: int, emit: Any, have: int) -> None:
-    """One attempt: append to `target` from byte `have` on."""
-    headers = {"Range": f"bytes={have}-"} if have else {}
-    with httpx.stream("GET", url, follow_redirects=True, timeout=120, headers=headers) as response:
-        if response.status_code == 416:
-            # the partial file is at or past the end — it does not belong to this URL
-            target.unlink(missing_ok=True)
-            raise _Interrupted(f"Teildatei passt nicht zum Download: {url}")
-        if have and response.status_code == 200:
-            have = 0  # the server ignored the range and sends the whole file
-        response.raise_for_status()
-        remaining = int(response.headers.get("content-length", 0))
-        total = have + remaining
-        if total > max_bytes:
-            raise RuntimeError(f"Download zu groß ({total} Bytes): {url}")
-        _require_free_space(target.parent, remaining)
-        received = have
-        last_percent = -1
-        with open(target, "ab" if have else "wb") as fh:
-            for chunk in response.iter_bytes(chunk_size=1 << 18):
-                received += len(chunk)
-                if received > max_bytes:
-                    raise RuntimeError(f"Download überschreitet Größenlimit: {url}")
-                fh.write(chunk)
-                if total:
-                    percent = int(received * 98 / total)
-                    if percent != last_percent:
-                        last_percent = percent
-                        emit(percent, "")
-    if total and received != total:
-        # a connection dropping mid-stream must not leave a file that looks complete
-        raise _Interrupted(f"Download unvollständig ({received} von {total} Bytes): {url}")
-
-
 # ── GGUF model downloads ──────────────────────────────────────────────
 
 
@@ -879,14 +792,14 @@ def start_model_download(name: str) -> bool:
             emit(0, f"Lade {entry['file']} ({entry['size_mb']} MB) ...")
             # same here: a part file from an earlier process is not resumed blindly
             partial.unlink(missing_ok=True)
-            _download_file(entry["url"], partial, MAX_MODEL_BYTES, emit)
+            download.fetch(entry["url"], partial, MAX_MODEL_BYTES, emit)
             _check_gguf(partial)
             partial.replace(target)
             emit(100, f"{entry['file']} geladen: {target}", state="done")
         except Exception as exc:
             logger.exception("LLM model download failed: %s", entry["name"])
             partial.unlink(missing_ok=True)
-            emit(0, _download_error(exc), state="error")
+            emit(0, download.error_message(exc), state="error")
         finally:
             with _download_lock:
                 _downloads_running.discard(entry["name"])
@@ -901,20 +814,6 @@ def _check_gguf(path: Path) -> None:
         magic = fh.read(4)
     if magic != b"GGUF":
         raise RuntimeError("Die heruntergeladene Datei ist kein GGUF-Modell")
-
-
-def _download_error(exc: Exception) -> str:
-    """German wording for a failed download; httpx phrases its own in English."""
-    if isinstance(exc, httpx.HTTPStatusError):
-        status = exc.response.status_code
-        if status in (403, 429) and "api.github.com" in str(exc.request.url):
-            return "GitHub blockt die Abfrage gerade (Ratenlimit) — bitte später erneut versuchen"
-        if status in (401, 403):
-            return f"Download nicht möglich — die Quelle verweigert den Zugriff (HTTP {status})"
-        return f"Download nicht möglich (HTTP {status})"
-    if isinstance(exc, httpx.HTTPError):
-        return f"Download fehlgeschlagen: Verbindungsfehler ({type(exc).__name__})"
-    return str(exc)
 
 
 def delete_model(filename: str) -> None:

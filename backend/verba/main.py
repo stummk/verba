@@ -32,7 +32,7 @@ from .api.deps import PUBLIC_API_PATHS
 from .core.jobs import job_queue
 from .events import hub
 from .logging_setup import setup_logging
-from .services import auth, llamacpp
+from .services import auth, llamacpp, updates
 from .services.audio import handle_audio_edit_job
 from .services.maintenance import handle_vacuum_job
 from .services.pdf import handle_export_job
@@ -70,6 +70,9 @@ async def _lifespan(app: FastAPI):
     job_queue.register("move_workspace", handle_move_workspace_job)
     job_queue.register("vacuum", handle_vacuum_job)
     job_queue.start()
+    # a new release is announced through the event hub; a source checkout and
+    # a switched-off check start no thread at all (services/updates.py)
+    updates.start_background_checks()
     # run.py records the bound address here, so the log line answers "which
     # port is it on?" for a service started long ago
     bind = os.environ.get("VERBA_BIND", "")

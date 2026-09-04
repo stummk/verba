@@ -125,3 +125,30 @@ def test_settings_actions_are_icon_buttons():
     icons = (FRONTEND / "js" / "icons.js").read_text(encoding="utf-8")
     for name in ("help", "add"):
         assert f"  {name}:" in icons, f"icon '{name}' is missing"
+
+
+def test_the_system_card_offers_the_update_next_to_the_version():
+    """The version row carries the button — active only with a newer release."""
+    source = (FRONTEND / "js" / "views" / "settings.js").read_text(encoding="utf-8")
+    assert 'id="update-current"' in source and 'id="update-install"' in source
+    # the button starts disabled and is only enabled by an installable release
+    assert 'id="update-install" disabled' in source
+    assert "button.disabled = !info.can_install" in source
+    # what the installation does is shown while it happens
+    assert 'id="update-log"' in source and 'id="update-bar"' in source
+    assert 'on("update.progress"' in source
+    # and the automatic check is a switch, not a fact of life
+    assert 'id="update-auto"' in source
+    assert 'updates: { check_enabled: el("update-auto").checked }' in source
+
+
+def test_a_new_release_is_announced_where_the_user_looks():
+    """A toast while the app is open, a reminder on the start page afterwards."""
+    app = (FRONTEND / "js" / "app.js").read_text(encoding="utf-8")
+    assert 'ws.on("update.available"' in app
+    assert "app.updateAvailable" in app
+
+    dashboard = (FRONTEND / "js" / "views" / "dashboard.js").read_text(encoding="utf-8")
+    assert "systemStatus?.update_available" in dashboard
+    # installing belongs to an administrator, so only they are reminded
+    assert 'access.user?.role === "admin"' in dashboard

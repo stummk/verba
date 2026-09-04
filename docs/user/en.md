@@ -9,8 +9,9 @@ transcription API.
 **Ready-made packages** (project releases page):
 
 - **Windows:** `Verba-Setup-….exe` — double-click, wizard, start menu entry.
-  To update, run the newer installer over the existing installation. Data is
-  stored per user and survives updates.
+  Verba installs an update itself (see *Updating*); running the newer
+  installer over the existing installation still works. Data is stored per
+  user and survives updates.
 - **Linux desktop:** `Verba-….AppImage` — make executable and run.
 - **Linux server:** unpack `verba-server-….zip` and run
   `sudo ./deploy/install.sh` — sets up the systemd service and autostart;
@@ -59,6 +60,40 @@ Verba is a **PWA**: the browser can "install" the app (icon in the address bar
 or "Add to home screen"), after which it feels like a standalone app. The
 interface also loads without a connection; as soon as the server is reachable
 again, everything resumes automatically.
+
+## Updating {#updates}
+
+Verba looks for a newer version once a day and then says so: as a short
+message while the app is open, and as a reminder on the start page. Only an
+administrator can install it.
+
+**Settings → System** shows the running version at the top. If a newer one
+exists, the button next to it is active and reads "Update to 0.1.2"; if the
+running version is the newest, it stays inactive. The button with the circular
+arrow asks right away instead of waiting for the daily check.
+
+One click downloads the package that belongs to this installation and installs
+it. What happens is written line by line into the update log below the button:
+download, verification, installation, restart. The log survives the restart, so
+it is still there to say what happened.
+
+- **Windows:** the installer runs without a wizard. Windows asks for
+  permission once — that is the only click left. Verba then closes, the
+  installer replaces the files and starts Verba again.
+- **Linux desktop:** the running AppImage file is replaced and relaunched. The
+  previous version stays next to it as `….AppImage.previous`.
+- **Linux server:** Verba updates the dependencies, replaces the application
+  files and restarts the service. Database, logs, workspaces and settings are
+  untouched; the replaced files are kept as a backup under
+  `<data>/tools/updates/`. If Verba does not run as a service, the log ends by
+  saying that a restart is needed.
+- **Source installation:** `git pull` updates this one. The button stays
+  inactive and names the reason.
+
+The check asks GitHub for the newest release. If that is not wanted, switch
+**Look for new versions automatically** off in Settings → System; no request
+then leaves the machine for it, and updates go through the project's releases
+page.
 
 ## First-run setup {#first-run}
 

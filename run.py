@@ -310,6 +310,14 @@ def main() -> None:
     # the IPv4 and IPv6 loopback simultaneously
     server.run(sockets=sockets)
 
+    # An update installed while this process was serving asks for the new
+    # version to be started. It happens here and not in the request that
+    # installed it, because only now is the port free and nothing of the old
+    # version is running any more (services/updates.py).
+    from verba.services import updates
+
+    updates.finish_pending_restart()
+
 
 if __name__ == "__main__":
     main()

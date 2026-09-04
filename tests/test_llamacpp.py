@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import http.server
 import tarfile
-import threading
 import time
 import zipfile
 from pathlib import Path
@@ -342,96 +340,6 @@ def test_a_loader_failure_is_explained_in_german(monkeypatch):
 def test_a_missing_dll_is_named(monkeypatch):
     monkeypatch.setattr(llamacpp.platform, "system", lambda: "Windows")
     assert "DLL" in llamacpp._loader_failure(0xC0000135, "")
-
-
-# ── downloads ─────────────────────────────────────────────────────────
-
-
-class _RangeHandler(http.server.BaseHTTPRequestHandler):
-    """Serves one payload, understands Range, and can drop the first attempt."""
-
-    payload = b""
-    drop_first = False
-    ranges: list[str] = []
-
-    def do_GET(self) -> None:  # noqa: N802 - http.server's naming
-        cls = type(self)
-        header = self.headers.get("Range", "")
-        cls.ranges.append(header)
-        start = int(header.split("=")[1].split("-")[0]) if header else 0
-        if start >= len(cls.payload):
-            self.send_response(416)
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-            return
-        body = cls.payload[start:]
-        if start:
-            self.send_response(206)
-            self.send_header(
-                "Content-Range",
-                f"bytes {start}-{len(cls.payload) - 1}/{len(cls.payload)}",
-            )
-        else:
-            self.send_response(200)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        if cls.drop_first and len(cls.ranges) == 1:
-            self.wfile.write(body[: len(body) // 2])  # the connection closes short
-            return
-        self.wfile.write(body)
-
-    def log_message(self, *args: object) -> None:
-        pass
-
-
-@pytest.fixture
-def http_source(monkeypatch):
-    """A local HTTP server plus the knobs these tests turn."""
-    monkeypatch.setattr(llamacpp, "DOWNLOAD_RETRY_DELAY_S", 0)
-    _RangeHandler.payload = b""
-    _RangeHandler.drop_first = False
-    _RangeHandler.ranges = []
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _RangeHandler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    try:
-        yield SimpleNamespace(
-            url=f"http://127.0.0.1:{server.server_address[1]}/file",
-            handler=_RangeHandler,
-        )
-    finally:
-        server.shutdown()
-        server.server_close()
-
-
-def test_a_dropped_download_continues_where_it_stopped(http_source, tmp_path):
-    """A model is gigabytes — a dropped connection must not restart the download."""
-    # more than one read buffer, so half of it really is on disk when it drops
-    http_source.handler.payload = bytes(range(256)) * 4000
-    http_source.handler.drop_first = True
-    target = tmp_path / "model.part"
-
-    llamacpp._download_file(http_source.url, target, llamacpp.MAX_MODEL_BYTES, lambda *a: None)
-
-    assert target.read_bytes() == http_source.handler.payload
-    assert http_source.handler.ranges[0] == ""
-    assert http_source.handler.ranges[1].startswith("bytes=")  # only the rest was fetched
-
-
-def test_a_download_over_the_limit_is_refused(http_source, tmp_path):
-    http_source.handler.payload = b"x" * 5000
-    with pytest.raises(RuntimeError, match="zu groß"):
-        llamacpp._download_file(http_source.url, tmp_path / "f", 100, lambda *a: None)
-
-
-def test_a_stale_part_file_that_is_too_long_is_dropped(http_source, tmp_path):
-    """The server answers 416 — the leftover cannot belong to this download."""
-    http_source.handler.payload = b"y" * 1000
-    target = tmp_path / "f.part"
-    target.write_bytes(b"z" * 4000)
-
-    llamacpp._download_file(http_source.url, target, llamacpp.MAX_MODEL_BYTES, lambda *a: None)
-
-    assert target.read_bytes() == http_source.handler.payload
 
 
 def _wait_for(condition, timeout: float = 10.0) -> bool:

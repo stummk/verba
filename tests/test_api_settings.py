@@ -25,6 +25,18 @@ def test_update_settings_persists(client):
     assert config.get_settings().logging.retention_days == 7
 
 
+def test_the_update_check_can_be_switched_off_in_the_settings(client):
+    """The only setting that reaches out to the internet stays the user's call."""
+    data = client.get("/api/settings").json()
+    assert data["updates"]["check_enabled"] is True
+
+    data["updates"]["check_enabled"] = False
+    assert client.put("/api/settings", json=data).status_code == 200
+
+    config.reset_cache()
+    assert config.get_settings().updates.check_enabled is False
+
+
 def test_update_settings_rejects_invalid_values(client):
     data = client.get("/api/settings").json()
     data["logging"]["retention_days"] = -5

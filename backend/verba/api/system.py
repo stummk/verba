@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from .. import __version__, config, datamove, lifecycle, setup_check
+from ..services import updates
 from .deps import AdminUser
 
 router = APIRouter(prefix="/api/system", tags=["system"])
@@ -27,13 +28,20 @@ def _data_move_pending() -> bool:
     return not datamove.same_path(config.configured_data_dir(settings), config.data_dir(settings))
 
 
-@router.get("/status")
-def get_status() -> dict:
+def _status() -> dict:
     status = setup_check.system_status()
     status["version"] = __version__
     status["desktop_mode"] = lifecycle.desktop_mode()
     status["data_move_pending"] = _data_move_pending()
+    # from the last check only — the status is read on every page load and
+    # must never wait for GitHub
+    status.update(updates.summary())
     return status
+
+
+@router.get("/status")
+def get_status() -> dict:
+    return _status()
 
 
 @router.get("/info")
@@ -71,11 +79,23 @@ def complete_setup(user: dict = AdminUser) -> dict:
     settings = config.get_settings()
     settings.setup.completed = True
     config.save_settings(settings)
-    status = setup_check.system_status()
-    status["version"] = __version__
-    status["desktop_mode"] = lifecycle.desktop_mode()
-    status["data_move_pending"] = _data_move_pending()
-    return status
+    return _status()
+
+
+@router.get("/update")
+def get_update(refresh: bool = False, user: dict = AdminUser) -> dict:
+    """Version in use, newest release, and the state of a running update.
+
+    `refresh` asks GitHub again instead of using the cached answer — that is
+    what the button next to the version does.
+    """
+    return updates.check(force=refresh)
+
+
+@router.post("/update")
+def start_update(user: dict = AdminUser) -> dict:
+    """Download and install the newest release; progress arrives via WebSocket."""
+    return updates.start_update()
 
 
 @router.post("/shutdown")

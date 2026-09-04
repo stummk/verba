@@ -112,7 +112,16 @@ python -m ruff format --check backend/ tests/ run.py
     guide: section ranking, character budget, budget halving on a context-length
     error; only available with a configured LLM),
     public_api (public OpenAI-compatible API: key management with SHA-256 hashes,
-    synchronous job bridge `api_transcribe` in the main lane, srt/vtt/verbose_json formatting)
+    synchronous job bridge `api_transcribe` in the main lane, srt/vtt/verbose_json formatting),
+    download (the one resumable downloader: HTTP range retries, free-space
+    check, percent callback — used by llamacpp and updates),
+    updates (Verba updates itself from its own GitHub releases: the newest tag
+    against `__version__`, then the artifact this installation came from —
+    Windows installer silently, AppImage by replacing the running file, server
+    package by replacing the application files plus a pip run. The relaunch is
+    done by `run.py` after uvicorn stopped (port free): desktop installations
+    are started again, a systemd service exits with code 42. A source checkout
+    is left to git, and the whole check can be switched off)
   - `api/` — REST routers; `deps.py` holds the whole authorisation surface
     (`current_user`, `require_admin`, `project_or_403`, `file_or_403`) and returns
     a permissive result while the user management is off, so there is no second

@@ -39,6 +39,7 @@ export async function render(view, systemStatus) {
   view.replaceChildren(html`
     <h1>${t("dashboard.title")}</h1>
     <div id="setup-hint"></div>
+    <div id="update-hint"></div>
     <div id="restart-hint"></div>
     <div id="project-list"></div>
     <dialog id="create-dialog">
@@ -121,6 +122,20 @@ export async function render(view, systemStatus) {
         <p><strong>${t("dashboard.setupHintTitle")}</strong></p>
         <p class="muted small">${t("dashboard.setupHintText")}</p>
         <p><a class="btn tonal" href="#/setup">${t("dashboard.setupHintAction")}</a></p>
+      </div>
+    `);
+  }
+
+  // a new release is worth saying once per visit; installing it belongs to an
+  // administrator, so a normal user is not told about a button they lack
+  if (systemStatus?.update_available && (!access.enabled || access.user?.role === "admin")) {
+    el("update-hint").replaceChildren(html`
+      <div class="card">
+        <p><strong>${t("dashboard.updateHintTitle", {
+          version: systemStatus.update_version,
+        })}</strong></p>
+        <p class="muted small">${t("dashboard.updateHintText")}</p>
+        <p><a class="btn tonal" href="#/settings">${t("dashboard.updateHintAction")}</a></p>
       </div>
     `);
   }

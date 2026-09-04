@@ -265,6 +265,25 @@ export async function render(view) {
       <div class="card" id="card-system">
         <h2>${t("settings.system")}</h2>
         <p class="muted small">${t("system.intro")}</p>
+        <div class="model-row" id="update-row">
+          <span class="model-name" id="update-current">Verba</span>
+          <span class="spacer"></span>
+          <button type="button" class="icon-btn" id="update-check"
+                  title="${t("update.check")}" aria-label="${t("update.check")}"
+                  >${raw(iconSvg("refresh"))}</button>
+          <button type="button" class="tonal" id="update-install" disabled>
+            ${t("update.upToDate")}
+          </button>
+        </div>
+        <p class="hint" id="update-status"></p>
+        <div class="setup-log" id="update-notes" hidden></div>
+        <div class="progressbar" id="update-bar" hidden><div></div></div>
+        <p class="small muted" id="update-log-title" hidden>${t("update.logTitle")}</p>
+        <div class="setup-log" id="update-log" hidden></div>
+        <label class="checkline">
+          <input type="checkbox" id="update-auto"> ${t("settings.updateCheck")}
+        </label>
+        <p class="hint">${t("settings.updateCheckHint")}</p>
         <dl class="info-list" id="system-info"></dl>
       </div>
 
@@ -372,11 +391,33 @@ export async function render(view) {
     }
   };
 
+  el("update-auto").checked = settings.updates?.check_enabled ?? true;
+  el("update-check").onclick = async () => {
+    el("update-status").textContent = t("update.checking");
+    await refreshUpdate(true);
+  };
+  el("update-install").onclick = async () => {
+    const button = el("update-install");
+    button.disabled = true;
+    try {
+      const result = await api.startUpdate();
+      // a refused start never reaches the event stream — say so right here
+      if (!result.started) {
+        toast(result.reason);
+        button.disabled = false;
+      }
+    } catch (error) {
+      toast(error.message);
+      button.disabled = false;
+    }
+  };
+
   // independent sections, each with its own error handling — load in parallel
   await Promise.all([
     refreshModels(),
     refreshLlmSection(),
     refreshSystemInfo(),
+    refreshUpdate(),
     refreshEmbeddingModels(settings.search?.embedding_model),
     refreshSearchStatus(),
     refreshPaths(),
@@ -405,6 +446,14 @@ export async function render(view) {
       storageJobs.apply(job);
       if (job.kind === "reindex_search" && job.status === "done") await refreshSearchStatus();
       if (job.kind === "move_workspace" && job.status === "done") await refreshPaths();
+    }),
+    // the app updates itself: download, installation and — on the desktop —
+    // the restart, all reported as one growing log
+    on("update.progress", async (info) => {
+      if (!el("update-row")) return; // the view moved on
+      showUpdateProgress(info);
+      if (info.state === "error") toast(t("update.failed", { detail: info.detail }));
+      if (info.state !== "running") await refreshUpdate();
     }),
   ];
 
@@ -468,6 +517,7 @@ export async function render(view) {
         data_dir: el("general-data-dir").value.trim(),
         workspaces_dir: el("general-workspaces").value.trim(),
       },
+      updates: { check_enabled: el("update-auto").checked },
       server: { port: Number(el("server-port").value) },
       logging: {
         level: el("log-level").value,
@@ -975,6 +1025,60 @@ function showNewApiKey(key) {
   host.replaceChildren(label, value, copy);
 }
 
+// ── app updates ───────────────────────────────────────────────────────
+
+// The version row of the system card: what is running, what the newest
+// release is, and one button that downloads and installs it. What the
+// installation does arrives as `update.progress` events and is shown as a
+// log — the backend keeps it across the restart, so after the new version has
+// come up the log still says what happened (services/updates.py).
+
+async function refreshUpdate(refresh = false) {
+  if (!el("update-row")) return;
+  let info;
+  try {
+    info = await api.updateInfo(refresh);
+  } catch (error) {
+    el("update-status").textContent = t("update.checkFailed", { detail: error.message });
+    return;
+  }
+  if (!el("update-row")) return; // the request outlived the view
+
+  el("update-current").textContent = `Verba ${info.current}`;
+  const button = el("update-install");
+  button.disabled = !info.can_install || Boolean(info.install?.running);
+  button.textContent = info.available
+    ? t("update.install", { version: info.latest })
+    : t("update.upToDate");
+
+  const status = el("update-status");
+  if (info.error) status.textContent = t("update.checkFailed", { detail: info.error });
+  // the reason a kind of installation cannot update itself comes from the
+  // backend, which words it for the user
+  else if (!info.supported) status.textContent = info.reason;
+  else if (info.available) status.textContent = t("update.availableHint", { version: info.latest });
+  else if (info.checked) status.textContent = t("update.upToDateHint");
+  else status.textContent = "";
+
+  const notes = el("update-notes");
+  notes.hidden = !(info.available && info.notes);
+  notes.textContent = info.notes ?? "";
+
+  showUpdateProgress(info.install ?? {});
+}
+
+function showUpdateProgress(install) {
+  const lines = install.log ?? [];
+  const log = el("update-log");
+  const bar = el("update-bar");
+  el("update-log-title").hidden = lines.length === 0;
+  log.hidden = lines.length === 0;
+  log.textContent = lines.join("\n");
+  log.scrollTop = log.scrollHeight;
+  bar.hidden = !install.running;
+  bar.firstElementChild.style.width = `${install.percent ?? 0}%`;
+}
+
 // ── system info ───────────────────────────────────────────────────────
 
 async function refreshSystemInfo() {
@@ -989,7 +1093,7 @@ async function refreshSystemInfo() {
 
   const gb = (mb) => (mb / 1024).toFixed(1);
   const rows = [
-    [t("system.version"), `Verba ${info.version}`],
+    // the version has its own row above, together with the update button
     [t("system.os"), `${info.os} (${info.os_version})`],
     [t("system.python"), info.python],
     [t("system.cpu"), `${info.cpu_model} — ${t("system.cores", { count: info.cpu_cores })}`],

@@ -380,6 +380,18 @@ was committed last; a manual bump before tagging is not needed, and the number
 in the repository is only the value for runs from source
 (`tests/test_version_stamp.py`).
 
+Those three artifacts are also the update path of an installation:
+`backend/verba/services/updates.py` compares `__version__` against the newest
+release tag, downloads the artifact belonging to this kind of installation and
+installs it — the Inno Setup installer silently on Windows (it closes and
+restarts the app itself), the AppImage by replacing the file the `APPIMAGE`
+environment variable points at, the server package by replacing the
+application files and refreshing the virtualenv. The relaunch happens in
+`run.py` *after* uvicorn has stopped, because only then is the port free: a
+desktop installation is started again, a systemd service exits with code 42
+so the unit's `Restart=on-failure` brings the new version up. A source
+checkout is never touched — that one belongs to git.
+
 Quality gate: `.github/workflows/ci.yml` (ruff + pytest, Ubuntu and Windows)
 runs on every push.
 

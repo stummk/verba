@@ -332,6 +332,17 @@ class AuthSettings(BaseModel):
     cookie_secure: Literal["auto", "always", "never"] = "auto"
 
 
+class UpdateSettings(BaseModel):
+    """Looking for a new release of Verba itself (services/updates.py).
+
+    The only setting that reaches out to the internet on its own, so it can be
+    switched off — an installation without internet access, or one that is
+    updated by whoever administers the machine, then never asks GitHub.
+    """
+
+    check_enabled: bool = True
+
+
 class SetupState(BaseModel):
     completed: bool = False
     ffmpeg_path: str = ""  # filled when ffmpeg was auto-installed to <base>/tools
@@ -345,6 +356,7 @@ class Settings(BaseModel):
     search: SearchSettings = Field(default_factory=SearchSettings)
     general: GeneralSettings = Field(default_factory=GeneralSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
+    updates: UpdateSettings = Field(default_factory=UpdateSettings)
     setup: SetupState = Field(default_factory=SetupState)
 
 

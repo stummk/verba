@@ -24,7 +24,10 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 CloseApplications=yes
-RestartApplications=yes
+; A running Verba is closed by the installer, never restarted by it: the
+; in-app update (backend/verba/services/updates.py) runs Setup silently, and
+; the [Run] entry below is what brings the app back — exactly once.
+RestartApplications=no
 RestartIfNeededByRun=yes
 PrivilegesRequiredOverridesAllowed=dialog
 ; User data lives in %LOCALAPPDATA%\Verba and survives uninstall/updates.
@@ -51,3 +54,7 @@ Name: "{autodesktop}\Verba"; Filename: "{app}\Verba.exe"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\Verba.exe"; Description: "Verba starten"; Flags: nowait postinstall skipifsilent
+; A silent run is an update started from inside Verba: Setup closed the
+; running app to replace its files, so this brings it back on its own —
+; without anyone clicking anything.
+Filename: "{app}\Verba.exe"; Flags: nowait; Check: WizardSilent

@@ -9,8 +9,9 @@ optionaler KI-Bereinigung/Übersetzung, PDF-Export, semantischer Suche und einer
 **Fertige Pakete** (Releases-Seite des Projekts):
 
 - **Windows:** `Verba-Setup-….exe` — Doppelklick, Assistent, Startmenü-Eintrag.
-  Für ein Update einfach den neuen Installer über die bestehende Installation
-  ausführen; die Daten liegen pro Nutzer und überstehen Updates.
+  Ein Update installiert Verba selbst (siehe *Aktualisieren*); der neue
+  Installer über die bestehende Installation funktioniert weiterhin. Die Daten
+  liegen pro Nutzer und überstehen Updates.
 - **Linux-Desktop:** `Verba-….AppImage` — ausführbar machen und starten.
 - **Linux-Server:** `verba-server-….zip` entpacken und `sudo ./deploy/install.sh`
   ausführen — richtet Dienst (systemd) und Autostart ein; Vorlagen für
@@ -60,6 +61,42 @@ Verba ist eine **PWA**: Im Browser lässt sich die App „installieren" (Symbol 
 der Adressleiste bzw. „Zum Startbildschirm hinzufügen") und fühlt sich dann wie
 eine eigenständige App an. Die Oberfläche lädt auch ohne Verbindung; sobald der
 Server wieder erreichbar ist, geht es automatisch weiter.
+
+## Aktualisieren {#updates}
+
+Verba schaut einmal täglich, ob es eine neuere Version gibt, und sagt es dann:
+als kurze Meldung, solange die App offen ist, und als Hinweis auf der
+Startseite. Installieren kann das nur ein Administrator.
+
+**Einstellungen → System** zeigt oben die laufende Version. Gibt es eine
+neuere, ist der Knopf daneben aktiv und heißt „Auf 0.1.2 aktualisieren"; ist
+die laufende Version die neueste, bleibt er inaktiv. Der Knopf mit dem
+Kreispfeil fragt sofort nach, ohne auf die tägliche Prüfung zu warten.
+
+Ein Klick lädt das Paket, das zu dieser Installation gehört, und installiert
+es. Was dabei geschieht, steht Zeile für Zeile im Aktualisierungsprotokoll
+unter dem Knopf: Download, Prüfung, Installation, Neustart. Das Protokoll
+bleibt auch nach dem Neustart stehen — dort ist also nachzulesen, was
+passiert ist.
+
+- **Windows:** Der Installer läuft ohne Assistent. Windows fragt einmal nach
+  der Berechtigung — das ist der einzige Klick, der bleibt. Danach schließt
+  sich Verba, der Installer tauscht die Dateien aus und startet Verba wieder.
+- **Linux-Desktop:** Die laufende AppImage-Datei wird ersetzt und neu
+  gestartet. Die vorherige Version bleibt als `….AppImage.previous` daneben
+  liegen.
+- **Linux-Server:** Verba aktualisiert die Abhängigkeiten, ersetzt die
+  Anwendungsdateien und startet den Dienst neu. Datenbank, Protokolle,
+  Arbeitsbereiche und Einstellungen bleiben unberührt; die ersetzten Dateien
+  liegen als Sicherung unter `<Daten>/tools/updates/`. Läuft Verba nicht als
+  Dienst, sagt das Protokoll am Ende, dass ein Neustart nötig ist.
+- **Quellcode-Installation:** Hier aktualisiert `git pull`. Der Knopf bleibt
+  inaktiv und nennt den Grund.
+
+Die Suche fragt bei GitHub nach dem neuesten Release. Wer das nicht möchte,
+schaltet **Automatisch nach neuen Versionen suchen** in Einstellungen →
+System ab; dann verlässt dafür keine Anfrage den Rechner, und Updates laufen
+über die Releases-Seite des Projekts.
 
 ## Ersteinrichtung {#first-run}
 

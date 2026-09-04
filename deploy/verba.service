@@ -23,6 +23,9 @@ User=verba
 Group=verba
 WorkingDirectory=/opt/verba
 ExecStart=/opt/verba/.venv/bin/python run.py --server --port 8710
+# on-failure also covers the update: Verba exits with code 42 after it has
+# installed a new version, and systemd starts the new one (see
+# backend/verba/services/updates.py)
 Restart=on-failure
 RestartSec=5
 

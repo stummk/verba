@@ -14,6 +14,7 @@ import { renderMarkdown } from "../markdown.js";
 // all three languages, so one icon map covers them all.
 const SECTION_ICONS = {
   install: "download",
+  updates: "refresh",
   "first-run": "checklist",
   transcripts: "folder",
   types: "category",
