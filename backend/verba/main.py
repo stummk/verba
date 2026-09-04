@@ -72,6 +72,7 @@ async def _lifespan(app: FastAPI):
     job_queue.start()
     # a new release is announced through the event hub; a source checkout and
     # a switched-off check start no thread at all (services/updates.py)
+    updates.cleanup_downloads()
     updates.start_background_checks()
     # run.py records the bound address here, so the log line answers "which
     # port is it on?" for a service started long ago

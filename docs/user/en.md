@@ -67,28 +67,34 @@ Verba looks for a newer version once a day and then says so: as a short
 message while the app is open, and as a reminder on the start page. Only an
 administrator can install it.
 
-**Settings → System** shows the running version at the top. If a newer one
-exists, the button next to it is active and reads "Update to 0.1.2"; if the
-running version is the newest, it stays inactive. The button with the circular
-arrow asks right away instead of waiting for the daily check.
+**Settings → System** shows the running version at the top, with two round
+buttons next to it: the circular arrow looks for a new version right away
+instead of waiting for the daily check, and the downward arrow installs it. If
+a newer version exists that button is active and highlighted, and its tooltip
+names it ("Update to 0.1.2"); if the running version is the newest, it stays
+inactive. The line below says in words what currently holds.
 
 One click downloads the package that belongs to this installation and installs
 it. What happens is written line by line into the update log below the button:
-download, verification, installation, restart. The log survives the restart, so
-it is still there to say what happened.
+download, verification, installation, restart. The log is only there while the
+installation runs — after the restart the row above shows the new version
+number, and that is the answer.
 
 - **Windows:** the installer runs without a wizard. Windows asks for
   permission once — that is the only click left. Verba then closes, the
   installer replaces the files and starts Verba again.
-- **Linux desktop:** the running AppImage file is replaced and relaunched. The
-  previous version stays next to it as `….AppImage.previous`.
+- **Linux desktop:** the running AppImage file is replaced by the new one and
+  relaunched.
 - **Linux server:** Verba updates the dependencies, replaces the application
-  files and restarts the service. Database, logs, workspaces and settings are
-  untouched; the replaced files are kept as a backup under
-  `<data>/tools/updates/`. If Verba does not run as a service, the log ends by
-  saying that a restart is needed.
+  files and restarts the service.
 - **Source installation:** `git pull` updates this one. The button stays
   inactive and names the reason.
+
+The old version is removed on the way — it is not needed once the new one
+runs, and nothing that matters is part of it: database, logs, settings,
+workspaces and downloaded models all live outside the program files and stay
+untouched. If Verba on a server does not run as a service, the log ends by
+saying that a restart is needed.
 
 The check asks GitHub for the newest release. If that is not wanted, switch
 **Look for new versions automatically** off in Settings → System; no request

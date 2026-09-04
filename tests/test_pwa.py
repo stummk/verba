@@ -134,6 +134,13 @@ def test_the_system_card_offers_the_update_next_to_the_version():
     # the button starts disabled and is only enabled by an installable release
     assert 'id="update-install" disabled' in source
     assert "button.disabled = !info.can_install" in source
+    # both actions are icon-only, so both name themselves for tooltip and reader
+    assert 'class="icon-btn" id="update-install"' in source
+    assert 'class="icon-btn" id="update-check"' in source
+    for button in ('id="update-install"', 'id="update-check"'):
+        block = source.split(button, 1)[1][:300]
+        assert "title=" in block and "aria-label=" in block
+    assert 'iconSvg("download")' in source and 'iconSvg("refresh")' in source
     # what the installation does is shown while it happens
     assert 'id="update-log"' in source and 'id="update-bar"' in source
     assert 'on("update.progress"' in source

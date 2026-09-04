@@ -271,9 +271,9 @@ export async function render(view) {
           <button type="button" class="icon-btn" id="update-check"
                   title="${t("update.check")}" aria-label="${t("update.check")}"
                   >${raw(iconSvg("refresh"))}</button>
-          <button type="button" class="tonal" id="update-install" disabled>
-            ${t("update.upToDate")}
-          </button>
+          <button type="button" class="icon-btn" id="update-install" disabled
+                  title="${t("update.upToDate")}" aria-label="${t("update.upToDate")}"
+                  >${raw(iconSvg("download"))}</button>
         </div>
         <p class="hint" id="update-status"></p>
         <div class="setup-log" id="update-notes" hidden></div>
@@ -399,16 +399,19 @@ export async function render(view) {
   el("update-install").onclick = async () => {
     const button = el("update-install");
     button.disabled = true;
+    button.classList.remove("filled");
     try {
       const result = await api.startUpdate();
       // a refused start never reaches the event stream — say so right here
       if (!result.started) {
         toast(result.reason);
         button.disabled = false;
+        button.classList.add("filled");
       }
     } catch (error) {
       toast(error.message);
       button.disabled = false;
+      button.classList.add("filled");
     }
   };
 
@@ -1028,10 +1031,10 @@ function showNewApiKey(key) {
 // ── app updates ───────────────────────────────────────────────────────
 
 // The version row of the system card: what is running, what the newest
-// release is, and one button that downloads and installs it. What the
-// installation does arrives as `update.progress` events and is shown as a
-// log — the backend keeps it across the restart, so after the new version has
-// come up the log still says what happened (services/updates.py).
+// release is, and one icon button that downloads and installs it. What the
+// installation does arrives as `update.progress` events and is shown as a log
+// while it runs. It ends with the restart — the new version comes up with an
+// empty log and the fresh version number in the row (services/updates.py).
 
 async function refreshUpdate(refresh = false) {
   if (!el("update-row")) return;
@@ -1047,9 +1050,14 @@ async function refreshUpdate(refresh = false) {
   el("update-current").textContent = `Verba ${info.current}`;
   const button = el("update-install");
   button.disabled = !info.can_install || Boolean(info.install?.running);
-  button.textContent = info.available
+  // an icon-only button says what it does through its tooltip, and the filled
+  // variant is what makes an installable release stand out from the row
+  const action = info.available
     ? t("update.install", { version: info.latest })
     : t("update.upToDate");
+  button.title = action;
+  button.setAttribute("aria-label", action);
+  button.classList.toggle("filled", !button.disabled);
 
   const status = el("update-status");
   if (info.error) status.textContent = t("update.checkFailed", { detail: info.error });

@@ -68,30 +68,36 @@ Verba schaut einmal täglich, ob es eine neuere Version gibt, und sagt es dann:
 als kurze Meldung, solange die App offen ist, und als Hinweis auf der
 Startseite. Installieren kann das nur ein Administrator.
 
-**Einstellungen → System** zeigt oben die laufende Version. Gibt es eine
-neuere, ist der Knopf daneben aktiv und heißt „Auf 0.1.2 aktualisieren"; ist
-die laufende Version die neueste, bleibt er inaktiv. Der Knopf mit dem
-Kreispfeil fragt sofort nach, ohne auf die tägliche Prüfung zu warten.
+**Einstellungen → System** zeigt oben die laufende Version. Daneben stehen
+zwei runde Knöpfe: der Kreispfeil sucht sofort nach einer neuen Version, ohne
+auf die tägliche Prüfung zu warten, und der Pfeil nach unten installiert sie.
+Gibt es eine neuere Version, ist dieser Knopf aktiv und hervorgehoben — sein
+Tooltip nennt sie („Auf 0.1.2 aktualisieren"); ist die laufende Version die
+neueste, bleibt er inaktiv. Die Zeile darunter sagt in Worten, was gerade
+gilt.
 
 Ein Klick lädt das Paket, das zu dieser Installation gehört, und installiert
 es. Was dabei geschieht, steht Zeile für Zeile im Aktualisierungsprotokoll
-unter dem Knopf: Download, Prüfung, Installation, Neustart. Das Protokoll
-bleibt auch nach dem Neustart stehen — dort ist also nachzulesen, was
-passiert ist.
+unter dem Knopf: Download, Prüfung, Installation, Neustart. Das Protokoll ist
+nur während der Installation zu sehen — nach dem Neustart steht in der Zeile
+oben die neue Versionsnummer, und das ist die Antwort.
 
 - **Windows:** Der Installer läuft ohne Assistent. Windows fragt einmal nach
   der Berechtigung — das ist der einzige Klick, der bleibt. Danach schließt
   sich Verba, der Installer tauscht die Dateien aus und startet Verba wieder.
-- **Linux-Desktop:** Die laufende AppImage-Datei wird ersetzt und neu
-  gestartet. Die vorherige Version bleibt als `….AppImage.previous` daneben
-  liegen.
+- **Linux-Desktop:** Die laufende AppImage-Datei wird durch die neue ersetzt
+  und neu gestartet.
 - **Linux-Server:** Verba aktualisiert die Abhängigkeiten, ersetzt die
-  Anwendungsdateien und startet den Dienst neu. Datenbank, Protokolle,
-  Arbeitsbereiche und Einstellungen bleiben unberührt; die ersetzten Dateien
-  liegen als Sicherung unter `<Daten>/tools/updates/`. Läuft Verba nicht als
-  Dienst, sagt das Protokoll am Ende, dass ein Neustart nötig ist.
+  Anwendungsdateien und startet den Dienst neu.
 - **Quellcode-Installation:** Hier aktualisiert `git pull`. Der Knopf bleibt
   inaktiv und nennt den Grund.
+
+Die alte Version wird dabei entfernt — sie wird nicht mehr gebraucht, sobald
+die neue läuft. Alles, was zählt, gehört ohnehin nicht dazu: Datenbank,
+Protokolle, Einstellungen, Arbeitsbereiche und heruntergeladene Modelle
+liegen außerhalb der Programmdateien und bleiben unberührt. Läuft Verba auf
+einem Server nicht als Dienst, sagt das Protokoll am Ende, dass ein Neustart
+nötig ist.
 
 Die Suche fragt bei GitHub nach dem neuesten Release. Wer das nicht möchte,
 schaltet **Automatisch nach neuen Versionen suchen** in Einstellungen →

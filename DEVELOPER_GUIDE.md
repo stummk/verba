@@ -392,6 +392,13 @@ desktop installation is started again, a systemd service exits with code 42
 so the unit's `Restart=on-failure` brings the new version up. A source
 checkout is never touched — that one belongs to git.
 
+The version being replaced is removed, and only what a release contains
+(`updates.PACKAGE_ITEMS`) is replaced at all — the database, the logs,
+`settings.json`, the workspaces and the models live elsewhere and are never
+part of it. The installation log is broadcast as `update.progress` and kept in
+memory only: an update ends in a restart, and the new version comes up with an
+empty log and its new version number in the settings page.
+
 Quality gate: `.github/workflows/ci.yml` (ruff + pytest, Ubuntu and Windows)
 runs on every push.
 

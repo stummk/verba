@@ -118,10 +118,14 @@ python -m ruff format --check backend/ tests/ run.py
     updates (Verba updates itself from its own GitHub releases: the newest tag
     against `__version__`, then the artifact this installation came from —
     Windows installer silently, AppImage by replacing the running file, server
-    package by replacing the application files plus a pip run. The relaunch is
-    done by `run.py` after uvicorn stopped (port free): desktop installations
-    are started again, a systemd service exits with code 42. A source checkout
-    is left to git, and the whole check can be switched off)
+    package by replacing the application files plus a pip run. The version
+    being replaced is removed; only PACKAGE_ITEMS is touched, so database,
+    logs, settings and workspaces stay. The relaunch is done by `run.py` after
+    uvicorn stopped (port free): desktop installations are started again, a
+    systemd service exits with code 42. The installation log lives in the
+    process only — an update ends in a restart — and `cleanup_downloads()`
+    wipes the artifact at the next start. A source checkout is left to git,
+    and the whole check can be switched off)
   - `api/` — REST routers; `deps.py` holds the whole authorisation surface
     (`current_user`, `require_admin`, `project_or_403`, `file_or_403`) and returns
     a permissive result while the user management is off, so there is no second

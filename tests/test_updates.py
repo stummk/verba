@@ -5,13 +5,12 @@ rest: nothing is installed that has not been recognised as the right artifact
 for this installation. The tests therefore cover the version comparison, the
 asset that belongs to each kind, the refusals, and the two installations that
 can be exercised without a Windows installer — an AppImage file and a server
-package — including where the previous version is kept and how the app asks
-to be restarted.
+package — including that the version they replace is gone afterwards and how
+the app asks to be restarted.
 """
 
 from __future__ import annotations
 
-import json
 import zipfile
 from pathlib import Path
 
@@ -24,14 +23,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(autouse=True)
-def fresh_state(monkeypatch):
+def fresh_state():
     """Every test starts without a cached check and without a restart request."""
     updates._check.update(checked_at=0.0, version="", url="", notes="", asset=None, error="")
     updates._install.update(
         running=False, percent=0, detail="", error="", log=[], version="", finished_at=0.0
     )
     updates._restart.update(mode=updates.RESTART_NONE, command=[])
-    monkeypatch.setattr(updates, "_loaded_from_disk", True)  # no leftover log from disk
     yield
 
 
@@ -263,8 +261,11 @@ def test_an_appimage_update_replaces_the_running_file_and_relaunches(monkeypatch
     updates._install_appimage(downloaded, "9.9.9")
 
     assert image.read_bytes() == b"\x7fELF-new"
-    assert (tmp_path / "Verba-0.1.1-x86_64.AppImage.previous").read_bytes() == b"\x7fELF-old"
-    assert not (tmp_path / "Verba-0.1.1-x86_64.AppImage.new").exists()
+    # the old version is gone, and so is the file it was staged as
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "Verba-0.1.1-x86_64.AppImage",
+        "download",
+    ]
     assert updates.pending_restart() == (updates.RESTART_EXEC, [str(image)])
     assert stopped, "the app has to go down for the new version to come up"
 
@@ -307,7 +308,7 @@ def server_package(tmp_path: Path, version: str = "9.9.9") -> Path:
     return archive
 
 
-def test_a_server_update_replaces_the_application_and_keeps_the_old_one(monkeypatch, tmp_path):
+def test_a_server_update_replaces_the_application_and_removes_the_old_one(monkeypatch, tmp_path):
     installation = tmp_path / "opt" / "verba"
     for item in updates.PACKAGE_ITEMS:
         target = installation / item
@@ -317,9 +318,12 @@ def test_a_server_update_replaces_the_application_and_keeps_the_old_one(monkeypa
         else:
             target.mkdir(parents=True, exist_ok=True)
             (target / "marker.txt").write_text("old", encoding="utf-8")
-    # runtime data must survive the update untouched
+    # runtime data, settings and the virtualenv are not part of a release
     (installation / "data").mkdir()
     (installation / "data" / "app.db").write_bytes(b"sqlite")
+    (installation / "data" / "settings.json").write_text("{}", encoding="utf-8")
+    (installation / ".venv").mkdir()
+    (installation / "workspaces").mkdir()
     monkeypatch.setattr(config, "PROJECT_ROOT", installation)
 
     pip_calls: list[list[str]] = []
@@ -327,13 +331,18 @@ def test_a_server_update_replaces_the_application_and_keeps_the_old_one(monkeypa
     monkeypatch.setenv("INVOCATION_ID", "systemd")  # started as a service
     monkeypatch.setattr(updates.lifecycle, "stop_process", lambda delay=0.1: None)
 
-    updates._install_server_package(server_package(tmp_path), "9.9.9")
+    archive = server_package(tmp_path)
+    updates._install_server_package(archive, "9.9.9")
 
     assert (installation / "run.py").read_text(encoding="utf-8") == "# run.py 9.9.9\n"
     assert (installation / "backend" / "marker.txt").read_text(encoding="utf-8") == "9.9.9"
     assert (installation / "data" / "app.db").read_bytes() == b"sqlite"
-    backup = updates.download_dir() / f"previous-{__version__}"
-    assert (backup / "run.py").read_text(encoding="utf-8") == "old\n"
+    assert (installation / "data" / "settings.json").exists()
+    assert (installation / ".venv").is_dir() and (installation / "workspaces").is_dir()
+    # nothing of the old version is left — neither in place nor as a backup
+    assert not list(installation.glob("*.replaced"))
+    assert not list(updates.download_dir().glob("previous*"))
+    assert not (updates.download_dir() / "unpacked").exists()
     assert pip_calls, "the new dependencies are installed before the files are replaced"
     assert updates.pending_restart() == (updates.RESTART_EXIT, [])
 
@@ -375,36 +384,49 @@ def test_a_server_package_never_writes_outside_its_directory(tmp_path):
         updates._reject_unsafe_members(bundle)
 
 
-# ── the log survives the restart ──────────────────────────────────────
+# ── the log while it runs, and nothing afterwards ──────────────────────
 
 
-def test_the_log_is_persisted_and_read_back_after_the_restart(monkeypatch):
+def test_the_log_grows_while_the_installation_runs(monkeypatch):
+    """Every step is broadcast with the whole log, which is what the UI shows."""
+    published: list[dict] = []
+    monkeypatch.setattr(
+        updates.hub,
+        "publish",
+        lambda event, payload: published.append({"event": event, **payload}),
+    )
+
     updates._emit(10, "Lade Verba-9.9.9-x86_64.AppImage ...")
+    updates._emit(11, "")  # a percent tick adds no line
     updates._emit(100, "Version 9.9.9 installiert", state="done")
 
-    # a fresh process: nothing in memory, the state file is all there is
-    updates._install.update(running=False, percent=0, detail="", error="", log=[], version="")
-    monkeypatch.setattr(updates, "_loaded_from_disk", False)
-
-    restored = updates.state()
-
-    assert restored["log"][-1] == "Version 9.9.9 installiert"
-    assert restored["running"] is False
-    assert json.loads(updates._state_file().read_text(encoding="utf-8"))["percent"] == 100
+    assert [entry["event"] for entry in published] == ["update.progress"] * 3
+    assert published[-1]["log"] == [
+        "Lade Verba-9.9.9-x86_64.AppImage ...",
+        "Version 9.9.9 installiert",
+    ]
+    assert published[-1]["state"] == "done"
+    assert updates.state()["log"] == published[-1]["log"]
 
 
-def test_the_windows_installer_log_becomes_part_of_the_protocol(monkeypatch):
-    updates._installer_log().write_text(
-        "Log opened\n2026-09-04 Installing files\nSetup finished\n", encoding="utf-8"
-    )
-    monkeypatch.setattr(updates, "_loaded_from_disk", False)
-    updates._install["log"] = []
-    updates._persist()
+def test_nothing_of_an_update_is_left_on_disk(tmp_path):
+    """The log is not persisted, and the artifact is gone at the next start."""
+    updates._emit(50, "Lade verba-server-9.9.9.zip ...")
+    (updates.download_dir() / "verba-server-9.9.9.zip").write_bytes(b"PK")
+    updates._installer_log().write_text("Setup finished\n", encoding="utf-8")
 
-    lines = updates.state()["log"]
+    updates.cleanup_downloads()
 
-    assert any("Setup finished" in line for line in lines)
-    assert all(line.startswith("Installer: ") for line in lines)
+    assert not updates.download_dir().exists() or not list(updates.download_dir().iterdir())
+    assert not list(config.tools_dir().glob("*.json"))
+
+
+def test_a_refusing_installer_is_quoted_from_its_own_log():
+    """The one moment the installer's log is read: it says why it gave up."""
+    updates._installer_log().write_text("Log opened\nSetup aborted\nGot EACCES\n", encoding="utf-8")
+    message = updates._installer_error(3)
+    assert "Code 3" in message
+    assert "Got EACCES" in message
 
 
 # ── refusals of the start ─────────────────────────────────────────────

@@ -21,15 +21,18 @@ repeated once a day, and it can be switched off (``updates.check_enabled``) —
 then nothing ever leaves the machine.
 
 Every step of an installation is written to a log the settings page shows
-live (event ``update.progress``). Because the app restarts in the middle of
-it, that log is also persisted: once the new version has come up, the page
-still shows what happened — including the tail of the Windows installer's own
-log, which is the part we cannot write ourselves.
+live (event ``update.progress``). It lives in this process only: an update
+ends in a restart, and the new version starts with an empty log — what it
+would have to say is that it is the new version, which the page shows anyway.
+
+An update removes the version it replaces. Nothing of a release is worth
+keeping once its successor runs, and nothing that matters is part of one: the
+database, the logs, settings.json, the workspaces and the models all live
+outside the application files.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import platform
@@ -369,7 +372,7 @@ def _check_loop() -> None:
             )
 
 
-# ── installation state (survives the restart) ─────────────────────────
+# ── installation state ────────────────────────────────────────────────
 
 _install_lock = threading.Lock()
 _install: dict[str, Any] = {
@@ -382,7 +385,6 @@ _install: dict[str, Any] = {
     "finished_at": 0.0,
 }
 _restart: dict[str, Any] = {"mode": RESTART_NONE, "command": []}
-_loaded_from_disk = False
 
 
 def download_dir() -> Path:
@@ -392,59 +394,28 @@ def download_dir() -> Path:
     return path
 
 
-def _state_file() -> Path:
-    return config.tools_dir() / "update-state.json"
+def cleanup_downloads() -> None:
+    """Throw away what an update left behind — called at every start.
+
+    A Windows update ends with this process being closed by the installer, so
+    the installer and its log are still lying there when the new version comes
+    up. Nothing of it is needed any more: the log lives in the app only while
+    the installation runs.
+    """
+    directory = config.tools_dir() / "updates"
+    if directory.exists():
+        shutil.rmtree(directory, ignore_errors=True)
 
 
 def _installer_log() -> Path:
     return download_dir() / "installer.log"
 
 
-def _persist() -> None:
-    """Write the log to disk — the app restarts in the middle of an update."""
-    payload = {
-        "version": _install["version"],
-        "percent": _install["percent"],
-        "detail": _install["detail"],
-        "error": _install["error"],
-        "log": list(_install["log"]),
-        "finished_at": _install["finished_at"],
-    }
-    try:
-        _state_file().write_text(json.dumps(payload, indent=1), encoding="utf-8")
-    except OSError:
-        logger.warning("could not persist the update log", exc_info=True)
-
-
-def _load_persisted() -> None:
-    """Restore the last update's log once, so the restart does not lose it."""
-    global _loaded_from_disk
-    if _loaded_from_disk or _install["log"] or _install["running"]:
-        return
-    _loaded_from_disk = True
-    try:
-        payload = json.loads(_state_file().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return
-    if not isinstance(payload, dict):
-        return
-    log = [str(line) for line in payload.get("log") or []]
-    log.extend(_installer_log_tail())
-    _install.update(
-        version=str(payload.get("version") or ""),
-        percent=int(payload.get("percent") or 0),
-        detail=str(payload.get("detail") or ""),
-        error=str(payload.get("error") or ""),
-        log=log[-_LOG_LINES:],
-        finished_at=float(payload.get("finished_at") or 0.0),
-    )
-
-
 def _installer_log_tail() -> list[str]:
     """The end of the Windows installer's own log.
 
-    What it did while this process was gone is the one part of the protocol
-    Verba cannot write itself.
+    Only read when the installer refused to do its job: it says why in its own
+    words, and this process is still alive to pass that on.
     """
     try:
         lines = _installer_log().read_text(encoding="utf-8", errors="replace").splitlines()
@@ -457,7 +428,6 @@ def _installer_log_tail() -> list[str]:
 def state() -> dict[str, Any]:
     """Snapshot of the running (or last) installation, log included."""
     with _install_lock:
-        _load_persisted()
         return {**_install, "log": list(_install["log"])}
 
 
@@ -465,8 +435,7 @@ def _emit(percent: int, message: str, state: str = "running") -> None:
     """Record one step and broadcast it together with the log so far."""
     with _install_lock:
         log = _install["log"]
-        new_line = bool(message) and (not log or log[-1] != message)
-        if new_line:
+        if message and (not log or log[-1] != message):
             log.append(message)
             del log[:-_LOG_LINES]
         _install["percent"] = percent
@@ -478,9 +447,6 @@ def _emit(percent: int, message: str, state: str = "running") -> None:
         if state != "running":
             _install["finished_at"] = time.time()
         snapshot = {**_install, "log": list(log)}
-        # the percent ticks of a download would write the file continuously
-        if new_line or state != "running":
-            _persist()
     if message:
         logger.info("update: %s", message)
     hub.publish("update.progress", {**snapshot, "state": state})
@@ -635,8 +601,11 @@ def _installer_error(code: int) -> str:
 def _install_appimage(downloaded: Path, version: str) -> None:
     """Replace the running AppImage file and relaunch it.
 
-    The old image is kept as `<name>.previous`: replacing that one file is the
-    whole update, so the copy is the whole way back.
+    The new image is written next to the old one and only then renamed over
+    it, so a download that fails halfway cannot leave a file that no longer
+    starts. The old version is gone afterwards — one file is the whole
+    installation, and the running process keeps its own copy open until it
+    exits.
     """
     target = appimage_path()
     if target is None:
@@ -647,11 +616,8 @@ def _install_appimage(downloaded: Path, version: str) -> None:
     _emit(75, f"Schreibe die neue AppImage nach {staged}")
     shutil.copy2(downloaded, staged)
     staged.chmod(0o755)
-    previous = target.with_name(target.name + ".previous")
-    previous.unlink(missing_ok=True)
-    os.replace(target, previous)
     os.replace(staged, target)
-    _emit(95, f"Die vorherige Version liegt als {previous.name} daneben")
+    _emit(95, f"Die vorherige Version wurde ersetzt: {target}")
     _emit(98, f"Version {version} installiert")
     _finish(version, RESTART_EXEC, [str(target)])
 
@@ -660,8 +626,11 @@ def _install_server_package(archive: Path, version: str) -> None:
     """Replace the application files of a server installation.
 
     The order matters: the dependencies are installed first, because a pip run
-    that fails must not leave half-replaced application files behind. What is
-    replaced is kept, so a start that goes wrong has something to go back to.
+    that fails must not leave half-replaced application files behind. Only
+    PACKAGE_ITEMS is touched — the database, the logs, settings.json, the
+    workspaces and the virtualenv are not part of a release and stay where
+    they are. The old application files are removed, one item at a time and
+    only once its replacement stands.
     """
     if not zipfile.is_zipfile(archive):
         raise RuntimeError("Das geladene Serverpaket ist kein ZIP-Archiv")
@@ -679,13 +648,11 @@ def _install_server_package(archive: Path, version: str) -> None:
     _emit(78, "Aktualisiere die Python-Abhängigkeiten ...")
     _pip_install(source / "requirements" / "core.txt")
 
-    backup = download_dir() / f"previous-{__version__}"
-    backup.mkdir(parents=True, exist_ok=True)
     _emit(90, f"Ersetze die Anwendungsdateien in {root}")
     for item in PACKAGE_ITEMS:
-        _replace(root / item, source / item, backup / item)
-    _emit(96, f"Die vorherige Version liegt in {backup}")
-    shutil.rmtree(staging, ignore_errors=True)
+        _replace(root / item, source / item)
+    _emit(96, "Die Dateien der vorherigen Version sind entfernt")
+    _cleanup(staging, archive)
     _emit(98, f"Version {version} installiert")
 
     if os.environ.get("INVOCATION_ID"):  # started by systemd
@@ -694,18 +661,38 @@ def _install_server_package(archive: Path, version: str) -> None:
     _emit(100, f"Version {version} installiert — bitte Verba neu starten", state="done")
 
 
-def _replace(current: Path, fresh: Path, backup: Path) -> None:
-    """Move `current` aside into `backup` and put `fresh` in its place."""
+def _replace(current: Path, fresh: Path) -> None:
+    """Put `fresh` where `current` is and delete what was there.
+
+    The old item is renamed aside first, not deleted: a copy that fails then
+    still has something to put back, and the rename happens inside the same
+    directory, which no filesystem can fail to do halfway.
+    """
+    aside = current.with_name(current.name + ".replaced")
+    _remove(aside)
     if current.exists():
-        if backup.is_dir():
-            shutil.rmtree(backup, ignore_errors=True)
-        else:
-            backup.unlink(missing_ok=True)
-        shutil.move(str(current), str(backup))
-    if fresh.is_dir():
-        shutil.copytree(fresh, current)
+        os.replace(current, aside)
+    try:
+        shutil.copytree(fresh, current) if fresh.is_dir() else shutil.copy2(fresh, current)
+    except OSError:
+        _remove(current)
+        if aside.exists():
+            os.replace(aside, current)
+        raise
+    _remove(aside)
+
+
+def _remove(path: Path) -> None:
+    if path.is_dir():
+        shutil.rmtree(path, ignore_errors=True)
     else:
-        shutil.copy2(fresh, current)
+        path.unlink(missing_ok=True)
+
+
+def _cleanup(*paths: Path) -> None:
+    """Remove what the installation does not need any more."""
+    for path in paths:
+        _remove(path)
 
 
 def _reject_unsafe_members(bundle: zipfile.ZipFile) -> None:
