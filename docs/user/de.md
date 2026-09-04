@@ -420,6 +420,23 @@ Unter **Einstellungen → KI-Aufbereitung (LLM)** wird mit einem Umschalter gena
   (funktioniert mit OpenAI, Ollama, LM Studio, vLLM u. a.);
   „Verbindung testen" prüft den Endpunkt und listet verfügbare Modelle.
 
+**Welches llama.cpp wird installiert?** Verba holt das offizielle Release
+passend zum System: unter Windows mit NVIDIA-GPU den CUDA-Build samt
+CUDA-Laufzeit, sonst den CPU-Build; unter Linux und macOS den CPU-Build — für
+Linux veröffentlicht llama.cpp kein CUDA-Paket.
+
+Nach dem Entpacken startet Verba `llama-server` einmal zur Probe. Fehlt dabei
+eine Systembibliothek — auf einem schlanken Linux-Server typischerweise
+`libgomp1`, `libstdc++6` oder `libssl3` —, **installiert Verba das fehlende
+Paket selbst** (apt, dnf/yum, zypper, pacman oder apk) und probiert es erneut;
+das geht, solange der Dienst als root läuft oder `sudo` ohne Passwort erlaubt
+ist. Geht es nicht, wird die halbe Installation wieder entfernt und die Meldung
+nennt den genauen `apt install …`-Befehl. Ist die Distribution selbst zu alt
+(das Release braucht glibc 2.34 und libstdc++ aus GCC 11, also Debian 12,
+Ubuntu 22.04 oder neuer), sagt die Meldung auch das — statt erst beim ersten
+KI-Schritt zu scheitern. Bricht die Verbindung während eines Downloads ab —
+Modelle sind mehrere GB groß —, setzt Verba ihn an der Abbruchstelle fort.
+
 **Endpunkt auf dem eigenen Rechner.** Zeigt die Base URL auf `localhost` bzw.
 `127.0.0.1` (typisch für Ollama oder LM Studio), erscheint unter dem Feld eine
 **Einschätzung**: wie viel Speicher hier gerade frei ist und welche Modellgröße

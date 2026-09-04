@@ -402,6 +402,22 @@ only its fields are shown:
   OpenAI, Ollama, LM Studio, vLLM and others); "Test connection" probes the
   endpoint and lists available models.
 
+**Which llama.cpp gets installed?** Verba fetches the official release that
+matches the system: on Windows with an NVIDIA GPU the CUDA build plus the CUDA
+runtime, otherwise the CPU build; on Linux and macOS the CPU build — llama.cpp
+publishes no CUDA package for Linux.
+
+Once unpacked, Verba runs `llama-server` once as a test. If a system library
+is missing — on a lean Linux server usually `libgomp1`, `libstdc++6` or
+`libssl3` — **Verba installs that package itself** (apt, dnf/yum, zypper,
+pacman or apk) and tries again; that works as long as the service runs as root
+or `sudo` is allowed without a password. If it cannot, the half installation is
+removed again and the message names the exact `apt install …` command. If the
+distribution itself is too old (the release needs glibc 2.34 and libstdc++ from
+GCC 11, so Debian 12, Ubuntu 22.04 or newer), the message says that too —
+instead of failing later during the first AI step. If a download is cut off —
+models are several GB — Verba continues it where it stopped.
+
 **An endpoint on your own machine.** If the base URL points at `localhost` or
 `127.0.0.1` (typical for Ollama or LM Studio), an **estimate** appears below the
 field: how much memory is free here right now and which model size is realistic

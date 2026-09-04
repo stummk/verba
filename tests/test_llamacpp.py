@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import http.server
+import tarfile
+import threading
+import time
+import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -157,3 +163,561 @@ def test_delete_stays_inside_the_configured_directory(tmp_path):
     assert outsider.is_file(), "the file outside the models directory must survive"
     with pytest.raises(ValueError):
         llamacpp.delete_model("../app.db")  # only .gguf at all
+
+
+# ── the release binary ────────────────────────────────────────────────
+
+#: Asset names of a real llama.cpp nightly build (b10621) — the picker has to
+#: find its platform in this list, which mixes CPU, CUDA, ROCm, SYCL, Vulkan
+#: and OpenVINO builds for two architectures.
+RELEASE_ASSETS = [
+    "cudart-llama-bin-win-cuda-12.4-x64.zip",
+    "cudart-llama-bin-win-cuda-13.3-x64.zip",
+    "cudart-llama-bin-win-cuda-13.4-arm64.zip",
+    "llama-b10621-bin-android-arm64.tar.gz",
+    "llama-b10621-bin-macos-arm64.tar.gz",
+    "llama-b10621-bin-macos-x64.tar.gz",
+    "llama-b10621-bin-ubuntu-arm64.tar.gz",
+    "llama-b10621-bin-ubuntu-rocm-7.14-x64.tar.gz",
+    "llama-b10621-bin-ubuntu-s390x.tar.gz",
+    "llama-b10621-bin-ubuntu-vulkan-x64.tar.gz",
+    "llama-b10621-bin-ubuntu-x64.tar.gz",
+    "llama-b10621-bin-win-cpu-arm64.zip",
+    "llama-b10621-bin-win-cpu-x64.zip",
+    "llama-b10621-bin-win-cuda-12.4-x64.zip",
+    "llama-b10621-bin-win-cuda-13.3-x64.zip",
+    "llama-b10621-bin-win-cuda-13.4-arm64.zip",
+    "llama-b10621-bin-win-vulkan-x64.zip",
+    "llama-b10621-ui.tar.gz",
+    "llama-b10621-xcframework.zip",
+]
+
+
+def assets(names: list[str]) -> list[dict]:
+    return [
+        {"name": name, "size": 1024, "browser_download_url": f"https://example/{name}"}
+        for name in names
+    ]
+
+
+def on_platform(monkeypatch, system: str, machine: str = "x86_64", gpu: bool = False) -> None:
+    monkeypatch.setattr(llamacpp.platform, "system", lambda: system)
+    monkeypatch.setattr(llamacpp.platform, "machine", lambda: machine)
+    monkeypatch.setattr(llamacpp.hardware, "has_gpu", lambda *a, **k: gpu)
+
+
+@pytest.mark.parametrize(
+    ("system", "machine", "gpu", "expected"),
+    [
+        # the Linux server case: the plain CPU build, not s390x, not Vulkan
+        ("Linux", "x86_64", False, "llama-b10621-bin-ubuntu-x64.tar.gz"),
+        ("Linux", "x86_64", True, "llama-b10621-bin-ubuntu-x64.tar.gz"),
+        ("Linux", "aarch64", False, "llama-b10621-bin-ubuntu-arm64.tar.gz"),
+        ("Windows", "AMD64", False, "llama-b10621-bin-win-cpu-x64.zip"),
+        ("Windows", "AMD64", True, "llama-b10621-bin-win-cuda-12.4-x64.zip"),
+        ("Windows", "ARM64", True, "llama-b10621-bin-win-cpu-arm64.zip"),
+        ("Darwin", "arm64", False, "llama-b10621-bin-macos-arm64.tar.gz"),
+        ("Darwin", "x86_64", False, "llama-b10621-bin-macos-x64.tar.gz"),
+    ],
+)
+def test_the_release_asset_matches_the_platform(monkeypatch, system, machine, gpu, expected):
+    on_platform(monkeypatch, system, machine, gpu)
+    picked = llamacpp._pick_release_asset(assets(RELEASE_ASSETS))
+    assert picked is not None and picked["name"] == expected
+
+
+def test_a_cuda_build_of_another_architecture_is_not_taken(monkeypatch):
+    """With the x64 CUDA builds gone, the arm64 one must not be installed."""
+    on_platform(monkeypatch, "Windows", "AMD64", gpu=True)
+    remaining = [name for name in RELEASE_ASSETS if "cuda-12" not in name]
+    remaining = [name for name in remaining if "cuda-13.3" not in name]
+    picked = llamacpp._pick_release_asset(assets(remaining))
+    assert picked is not None and picked["name"] == "llama-b10621-bin-win-cpu-x64.zip"
+
+
+def test_the_cuda_runtime_belongs_to_the_cuda_build():
+    binary = "llama-b10621-bin-win-cuda-12.4-x64.zip"
+    cudart = llamacpp._pick_cudart_asset(assets(RELEASE_ASSETS), binary)
+    assert cudart is not None and cudart["name"] == "cudart-llama-bin-win-cuda-12.4-x64.zip"
+    # a CPU build needs no runtime archive
+    assert llamacpp._pick_cudart_asset(assets(RELEASE_ASSETS), "llama-bin-win-cpu-x64.zip") is None
+
+
+def test_a_platform_without_a_build_is_refused(monkeypatch):
+    on_platform(monkeypatch, "Linux", "s390x")
+    assert llamacpp._pick_release_asset(assets(RELEASE_ASSETS)) is None
+
+
+def _release(tag: str, names: list[str]) -> dict:
+    return {"tag_name": tag, "assets": assets(names)}
+
+
+def test_the_nightly_pointer_is_followed(monkeypatch):
+    """`releases/latest` only names the nightly build that carries the binaries."""
+    on_platform(monkeypatch, "Linux", "x86_64")
+    pages = {
+        llamacpp.RELEASE_API: _release("v0.3.0", [llamacpp.NIGHTLY_POINTER]),
+        llamacpp.RELEASE_TAG_API.format(tag="b10621"): _release("b10621", RELEASE_ASSETS),
+    }
+    monkeypatch.setattr(llamacpp, "_get_json", lambda url: pages[url])
+    monkeypatch.setattr(llamacpp, "_fetch_text", lambda url: "b10621\n")
+
+    release, asset = llamacpp.resolve_release()
+
+    assert release["tag_name"] == "b10621"
+    assert asset["name"] == "llama-b10621-bin-ubuntu-x64.tar.gz"
+
+
+def test_the_release_list_is_the_last_resort(monkeypatch):
+    """Neither the semver release nor the nightly it names has an asset."""
+    on_platform(monkeypatch, "Linux", "x86_64")
+    pages = {
+        llamacpp.RELEASE_API: _release("v0.3.0", [llamacpp.NIGHTLY_POINTER]),
+        llamacpp.RELEASE_TAG_API.format(tag="b99999"): _release("b99999", ["llama-ui.tar.gz"]),
+        llamacpp.RELEASE_LIST_API: [
+            _release("b99998", ["llama-ui.tar.gz"]),
+            _release("b10621", RELEASE_ASSETS),
+        ],
+    }
+    monkeypatch.setattr(llamacpp, "_get_json", lambda url: pages[url])
+    monkeypatch.setattr(llamacpp, "_fetch_text", lambda url: "b99999")
+
+    release, asset = llamacpp.resolve_release()
+
+    assert release["tag_name"] == "b10621"
+    assert asset["name"] == "llama-b10621-bin-ubuntu-x64.tar.gz"
+
+
+def test_a_release_without_any_build_for_this_system_raises(monkeypatch):
+    on_platform(monkeypatch, "Linux", "s390x")
+    pages = {
+        llamacpp.RELEASE_API: _release("b1", RELEASE_ASSETS),
+        llamacpp.RELEASE_LIST_API: [_release("b1", RELEASE_ASSETS)],
+    }
+    monkeypatch.setattr(llamacpp, "_get_json", lambda url: pages[url])
+    monkeypatch.setattr(llamacpp, "_fetch_text", lambda url: "")
+    with pytest.raises(RuntimeError, match="kein llama.cpp-Release"):
+        llamacpp.resolve_release()
+
+
+def test_the_newest_installed_binary_is_used(monkeypatch, tmp_path):
+    """After an update two build directories lie side by side."""
+    monkeypatch.setattr(llamacpp.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(llamacpp, "binary_dir", lambda: tmp_path)
+    assert llamacpp.server_binary() is None
+
+    old = tmp_path / "llama-b10000" / "llama-server"
+    new = tmp_path / "llama-b10621" / "llama-server"
+    for path in (old, new):
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"\x7fELF")
+    import os
+
+    os.utime(old, (1, 1))
+
+    assert llamacpp.server_binary() == new
+
+
+def test_a_loader_failure_is_explained_in_german(monkeypatch):
+    """A distribution too old for the official build says so, in the UI language."""
+    monkeypatch.setattr(llamacpp.platform, "system", lambda: "Linux")
+    too_old = llamacpp._loader_failure(
+        1, "llama-server: /lib/libm.so.6: version `GLIBC_2.38' not found"
+    )
+    assert "glibc 2.34" in too_old and "Debian 12" in too_old
+
+    outdated_libstdcxx = llamacpp._loader_failure(
+        1, "/lib/x86_64-linux-gnu/libstdc++.so.6: version `GLIBCXX_3.4.29' not found"
+    )
+    assert "Debian 12" in outdated_libstdcxx  # too old, not missing
+
+    missing = llamacpp._loader_failure(
+        127, "llama-server: error while loading shared libraries: libstdc++.so.6"
+    )
+    assert "libstdc++6" in missing
+
+    assert llamacpp._loader_failure(0, "version: 6789 (abc123)") == ""
+
+
+def test_a_missing_dll_is_named(monkeypatch):
+    monkeypatch.setattr(llamacpp.platform, "system", lambda: "Windows")
+    assert "DLL" in llamacpp._loader_failure(0xC0000135, "")
+
+
+# ── downloads ─────────────────────────────────────────────────────────
+
+
+class _RangeHandler(http.server.BaseHTTPRequestHandler):
+    """Serves one payload, understands Range, and can drop the first attempt."""
+
+    payload = b""
+    drop_first = False
+    ranges: list[str] = []
+
+    def do_GET(self) -> None:  # noqa: N802 - http.server's naming
+        cls = type(self)
+        header = self.headers.get("Range", "")
+        cls.ranges.append(header)
+        start = int(header.split("=")[1].split("-")[0]) if header else 0
+        if start >= len(cls.payload):
+            self.send_response(416)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        body = cls.payload[start:]
+        if start:
+            self.send_response(206)
+            self.send_header(
+                "Content-Range",
+                f"bytes {start}-{len(cls.payload) - 1}/{len(cls.payload)}",
+            )
+        else:
+            self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if cls.drop_first and len(cls.ranges) == 1:
+            self.wfile.write(body[: len(body) // 2])  # the connection closes short
+            return
+        self.wfile.write(body)
+
+    def log_message(self, *args: object) -> None:
+        pass
+
+
+@pytest.fixture
+def http_source(monkeypatch):
+    """A local HTTP server plus the knobs these tests turn."""
+    monkeypatch.setattr(llamacpp, "DOWNLOAD_RETRY_DELAY_S", 0)
+    _RangeHandler.payload = b""
+    _RangeHandler.drop_first = False
+    _RangeHandler.ranges = []
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _RangeHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield SimpleNamespace(
+            url=f"http://127.0.0.1:{server.server_address[1]}/file",
+            handler=_RangeHandler,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_a_dropped_download_continues_where_it_stopped(http_source, tmp_path):
+    """A model is gigabytes — a dropped connection must not restart the download."""
+    # more than one read buffer, so half of it really is on disk when it drops
+    http_source.handler.payload = bytes(range(256)) * 4000
+    http_source.handler.drop_first = True
+    target = tmp_path / "model.part"
+
+    llamacpp._download_file(http_source.url, target, llamacpp.MAX_MODEL_BYTES, lambda *a: None)
+
+    assert target.read_bytes() == http_source.handler.payload
+    assert http_source.handler.ranges[0] == ""
+    assert http_source.handler.ranges[1].startswith("bytes=")  # only the rest was fetched
+
+
+def test_a_download_over_the_limit_is_refused(http_source, tmp_path):
+    http_source.handler.payload = b"x" * 5000
+    with pytest.raises(RuntimeError, match="zu groß"):
+        llamacpp._download_file(http_source.url, tmp_path / "f", 100, lambda *a: None)
+
+
+def test_a_stale_part_file_that_is_too_long_is_dropped(http_source, tmp_path):
+    """The server answers 416 — the leftover cannot belong to this download."""
+    http_source.handler.payload = b"y" * 1000
+    target = tmp_path / "f.part"
+    target.write_bytes(b"z" * 4000)
+
+    llamacpp._download_file(http_source.url, target, llamacpp.MAX_MODEL_BYTES, lambda *a: None)
+
+    assert target.read_bytes() == http_source.handler.payload
+
+
+def _wait_for(condition, timeout: float = 10.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if condition():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def _single_entry_catalog(monkeypatch, url: str) -> dict:
+    entry = {
+        "name": "Test-Model-Q4",
+        "file": "test-model-Q4.gguf",
+        "url": url,
+        "size_mb": 1,
+        "min_free_mb": 100,
+        "label": "Testmodell",
+    }
+    monkeypatch.setattr(llamacpp, "MODEL_CATALOG", [entry])
+    return entry
+
+
+def test_a_model_download_lands_in_the_models_directory(http_source, monkeypatch, tmp_path):
+    http_source.handler.payload = b"GGUF" + b"\x00" * 2048
+    http_source.handler.drop_first = True  # and survives a dropped connection
+    entry = _single_entry_catalog(monkeypatch, http_source.url)
+    monkeypatch.setattr(llamacpp, "llm_models_dir", lambda: tmp_path)
+
+    assert llamacpp.start_model_download(entry["name"]) is True
+    target = tmp_path / entry["file"]
+
+    assert _wait_for(target.exists), "the download did not finish"
+    assert target.read_bytes() == http_source.handler.payload
+    assert not (tmp_path / "test-model-Q4.part").exists()
+    assert [m["file"] for m in llamacpp.list_installed_models()] == [entry["file"]]
+
+
+def test_an_error_page_is_not_kept_as_a_model(http_source, monkeypatch, tmp_path):
+    http_source.handler.payload = b"<html>404</html>"
+    entry = _single_entry_catalog(monkeypatch, http_source.url)
+    monkeypatch.setattr(llamacpp, "llm_models_dir", lambda: tmp_path)
+
+    llamacpp.start_model_download(entry["name"])
+
+    assert _wait_for(lambda: entry["name"] not in llamacpp._downloads_running)
+    assert not (tmp_path / entry["file"]).exists()
+    assert not (tmp_path / "test-model-Q4.part").exists()
+    assert llamacpp.list_installed_models() == []
+
+
+def test_every_catalog_model_stays_under_the_download_limit():
+    for entry in llamacpp.MODEL_CATALOG:
+        assert entry["size_mb"] * 1024 * 1024 < llamacpp.MAX_MODEL_BYTES
+
+
+# ── unpacking the release archive ─────────────────────────────────────
+
+
+def _tar_release(path: Path) -> None:
+    """A Linux release archive: llama-server plus the libraries next to it."""
+    build = path.parent / "build" / "llama-b1"
+    build.mkdir(parents=True, exist_ok=True)
+    (build / "llama-server").write_bytes(b"\x7fELF fake")
+    (build / "libggml.so").write_bytes(b"\x7fELF lib")
+    with tarfile.open(path, "w:gz") as tf:
+        tf.add(build, arcname="llama-b1")
+
+
+def _zip_release(path: Path) -> None:
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("llama-server.exe", "MZ fake")
+        zf.writestr("ggml.dll", "MZ lib")
+
+
+@pytest.mark.parametrize(
+    ("system", "make", "archive_name", "exe"),
+    [
+        ("Linux", _tar_release, "llama-b1-bin-ubuntu-x64.tar.gz", "llama-server"),
+        ("Windows", _zip_release, "llama-b1-bin-win-cpu-x64.zip", "llama-server.exe"),
+    ],
+)
+def test_the_release_archive_is_unpacked_and_the_server_found(
+    http_source, monkeypatch, tmp_path, system, make, archive_name, exe
+):
+    archive = tmp_path / archive_name
+    make(archive)
+    http_source.handler.payload = archive.read_bytes()
+    dest = tmp_path / "tools" / "llama"
+    monkeypatch.setattr(llamacpp.platform, "system", lambda: system)
+    monkeypatch.setattr(llamacpp, "binary_dir", lambda: dest)
+    monkeypatch.setattr(llamacpp, "_verify_binary", lambda binary: None)
+    monkeypatch.setattr(
+        llamacpp,
+        "resolve_release",
+        lambda: (
+            {"tag_name": "b1", "assets": []},
+            {
+                "name": archive_name,
+                "size": len(http_source.handler.payload),
+                "browser_download_url": http_source.url,
+            },
+        ),
+    )
+
+    installed = Path(llamacpp.install_binary())
+
+    assert installed.name == exe
+    assert installed.is_file()
+    # the archive itself is gone, the libraries the binary loads sit next to it
+    assert not list(dest.rglob("*.tar.gz")) and not list(dest.rglob("*.zip"))
+    assert list(installed.parent.glob("*ggml*"))
+    # a second call reuses the installation instead of downloading again
+    assert Path(llamacpp.install_binary()) == installed
+
+
+# ── missing system libraries are installed ────────────────────────────
+
+
+@pytest.fixture
+def package_manager(monkeypatch):
+    """A Linux with apt-get whose commands are recorded instead of run."""
+    monkeypatch.setattr(llamacpp.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(
+        llamacpp,
+        "_package_manager",
+        lambda: llamacpp._Manager("apt", ["apt-get", "install", "-y"], ["apt-get", "update"]),
+    )
+    state = SimpleNamespace(commands=[], fails=set())
+
+    def run(cmd, timeout=None):
+        state.commands.append(cmd)
+        return not any(part in state.fails for part in cmd)
+
+    monkeypatch.setattr(llamacpp, "_run_privileged", run)
+    return state
+
+
+def test_the_package_carrying_a_missing_library_is_installed(package_manager):
+    installed = llamacpp._install_system_libraries(["libgomp.so.1"], lambda *a: None)
+
+    assert installed == ["libgomp1"]
+    assert package_manager.commands == [["apt-get", "install", "-y", "libgomp1"]]
+
+
+def test_a_renamed_package_is_tried_after_a_refresh(package_manager):
+    """Debian 13 and Ubuntu 24.04 call OpenSSL 3 libssl3t64, older ones libssl3."""
+    package_manager.fails = {"libssl3"}
+
+    installed = llamacpp._install_system_libraries(["libssl.so.3"], lambda *a: None)
+
+    assert installed == ["libssl3t64"]
+    assert ["apt-get", "update"] in package_manager.commands
+
+
+def test_only_known_libraries_reach_the_package_manager(package_manager):
+    """The library name comes from parsed output — the package name never does."""
+    assert llamacpp._install_system_libraries(["libevil.so.1"], lambda *a: None) == []
+    assert package_manager.commands == []
+
+
+def test_nothing_is_installed_without_root(monkeypatch):
+    monkeypatch.setattr(llamacpp.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(llamacpp, "_root_prefix", lambda: None)
+    monkeypatch.setattr(llamacpp, "_run_privileged", lambda *a, **k: pytest.fail("ran as user"))
+
+    assert llamacpp._install_system_libraries(["libgomp.so.1"], lambda *a: None) == []
+
+
+def test_root_needs_no_sudo(monkeypatch):
+    monkeypatch.setattr(llamacpp.os, "geteuid", lambda: 0, raising=False)
+    assert llamacpp._root_prefix() == []
+
+
+def test_a_windows_install_never_touches_a_package_manager(monkeypatch):
+    monkeypatch.setattr(llamacpp.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(llamacpp, "_package_manager", lambda: pytest.fail("looked for apt"))
+
+    assert llamacpp._install_system_libraries(["libgomp.so.1"], lambda *a: None) == []
+
+
+def _failing_verify(*failures: list[str]):
+    """A _verify_binary that reports the given loader failures, then succeeds."""
+    pending = list(failures)
+
+    def verify(binary):
+        if pending:
+            missing = pending.pop(0)
+            raise llamacpp._LoaderFailure("llama-server startet nicht", missing)
+
+    return verify
+
+
+def test_the_loader_names_one_library_per_attempt(monkeypatch, package_manager, tmp_path):
+    """Install, run again, install what the next attempt reports."""
+    monkeypatch.setattr(
+        llamacpp, "_verify_binary", _failing_verify(["libgomp.so.1"], ["libssl.so.3"])
+    )
+
+    llamacpp._ensure_loadable(tmp_path / "llama-server", lambda *a: None)
+
+    assert [cmd[-1] for cmd in package_manager.commands] == ["libgomp1", "libssl3"]
+
+
+def test_a_library_that_is_only_too_old_is_not_installed(monkeypatch, package_manager, tmp_path):
+    """No package fixes a libstdc++ that is present but older than the build."""
+    monkeypatch.setattr(llamacpp, "_verify_binary", _failing_verify([]))
+
+    with pytest.raises(llamacpp._LoaderFailure):
+        llamacpp._ensure_loadable(tmp_path / "llama-server", lambda *a: None)
+
+    assert package_manager.commands == []
+
+
+def test_an_installation_that_stays_broken_is_reported(monkeypatch, package_manager, tmp_path):
+    """The package installs, the binary still does not run — that is a failure."""
+    always = ["libgomp.so.1"]
+    monkeypatch.setattr(llamacpp, "_verify_binary", _failing_verify(*[always] * 12))
+
+    with pytest.raises(llamacpp._LoaderFailure):
+        llamacpp._ensure_loadable(tmp_path / "llama-server", lambda *a: None)
+
+
+def test_the_hint_names_the_packages_an_admin_has_to_install(monkeypatch):
+    monkeypatch.setattr(llamacpp.platform, "system", lambda: "Linux")
+    message = llamacpp._loader_failure(
+        127, "llama-server: error while loading shared libraries: libgomp.so.1: cannot open"
+    )
+    assert "apt install libgomp1" in message
+
+
+def test_the_installation_survives_a_repaired_dependency(
+    http_source, monkeypatch, package_manager, tmp_path
+):
+    """End to end: the archive stays installed once the library is there."""
+    archive = tmp_path / "llama-b1-bin-ubuntu-x64.tar.gz"
+    _tar_release(archive)
+    http_source.handler.payload = archive.read_bytes()
+    dest = tmp_path / "tools" / "llama"
+    monkeypatch.setattr(llamacpp, "binary_dir", lambda: dest)
+    monkeypatch.setattr(llamacpp, "_verify_binary", _failing_verify(["libgomp.so.1"]))
+    monkeypatch.setattr(
+        llamacpp,
+        "resolve_release",
+        lambda: (
+            {"tag_name": "b1", "assets": []},
+            {
+                "name": archive.name,
+                "size": len(http_source.handler.payload),
+                "browser_download_url": http_source.url,
+            },
+        ),
+    )
+
+    installed = Path(llamacpp.install_binary())
+
+    assert installed.is_file()
+    assert [cmd[-1] for cmd in package_manager.commands] == ["libgomp1"]
+
+
+def test_an_unrepairable_installation_is_removed(
+    http_source, monkeypatch, package_manager, tmp_path
+):
+    """Nothing may stay behind that looks like a working llama.cpp."""
+    archive = tmp_path / "llama-b1-bin-ubuntu-x64.tar.gz"
+    _tar_release(archive)
+    http_source.handler.payload = archive.read_bytes()
+    dest = tmp_path / "tools" / "llama"
+    monkeypatch.setattr(llamacpp, "binary_dir", lambda: dest)
+    monkeypatch.setattr(llamacpp, "_verify_binary", _failing_verify([]))
+    monkeypatch.setattr(
+        llamacpp,
+        "resolve_release",
+        lambda: (
+            {"tag_name": "b1", "assets": []},
+            {
+                "name": archive.name,
+                "size": len(http_source.handler.payload),
+                "browser_download_url": http_source.url,
+            },
+        ),
+    )
+
+    with pytest.raises(RuntimeError):
+        llamacpp.install_binary()
+
+    assert llamacpp.server_binary() is None
+    assert not dest.exists()
