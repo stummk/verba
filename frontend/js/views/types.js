@@ -12,7 +12,12 @@ let selected = null; // a type object, "new", or null
 let defaults = { output_prompt: "", structure: "paragraphs", structures: ["paragraphs"] };
 // both prompts of the type being edited, so switching the dropdown keeps
 // unsaved edits of the other one
-let draft = { system_prompt: "", output_prompt: "", structure: "paragraphs" };
+let draft = {
+  system_prompt: "",
+  output_prompt: "",
+  structure: "paragraphs",
+  keep_sections: false,
+};
 let promptKind = "system_prompt";
 
 export async function render(view) {
@@ -70,6 +75,7 @@ function select(target) {
     // a new type starts from the default output prompt so it can be adapted
     output_prompt: isNew ? defaults.output_prompt : (target?.output_prompt ?? ""),
     structure: (isNew ? defaults.structure : target?.structure) || defaults.structure,
+    keep_sections: isNew ? false : Boolean(target?.keep_sections),
   };
   renderList();
   renderDetail();
@@ -120,6 +126,10 @@ function renderDetail() {
     <label for="type-structure">${t("types.structure")}</label>
     <select id="type-structure"></select>
     <p class="hint">${t("types.structureHint")}</p>
+    <label class="checkline">
+      <input type="checkbox" id="type-keep-sections"> ${t("types.keepSections")}
+    </label>
+    <p class="hint">${t("types.keepSectionsHint")}</p>
     <label for="type-prompt-kind">${t("types.promptKind")}</label>
     <select id="type-prompt-kind">
       <option value="system_prompt">${t("types.promptCleanup")}</option>
@@ -147,6 +157,10 @@ function renderDetail() {
   }));
   structureSelect.value = draft.structure;
   structureSelect.onchange = () => { draft.structure = structureSelect.value; };
+
+  const keepSections = el("type-keep-sections");
+  keepSections.checked = draft.keep_sections;
+  keepSections.onchange = () => { draft.keep_sections = keepSections.checked; };
 
   const kindSelect = el("type-prompt-kind");
   const textarea = el("type-prompt");
@@ -183,6 +197,7 @@ function renderDetail() {
       system_prompt: draft.system_prompt.trim(),
       output_prompt: draft.output_prompt.trim(),
       structure: draft.structure,
+      keep_sections: draft.keep_sections,
     };
     if (!name) {
       el("type-name").focus();

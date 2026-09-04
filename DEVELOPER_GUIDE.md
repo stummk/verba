@@ -274,6 +274,16 @@ Two consistency tests deserve special attention:
   directory is configurable; every `.gguf` in it is selectable and loaded in
   place, so an existing collection needs no download and a model outside the
   catalog works too.
+- **PDF export** (`services/pdf.py`): stage 1 turns a file's text into neutral
+  blocks (LLM or rule-based), stage 2 lays them out deterministically with
+  fpdf2. A compilation renders one section per file, and the language versions
+  of a file are one group (`section_groups()`, marked by `divider`). With the
+  type's `keep_sections` a group that would be torn across the page boundary
+  starts on a new page instead: it is laid out into a dummy document first
+  (fpdf2's `offset_rendering()`), which answers the question for the whole
+  section — header, blocks and translations — instead of guessing at
+  heights. A cursor that already sits at the top margin never breaks, so a
+  section longer than a page cannot push an empty one in front of itself.
 - **Documentation Q&A** (`services/docs_qa.py`): one question, one answer, no
   history. Sections of `docs/user/<lang>.md` are ranked against the question,
   the best few go into a character budget, and a context-length error from the

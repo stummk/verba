@@ -199,6 +199,8 @@
   "types.promptHint": "Instruction for the LLM on how transcripts of this type should be edited.",
   "types.structure": "Layout",
   "types.structureHint": "Decides what the PDF export builds from and how it structures without AI: dialogue and script start from the segments with their speakers, everything else from the processed text.",
+  "types.keepSections": "Do not split sections across pages",
+  "types.keepSectionsHint": "In a compilation export a file's section starts on a new page when it no longer fits on the current one, translations included. Sections that do fit stay where they are.",
   "types.structureParagraphs": "Paragraphs (running text)",
   "types.structureStanzas": "Stanzas (line breaks preserved)",
   "types.structureDialogue": "Dialogue (turns with speaker)",

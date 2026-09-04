@@ -8,7 +8,10 @@ with an LLM it gets smarter (stanzas, dialogue roles, minutes with to-dos).
 Stage 2 (render): a deterministic fpdf2 renderer lays the blocks out
 according to the transcript type's template. Folder exports append each
 file as a section separated by spacing only — no table of contents, no
-extra section titles; the per-file header comes from file metadata.
+extra section titles; the per-file header comes from file metadata. A type
+may ask for its sections to be kept whole (`keep_sections`): a file that
+would not fit on the rest of the page then starts on a new one, together
+with its translations.
 """
 
 from __future__ import annotations
@@ -382,6 +385,9 @@ GAP_AFTER_DIALOGUE = 1.0
 GAP_AFTER_LIST = 1.5
 GAP_AFTER_SEPARATOR = 2.0
 GAP_AROUND_DIVIDER = 2.0  # the "---" between language versions of one file
+#: How close to the top margin still counts as "the page is empty" — a
+#: section that fills more than a page must not push a blank one in front.
+AT_PAGE_TOP = 0.5
 
 _HARD_BREAK_RE = re.compile(r"\s*\n\s*")
 _SPACES_RE = re.compile(r"[^\S\n]{2,}")
@@ -444,6 +450,44 @@ class _Renderer:
             self._header_line(left, middle, right)
         for block in doc["blocks"]:
             self._block(block)
+
+    def group(self, docs: list[dict[str, Any]]) -> None:
+        """One file: its section, followed by its other language versions.
+
+        The versions are separated by the divider instead of a header of their
+        own — title, addition and date belong to the file, not to a language.
+        """
+        for index, doc in enumerate(docs):
+            if index:
+                self.divider()
+            self.section(doc)
+
+    def place_group(self, docs: list[dict[str, Any]], keep_together: bool) -> None:
+        """Render a file behind the one before it — on a new page if it must.
+
+        `keep_together` is the transcript type's choice: the file's section
+        then starts on a new page whenever it would not fit on the current one
+        as a whole. Whether it fits is answered by laying it out into a dummy
+        document first, so the answer covers everything the section carries —
+        the header, every block, and the translations that belong to it.
+        """
+        if keep_together and not self._fits_here(docs):
+            self.pdf.add_page()
+            self.group(docs)
+            return
+        self.pdf.ln(GAP_BETWEEN_SECTIONS)
+        self.group(docs)
+
+    def _fits_here(self, docs: list[dict[str, Any]]) -> bool:
+        pdf = self.pdf
+        if pdf.y <= pdf.t_margin + AT_PAGE_TOP:
+            # nothing to gain: this page is where the section starts anyway,
+            # and a section longer than a page has to run over regardless
+            return True
+        with pdf.offset_rendering() as dummy:
+            pdf.ln(GAP_BETWEEN_SECTIONS)
+            self.group(docs)
+        return not dummy.page_break_triggered
 
     def _header_line(self, left: str, middle: str, right: str) -> None:
         """One line: title, the addition right behind it, the date flush right.
@@ -516,12 +560,33 @@ class _Renderer:
             pdf.ln(GAP_AFTER_PARAGRAPH)
 
 
-def render_pdf(docs: list[dict[str, Any]], structure: str, target: Path) -> None:
+def section_groups(docs: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """The documents of one file each, in the order they were built.
+
+    A language version carries `divider` and belongs to the file in front of
+    it: original and translations are one section of the export, so a page
+    break is decided for all of them together, never between them.
+    """
+    groups: list[list[dict[str, Any]]] = []
+    for doc in docs:
+        if doc.get("divider") and groups:
+            groups[-1].append(doc)
+        else:
+            groups.append([doc])
+    return groups
+
+
+def render_pdf(
+    docs: list[dict[str, Any]], structure: str, target: Path, keep_sections: bool = False
+) -> None:
     """Stage 2: render one or many file sections into a single PDF.
 
     Multiple sections flow continuously, separated by spacing only — no table
     of contents and no extra section titles (the template header per file is
     the only marker).
+
+    `keep_sections` comes from the transcript type: with it, a file's section
+    is not torn across a page boundary but starts on a new page instead.
     """
     try:
         from fpdf import FPDF
@@ -534,15 +599,11 @@ def render_pdf(docs: list[dict[str, Any]], structure: str, target: Path) -> None
     pdf.set_title(_sanitize_for(family, docs[0]["title"]) if docs else "Verba")
     pdf.add_page()
     renderer = _Renderer(pdf, family, normalize_structure(structure))
-    for index, doc in enumerate(docs):
+    for index, group in enumerate(section_groups(docs)):
         if index:
-            # a language version of the same file gets the divider, the next
-            # file only the section gap
-            if doc.get("divider"):
-                renderer.divider()
-            else:
-                pdf.ln(GAP_BETWEEN_SECTIONS)
-        renderer.section(doc)
+            renderer.place_group(group, keep_sections)
+        else:
+            renderer.group(group)
     target.parent.mkdir(parents=True, exist_ok=True)
     pdf.output(str(target))
 
@@ -670,7 +731,12 @@ def handle_export_job(
         target = exports_dir(project) / export_name(stem, language, combine)
 
     report(95, "Erzeuge PDF ...")
-    render_pdf(docs, project.get("type_structure") or "", target)
+    render_pdf(
+        docs,
+        project.get("type_structure") or "",
+        target,
+        keep_sections=bool(project.get("type_keep_sections")),
+    )
     report(100, f"Export fertig: {target.name}")
 
 

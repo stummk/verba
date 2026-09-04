@@ -54,6 +54,9 @@ CREATE TABLE IF NOT EXISTS project_types (
     system_prompt TEXT NOT NULL DEFAULT '',
     output_prompt TEXT NOT NULL DEFAULT '',
     structure     TEXT NOT NULL DEFAULT 'paragraphs',
+    -- 1: a file's section starts on a new page when it would not fit
+    -- entirely on the current one (compilation exports)
+    keep_sections INTEGER NOT NULL DEFAULT 0,
     builtin       INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -283,6 +286,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     add_missing("segments", "speaker", "speaker TEXT NOT NULL DEFAULT ''")
     add_missing("project_types", "output_prompt", "output_prompt TEXT NOT NULL DEFAULT ''")
     add_missing("project_types", "structure", "structure TEXT NOT NULL DEFAULT 'paragraphs'")
+    add_missing("project_types", "keep_sections", "keep_sections INTEGER NOT NULL DEFAULT 0")
     add_missing("projects", "type_id", "type_id INTEGER REFERENCES project_types(id)")
     add_missing("projects", "auto_process", "auto_process INTEGER NOT NULL DEFAULT 0")
     add_missing("projects", "auto_language", "auto_language TEXT NOT NULL DEFAULT ''")

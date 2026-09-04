@@ -100,7 +100,10 @@ python -m ruff format --check backend/ tests/ run.py
     fpdf2 renderer; the type's layout (paragraphs/stanzas/dialogue/script)
     and output prompt drive both stages; compilation PDF without a table of
     contents; optional combined export (original + translations in one PDF,
-    separated by a `---` divider);
+    separated by a `---` divider); a type may keep its sections whole
+    (`keep_sections`): a file's documents form one group (`section_groups()`),
+    are measured with fpdf2's `offset_rendering()` and start on a new page
+    when they no longer fit — never in front of an already empty page;
     job kind `export_pdf` runs in the llm lane), vectorstore (global search index:
     small chunks with timestamps, FTS5 via DB triggers + sqlite-vec embeddings,
     hybrid query with RRF, auto-index after transcription/segment edit, reindex job

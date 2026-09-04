@@ -218,6 +218,19 @@ without AI:
 This means a type you created yourself can use the speaker segments too —
 which used to be tied to the built-in types.
 
+Next to it sits **Do not split sections across pages**. When a whole
+transcript is exported, one file otherwise follows the next on the same page,
+and a section breaks wherever the page happens to end. With this option a
+file's section starts on a new page as soon as it no longer fits on the
+current one — counted with everything that belongs to it: the header, the
+text, and the translations that follow the original in the same PDF. So if
+only half of B fits, or B fits but its translation does not, B starts at the
+top of the next page. Sections that do fit are not moved: several short
+recordings still share a page. And a section longer than a page gets no empty
+page in front of it — it fits nowhere completely and runs over as before. The
+option belongs to the type, so it only applies to the transcripts using it,
+and it is off for every built-in type.
+
 The two prompts:
 
 - **Cleanup prompt** — tells the AI how the transcript itself is processed

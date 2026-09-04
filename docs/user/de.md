@@ -226,6 +226,20 @@ gliedert:
 Damit kann auch ein selbst angelegter Typ auf die Sprecher-Segmente
 zugreifen — das war vorher fest an die Standardtypen gebunden.
 
+Dazu kommt **Abschnitte nicht über Seiten trennen**. Beim Export eines ganzen
+Transkripts folgt sonst eine Datei der anderen auf derselben Seite, und ein
+Abschnitt wird dort umgebrochen, wo die Seite zu Ende ist. Mit dieser Option
+beginnt der Abschnitt einer Datei auf einer neuen Seite, sobald er nicht mehr
+ganz auf die aktuelle passt — gerechnet wird mit allem, was dazugehört:
+Kopfzeile, Text und die Übersetzungen, die im selben PDF hinter dem Original
+stehen. Passt B also nur zur Hälfte, oder passt B, aber seine Übersetzung
+nicht mehr, dann fängt B oben auf der nächsten Seite an. Abschnitte, die
+passen, rücken nicht: kurze Aufnahmen stehen weiter mehrere auf einer Seite.
+Und ein Abschnitt, der länger als eine Seite ist, bekommt keine leere Seite
+davor — er passt nirgends ganz und läuft wie bisher über. Die Option gehört
+zum Typ, gilt also nur für die Transkripte, die ihn verwenden, und ist bei
+allen Standardtypen aus.
+
 Die beiden Prompts:
 
 - **Bereinigungsprompt** — sagt der KI, wie das Transkript selbst aufbereitet

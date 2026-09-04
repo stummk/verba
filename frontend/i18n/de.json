@@ -199,6 +199,8 @@
   "types.promptHint": "Anweisung an das LLM, wie Transkripte dieses Typs aufbereitet werden sollen.",
   "types.structure": "Gliederung",
   "types.structureHint": "Bestimmt, woraus der PDF-Export aufbaut und wie er ohne KI gliedert: Dialog und Drehbuch gehen von den Segmenten mit ihren Sprechern aus, alle anderen vom bereinigten Text.",
+  "types.keepSections": "Abschnitte nicht über Seiten trennen",
+  "types.keepSectionsHint": "Beim Sammel-Export beginnt der Abschnitt einer Datei auf einer neuen Seite, wenn er samt Übersetzungen nicht mehr ganz auf die aktuelle passt. Abschnitte, die passen, bleiben stehen, wo sie sind.",
   "types.structureParagraphs": "Absätze (Fließtext)",
   "types.structureStanzas": "Strophen (Zeilen bleiben erhalten)",
   "types.structureDialogue": "Dialog (Beiträge mit Sprecher)",

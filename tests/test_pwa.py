@@ -149,6 +149,15 @@ def test_the_system_card_offers_the_update_next_to_the_version():
     assert 'updates: { check_enabled: el("update-auto").checked }' in source
 
 
+def test_the_type_form_offers_the_page_break_per_section():
+    """A layout choice of the type, next to the structure it belongs to."""
+    source = (FRONTEND / "js" / "views" / "types.js").read_text(encoding="utf-8")
+    assert 'id="type-keep-sections"' in source
+    assert 't("types.keepSections")' in source and 't("types.keepSectionsHint")' in source
+    # and it is part of what a type saves
+    assert "keep_sections: draft.keep_sections" in source
+
+
 def test_only_a_linux_server_sees_the_system_package_button():
     """The row lives in the card but stays hidden until the backend says so."""
     source = (FRONTEND / "js" / "views" / "settings.js").read_text(encoding="utf-8")

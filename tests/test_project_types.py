@@ -100,3 +100,36 @@ def test_restore_resets_edited_builtin_prompt(client):
             "SELECT system_prompt FROM project_types WHERE key = 'speech'"
         ).fetchone()
     assert "speech transcription" in row["system_prompt"]
+
+
+def test_a_type_decides_whether_its_sections_are_kept_whole(client):
+    """Page breaks per section are a layout choice of the type, off by default."""
+    created = client.post(
+        "/api/types", json={"name": "Liedersammlung", "system_prompt": "Lied."}
+    ).json()
+    assert created["keep_sections"] == 0
+
+    updated = client.put(
+        f"/api/types/{created['id']}",
+        json={"name": "Liedersammlung", "system_prompt": "Lied.", "keep_sections": True},
+    ).json()
+    assert updated["keep_sections"] == 1
+
+    # and it reaches the export through the project the type is assigned to
+    project = client.post("/api/projects", json={"name": "Sammlung"}).json()
+    project = client.put(f"/api/projects/{project['id']}", json={"type_id": created["id"]}).json()
+    assert project["type_keep_sections"] == 1
+
+
+def test_the_builtins_keep_the_layout_they_always_had(client):
+    types = client.get("/api/types").json()
+    assert all(entry["keep_sections"] == 0 for entry in types)
+
+    song = next(entry for entry in types if entry["key"] == "song")
+    client.put(
+        f"/api/types/{song['id']}",
+        json={"name": "Song", "system_prompt": "x", "keep_sections": True},
+    )
+    client.post("/api/types/restore-defaults")
+    restored = client.get("/api/types").json()
+    assert next(entry for entry in restored if entry["key"] == "song")["keep_sections"] == 0

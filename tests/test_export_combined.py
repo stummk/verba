@@ -56,9 +56,9 @@ def rendered(monkeypatch) -> list:
     seen: list = []
     original = pdf.render_pdf
 
-    def spy(docs, structure, target):
-        seen.append({"docs": docs, "structure": structure, "target": target})
-        return original(docs, structure, target)
+    def spy(docs, structure, target, **kwargs):
+        seen.append({"docs": docs, "structure": structure, "target": target, **kwargs})
+        return original(docs, structure, target, **kwargs)
 
     monkeypatch.setattr(pdf, "render_pdf", spy)
     return seen
@@ -241,3 +241,25 @@ def test_api_accepts_the_combine_flag(client, tmp_path, monkeypatch):
         "language": "en",
         "combine": False,
     }
+
+
+def test_the_types_page_break_reaches_the_renderer(data_env, tmp_path, monkeypatch):
+    """The layout choice travels type → project → export, not by a prompt."""
+    project = make_project(tmp_path, {"a.mp3": {"": "Deutsch"}, "b.mp3": {"": "Deutsch"}})
+    seen = rendered(monkeypatch)
+
+    run_export({"scope": "project", "project_id": project["id"]})
+    assert seen[-1]["keep_sections"] is False
+
+    song = next(entry for entry in project_types.list_types() if entry["key"] == "song")
+    project_types.update_type(
+        song["id"],
+        song["name"],
+        song["system_prompt"],
+        song["output_prompt"],
+        song["structure"],
+        keep_sections=True,
+    )
+
+    run_export({"scope": "project", "project_id": project["id"]})
+    assert seen[-1]["keep_sections"] is True

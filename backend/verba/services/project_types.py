@@ -186,14 +186,23 @@ def seed_builtin_types() -> None:
             db.set_meta(conn, marker, "1")
 
 
-_BUILTIN_COLUMNS = "key, name, structure, system_prompt, output_prompt, builtin"
+_BUILTIN_COLUMNS = "key, name, structure, keep_sections, system_prompt, output_prompt, builtin"
 _INSERT_BUILTIN = (
-    f"INSERT OR IGNORE INTO project_types ({_BUILTIN_COLUMNS}) VALUES (?, ?, ?, ?, ?, 1)"
+    f"INSERT OR IGNORE INTO project_types ({_BUILTIN_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, 1)"
 )
 
 
-def _builtin_row(key: str, name: str, entry: dict[str, str]) -> tuple[str, ...]:
-    return (key, name, entry["structure"], entry["system_prompt"], entry["output_prompt"])
+def _builtin_row(key: str, name: str, entry: dict[str, Any]) -> tuple[Any, ...]:
+    # page breaks per section are off for every builtin: a compilation is
+    # laid out the way it always was until somebody asks for it
+    return (
+        key,
+        name,
+        entry["structure"],
+        int(bool(entry.get("keep_sections"))),
+        entry["system_prompt"],
+        entry["output_prompt"],
+    )
 
 
 # (column, marker, the value that means "never set") — a field added after
@@ -228,9 +237,10 @@ def restore_builtin_types() -> list[dict[str, Any]]:
     with db.get_conn() as conn:
         for entry in builtin_types():
             conn.execute(
-                f"INSERT INTO project_types ({_BUILTIN_COLUMNS}) VALUES (?, ?, ?, ?, ?, 1) "
+                f"INSERT INTO project_types ({_BUILTIN_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, 1) "
                 "ON CONFLICT(key) DO UPDATE SET "
                 "name = excluded.name, structure = excluded.structure, "
+                "keep_sections = excluded.keep_sections, "
                 "system_prompt = excluded.system_prompt, "
                 "output_prompt = excluded.output_prompt, builtin = 1",
                 _builtin_row(entry["key"], entry["name"], entry),
@@ -279,7 +289,11 @@ def _unique_key(conn, base: str) -> str:
 
 
 def create_type(
-    name: str, system_prompt: str, output_prompt: str = "", structure: str = ""
+    name: str,
+    system_prompt: str,
+    output_prompt: str = "",
+    structure: str = "",
+    keep_sections: bool = False,
 ) -> dict[str, Any]:
     """Create a type; without an output prompt it starts from the default so
     the user has something to adapt rather than an empty field."""
@@ -290,12 +304,13 @@ def create_type(
         key = _unique_key(conn, slugify(name))
         cursor = conn.execute(
             "INSERT INTO project_types "
-            "(key, name, structure, system_prompt, output_prompt, builtin) "
-            "VALUES (?, ?, ?, ?, ?, 0)",
+            "(key, name, structure, keep_sections, system_prompt, output_prompt, builtin) "
+            "VALUES (?, ?, ?, ?, ?, ?, 0)",
             (
                 key,
                 name,
                 normalize_structure(structure),
+                int(keep_sections),
                 system_prompt,
                 output_prompt or default_output_prompt(),
             ),
@@ -305,7 +320,12 @@ def create_type(
 
 
 def update_type(
-    type_id: int, name: str, system_prompt: str, output_prompt: str = "", structure: str = ""
+    type_id: int,
+    name: str,
+    system_prompt: str,
+    output_prompt: str = "",
+    structure: str = "",
+    keep_sections: bool = False,
 ) -> dict[str, Any] | None:
     """Update a type. An emptied output prompt stays empty — the export then
     falls back to the default, which is a valid choice."""
@@ -313,9 +333,16 @@ def update_type(
 
     with db.get_conn() as conn:
         cursor = conn.execute(
-            "UPDATE project_types SET name = ?, structure = ?, system_prompt = ?, "
-            "output_prompt = ? WHERE id = ?",
-            (name, normalize_structure(structure), system_prompt, output_prompt, type_id),
+            "UPDATE project_types SET name = ?, structure = ?, keep_sections = ?, "
+            "system_prompt = ?, output_prompt = ? WHERE id = ?",
+            (
+                name,
+                normalize_structure(structure),
+                int(keep_sections),
+                system_prompt,
+                output_prompt,
+                type_id,
+            ),
         )
         if cursor.rowcount == 0:
             return None

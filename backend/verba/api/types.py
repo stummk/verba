@@ -21,6 +21,8 @@ class TypeRequest(BaseModel):
     # in effect at export time
     output_prompt: str = Field(default="", max_length=8000)
     structure: Literal[STRUCTURES] = DEFAULT_STRUCTURE
+    # a file's section starts on a new page when it would not fit whole
+    keep_sections: bool = False
 
 
 @router.get("")
@@ -45,6 +47,7 @@ def create_type(body: TypeRequest, user: dict = AdminUser) -> dict:
         body.system_prompt.strip(),
         body.output_prompt.strip(),
         body.structure,
+        body.keep_sections,
     )
 
 
@@ -56,6 +59,7 @@ def update_type(type_id: int, body: TypeRequest, user: dict = AdminUser) -> dict
         body.system_prompt.strip(),
         body.output_prompt.strip(),
         body.structure,
+        body.keep_sections,
     )
     if updated is None:
         raise HTTPException(status_code=404, detail="Transcript type not found")

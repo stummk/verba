@@ -120,7 +120,7 @@ def test_a_project_export_names_the_file_it_is_on(env, monkeypatch):
 
     project, file_row = make_file(env, "20240817_Sommerlied.mp3")
     pipeline.save_text(file_row["id"], "cleanup", "Zeile")
-    monkeypatch.setattr(pdf, "render_pdf", lambda docs, structure, target: target.touch())
+    monkeypatch.setattr(pdf, "render_pdf", lambda docs, structure, target, **kw: target.touch())
 
     messages = collect_messages(
         pdf.handle_export_job, {"payload": {"scope": "project", "project_id": project["id"]}}
