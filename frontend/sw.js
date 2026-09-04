@@ -20,6 +20,7 @@ const SHELL = [
   "/js/icons.js",
   "/js/jobs.js",
   "/js/languages.js",
+  "/js/llamainstall.js",
   "/js/markdown.js",
   "/js/ws.js",
   "/js/views/dashboard.js",

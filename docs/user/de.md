@@ -81,7 +81,9 @@ Die Ersteinrichtung führt in sechs Schritten durch alles, was Verba braucht:
 3. **Transkription** — Standard-Modell, Modellverzeichnis, Gerät und
    Aufnahmesprache (Abschnitt „Whisper-Modelle").
 4. **Sprachmodell** — optional: aus, lokal oder OpenAI-kompatibler Endpunkt
-   (Abschnitt „Sprachmodell (LLM) einrichten").
+   (Abschnitt „Sprachmodell (LLM) einrichten"). Wer **Lokal (llama.cpp)**
+   wählt, kann llama.cpp gleich hier installieren; ein Protokoll zeigt dabei
+   live jeden Schritt.
 5. **Suche** — Embedding-Modell für die semantische Suche (Abschnitt „Suche").
 6. **Zugang** — optional ein Administratorkonto anlegen und damit die
    Nutzerverwaltung einschalten (Abschnitt „Nutzer & Sichtbarkeit"). Wird der
@@ -419,6 +421,14 @@ Unter **Einstellungen → KI-Aufbereitung (LLM)** wird mit einem Umschalter gena
 - **OpenAI-kompatibler Endpunkt** — Base URL, API-Schlüssel und Modellname
   (funktioniert mit OpenAI, Ollama, LM Studio, vLLM u. a.);
   „Verbindung testen" prüft den Endpunkt und listet verfügbare Modelle.
+
+**llama.cpp installieren.** Der Knopf dafür steht unter Einstellungen → KI
+und ebenso in der Ersteinrichtung im Schritt **Sprachmodell**, sobald dort
+„Lokal (llama.cpp)" gewählt ist. Beide zeigen dasselbe
+**Installationsprotokoll**: erkanntes System, gewähltes Release und Paket,
+Download, Entpacken, nachinstallierte Systempakete und die Versionsprüfung —
+Zeile für Zeile, während es passiert. Ein Wechsel der Ansicht oder ein Neuladen
+verliert das Protokoll nicht, es kommt vom Server.
 
 **Welches llama.cpp wird installiert?** Verba holt das offizielle Release
 passend zum System: unter Windows mit NVIDIA-GPU den CUDA-Build samt

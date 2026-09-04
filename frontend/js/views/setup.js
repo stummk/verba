@@ -13,12 +13,14 @@ import { el, html, toast } from "../dom.js";
 import { fillEmbeddingSelect } from "../embeddings.js";
 import { applyFitHint, endpointEstimate, isLocalEndpoint } from "../hardware.js";
 import { t } from "../i18n.js";
+import { mountLlamaInstaller } from "../llamainstall.js";
 import { fillLanguageSelect } from "../languages.js";
 import { on } from "../ws.js";
 
 const STEPS = ["install", "workspace", "whisper", "llm", "search", "access"];
 
 let unsubscribe = null;
+let llmUnsubscribe = null;
 let installRunning = false;
 let stepIndex = 0;
 let settings = null;
@@ -414,6 +416,8 @@ async function renderLlmStep(body) {
       <div id="wizard-llm-local" hidden>
         <p class="hint">${t("setup.llmLocalHint")}</p>
         <p class="small" id="wizard-llm-fit"></p>
+        <p class="hint">${t("setup.llmBinaryHint")}</p>
+        <div id="wizard-llm-binary"></div>
         <div class="form-grid">
           <div>
             <label for="wizard-llm-dir">${t("settings.llmModelsDir")}</label>
@@ -481,6 +485,12 @@ async function renderLlmStep(body) {
   // the local model runs on this machine, so name it and say whether it fits
   try {
     const status = await api.llmStatus();
+    // llama.cpp itself can be installed here — the log below says what happens
+    llmUnsubscribe?.();
+    llmUnsubscribe = mountLlamaInstaller(el("wizard-llm-binary"), {
+      status,
+      withRecommendedModel: true,
+    });
     const fit = status.catalog.find((entry) => entry.name === status.recommended.name)?.fit;
     const hint = el("wizard-llm-fit");
     if (hint) {

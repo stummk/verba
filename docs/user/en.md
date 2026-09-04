@@ -78,7 +78,9 @@ The first-run setup walks through everything Verba needs, in six steps:
 3. **Transcription** — default model, models directory, device and recording
    language (section "Whisper models").
 4. **Language model** — optional: off, local or an OpenAI-compatible endpoint
-   (section "Setting up a language model (LLM)").
+   (section "Setting up a language model (LLM)"). Choosing **Local
+   (llama.cpp)** lets you install llama.cpp right there; a log shows every
+   step as it happens.
 5. **Search** — the embedding model for the semantic search (section
    "Search").
 6. **Access** — optionally create an administrator account and switch the user
@@ -401,6 +403,13 @@ only its fields are shown:
 - **OpenAI-compatible endpoint** — base URL, API key and model name (works with
   OpenAI, Ollama, LM Studio, vLLM and others); "Test connection" probes the
   endpoint and lists available models.
+
+**Installing llama.cpp.** The button sits under Settings → AI and in the
+first-run setup's **Language model** step as soon as "Local (llama.cpp)" is
+selected. Both show the same **installation log**: the detected system, the
+chosen release and package, the download, unpacking, any system packages
+installed on the way, and the version check — line by line, while it happens.
+Switching views or reloading does not lose the log; it comes from the server.
 
 **Which llama.cpp gets installed?** Verba fetches the official release that
 matches the system: on Windows with an NVIDIA GPU the CUDA build plus the CUDA

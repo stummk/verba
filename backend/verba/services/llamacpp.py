@@ -115,6 +115,18 @@ MODEL_CATALOG: list[dict[str, Any]] = [
 _download_lock = threading.Lock()
 _downloads_running: set[str] = set()
 
+#: The last (or running) binary installation, so the UI can show what is
+#: happening — and still show it after a reload or a switch of view. The
+#: wizard installs llama.cpp in its LLM step and displays this log live.
+_INSTALL_LOG_LINES = 200
+_install_state: dict[str, Any] = {
+    "running": False,
+    "percent": 0,
+    "detail": "",
+    "error": "",
+    "log": [],
+}
+
 
 # ── paths ─────────────────────────────────────────────────────────────
 
@@ -404,29 +416,56 @@ def resolve_release() -> tuple[dict[str, Any], dict[str, Any]]:
     )
 
 
+def install_state() -> dict[str, Any]:
+    """Snapshot of the running (or last) llama.cpp installation, log included."""
+    return {**_install_state, "log": list(_install_state["log"])}
+
+
+def _install_event(percent: int, message: str, state: str = "running") -> None:
+    """Record one installation step and broadcast it with the log so far.
+
+    The percent ticks of a download repeat the same message; only new lines
+    reach the log, so it reads as a protocol and not as a progress bar.
+    """
+    log = _install_state["log"]
+    if message and (not log or log[-1] != message):
+        log.append(message)
+        del log[:-_INSTALL_LOG_LINES]
+    _install_state["percent"] = percent
+    _install_state["running"] = state == "running"
+    if message:
+        _install_state["detail"] = message
+    if state == "error":
+        _install_state["error"] = message
+    hub.publish(
+        "model.download",
+        {
+            "scope": "llm-binary",
+            "name": "llama.cpp",
+            "state": state,
+            "percent": percent,
+            "detail": message,
+            "log": list(log),
+        },
+    )
+
+
 def start_binary_install() -> bool:
     """Install the llama.cpp binary in a background thread (API entry point)."""
     with _download_lock:
         if "llama.cpp" in _downloads_running:
             return False
         _downloads_running.add("llama.cpp")
+    _install_state.update(running=True, percent=0, detail="", error="", log=[])
 
     def run() -> None:
         try:
             install_binary()
         except Exception as exc:
             logger.exception("llama.cpp installation failed")
-            hub.publish(
-                "model.download",
-                {
-                    "scope": "llm-binary",
-                    "name": "llama.cpp",
-                    "state": "error",
-                    "percent": 0,
-                    "detail": _download_error(exc),
-                },
-            )
+            _install_event(0, _download_error(exc), state="error")
         finally:
+            _install_state["running"] = False
             with _download_lock:
                 _downloads_running.discard("llama.cpp")
 
@@ -438,26 +477,20 @@ def install_binary(report: Any = None) -> str:
     """Download the current llama.cpp release binary; returns the server path."""
 
     def emit(percent: int, message: str, state: str = "running") -> None:
-        hub.publish(
-            "model.download",
-            {
-                "scope": "llm-binary",
-                "name": "llama.cpp",
-                "state": state,
-                "percent": percent,
-                "detail": message,
-            },
-        )
+        _install_event(percent, message, state)
         if report:
             report(percent, message)
 
     existing = server_binary()
     if existing is not None:
+        emit(100, f"llama.cpp ist bereits installiert: {existing}", state="done")
         return str(existing)
 
+    emit(0, f"System: {platform.system()} {platform.machine()}")
     emit(0, "Suche aktuelles llama.cpp-Release ...")
     release, asset = resolve_release()
     logger.info("installing llama.cpp %s: %s", release.get("tag_name", "?"), asset["name"])
+    emit(2, f"Release {release.get('tag_name', '?')}, Paket {asset['name']}")
 
     downloads = [(asset, "llama.cpp")]
     cudart = _pick_cudart_asset(release.get("assets", []), asset["name"])
@@ -495,12 +528,15 @@ def install_binary(report: Any = None) -> str:
         raise RuntimeError("Im llama.cpp-Archiv war kein llama-server enthalten")
     if platform.system() != "Windows":
         binary.chmod(0o755)
+    emit(97, "Prüfe, ob llama-server auf diesem System startet ...")
     try:
-        _ensure_loadable(binary, emit)
+        version = _ensure_loadable(binary, emit)
     except RuntimeError:
         # a binary this system cannot load must not look like an installation
         shutil.rmtree(dest, ignore_errors=True)
         raise
+    if version:
+        emit(99, version)
     emit(100, f"llama.cpp installiert: {binary}", state="done")
     return str(binary)
 
@@ -519,27 +555,28 @@ def _extract_archive(archive: Path, dest: Path) -> None:
             tf.extractall(dest)
 
 
-def _ensure_loadable(binary: Path, emit: Any) -> None:
+def _ensure_loadable(binary: Path, emit: Any) -> str:
     """Make the fresh binary run, installing the libraries it is missing.
 
     The dynamic linker names one missing library per attempt, so this runs in
     a loop: install, try again, install what the next attempt reports. When
     nothing can be installed — no package manager, no root, or a library that
     is present but too old — the loader failure is raised and the caller
-    discards the installation.
+    discards the installation. Returns what the binary says about itself.
     """
     for _ in range(len(_LINUX_LIBRARIES)):
         try:
-            _verify_binary(binary)
-            return
+            return _verify_binary(binary)
         except _LoaderFailure as failure:
             if not failure.missing:
                 raise
+            emit(97, f"Fehlende Systembibliothek: {', '.join(failure.missing)}")
             installed = _install_system_libraries(failure.missing, emit)
             if not installed:
                 raise
             logger.info("installed system packages: %s", ", ".join(installed))
-    _verify_binary(binary)
+            emit(98, f"Systempaket installiert: {', '.join(installed)}")
+    return _verify_binary(binary)
 
 
 def _install_system_libraries(libraries: list[str], emit: Any) -> list[str]:
@@ -561,18 +598,20 @@ def _install_system_libraries(libraries: list[str], emit: Any) -> list[str]:
     refreshed = False
     for library in libraries:
         for package in _LINUX_LIBRARIES.get(library, {}).get(manager.key, ()):
-            emit(97, f"Installiere fehlendes Systempaket {package} ...")
+            emit(97, f"Installiere fehlendes Systempaket {package} ({manager.key}) ...")
             if _run_privileged([*manager.install, package]):
                 installed.append(package)
                 break
             if manager.refresh and not refreshed:
                 # a container image often ships without any package lists
                 refreshed = True
+                emit(97, "Aktualisiere die Paketlisten ...")
                 if _run_privileged(manager.refresh) and _run_privileged(
                     [*manager.install, package]
                 ):
                     installed.append(package)
                     break
+            emit(97, f"{package} ließ sich nicht installieren")
     return installed
 
 
@@ -649,7 +688,7 @@ def _installable_libraries(output: str) -> list[str]:
     return list(dict.fromkeys(found))
 
 
-def _verify_binary(binary: Path) -> None:
+def _verify_binary(binary: Path) -> str:
     """Run the fresh binary once, so a missing system library surfaces here.
 
     The Linux archive links against libstdc++/libgomp of the host, and a
@@ -671,7 +710,7 @@ def _verify_binary(binary: Path) -> None:
         logger.error("llama-server is not executable: %s", exc)
         raise RuntimeError(f"llama-server ist nicht ausführbar: {exc}") from exc
     except subprocess.TimeoutExpired:
-        return  # it started and kept running, which is all this checks
+        return ""  # it started and kept running, which is all this checks
     output = f"{result.stdout}\n{result.stderr}"
     failure = _loader_failure(result.returncode, output)
     if failure:
@@ -680,6 +719,8 @@ def _verify_binary(binary: Path) -> None:
             f"llama-server lässt sich auf diesem System nicht starten: {failure}",
             _installable_libraries(output),
         )
+    logger.info("llama-server verified: %s", output.strip().splitlines()[:1])
+    return next((line.strip() for line in output.splitlines() if line.strip()), "")
 
 
 def _loader_failure(returncode: int, output: str) -> str:
@@ -835,13 +876,13 @@ def start_model_download(name: str) -> bool:
         target = llm_models_dir() / entry["file"]
         partial = target.with_suffix(".part")
         try:
-            emit(0, f"Lade {entry['file']} ...")
+            emit(0, f"Lade {entry['file']} ({entry['size_mb']} MB) ...")
             # same here: a part file from an earlier process is not resumed blindly
             partial.unlink(missing_ok=True)
             _download_file(entry["url"], partial, MAX_MODEL_BYTES, emit)
             _check_gguf(partial)
             partial.replace(target)
-            emit(100, "fertig", state="done")
+            emit(100, f"{entry['file']} geladen: {target}", state="done")
         except Exception as exc:
             logger.exception("LLM model download failed: %s", entry["name"])
             partial.unlink(missing_ok=True)
@@ -1070,6 +1111,7 @@ def status() -> dict[str, Any]:
         model["fit"] = hardware.check_llm_model(hardware.gguf_requirement(model["size_mb"]), hw=hw)
     return {
         "binary_installed": server_binary() is not None,
+        "install": install_state(),
         "server_running": _server_process is not None and _server_process.poll() is None,
         "active_model": _server_model,
         "hardware": hw,

@@ -80,3 +80,18 @@ def test_dashboard_dialogs_are_available_inside_project_card_actions():
     assert "let deleteDialog = null;" in source
     assert "renameDialog.showModal()" in source
     assert "deleteDialog.showModal()" in source
+
+
+def test_llama_cpp_can_be_installed_in_the_wizard_and_in_the_settings():
+    """Both views mount the shared installer, so both show the same log."""
+    component = (FRONTEND / "js" / "llamainstall.js").read_text(encoding="utf-8")
+    assert "setup-log" in component, "the installer shows the backend's log"
+
+    wizard = (FRONTEND / "js" / "views" / "setup.js").read_text(encoding="utf-8")
+    assert "mountLlamaInstaller" in wizard and "wizard-llm-binary" in wizard
+    # the wizard also offers the recommended model, the settings page has the catalog
+    assert "withRecommendedModel: true" in wizard
+    assert "llmModels.downloadRecommended" in component
+
+    settings = (FRONTEND / "js" / "views" / "settings.js").read_text(encoding="utf-8")
+    assert "mountLlamaInstaller" in settings

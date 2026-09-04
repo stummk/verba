@@ -8,10 +8,12 @@ import { iconButton } from "../icons.js";
 import { SUPPORTED_LANGUAGES, currentLanguage, t } from "../i18n.js";
 import { jobCardHost } from "../jobs.js";
 import { fillLanguageSelect } from "../languages.js";
+import { mountLlamaInstaller } from "../llamainstall.js";
 import { on } from "../ws.js";
 
 let unsubscribe = null;
 let unsubscribers = [];
+let llmInstallerCleanup = null;
 
 export async function render(view) {
   let settings = await api.getSettings();
@@ -709,41 +711,17 @@ async function refreshLlmSection() {
 
   const binaryHost = el("llm-binary");
   if (binaryHost) {
-    const row = document.createElement("div");
-    row.className = "model-row";
-    row.append(Object.assign(document.createElement("span"), {
-      className: "model-name", textContent: "llama.cpp (llama-server)",
-    }));
-    row.append(Object.assign(document.createElement("span"), { className: "spacer" }));
-    if (status.binary_installed) {
-      row.append(Object.assign(document.createElement("span"), {
-        className: "badge badge-done", textContent: t("models.installed"),
-      }));
-      if (status.server_running) {
-        row.append(iconButton("stop", t("llmModels.stopServer"), async () => {
-          await api.llmStopServer().catch((e) => toast(e.message));
-          await refreshLlmSection();
-        }));
-      }
-    } else {
-      const install = document.createElement("button");
-      install.type = "button";
-      install.className = "text-btn small-btn";
-      install.textContent = t("llmModels.installBinary");
-      install.onclick = async () => {
-        try {
-          await api.llmSetup();
-          toast(t("llmModels.installStarted"));
-        } catch (error) {
-          toast(error.message);
-        }
-      };
-      row.append(install);
-    }
-    const progress = document.createElement("div");
-    progress.className = "small muted";
-    progress.dataset.llmProgress = "llama.cpp";
-    binaryHost.replaceChildren(row, progress);
+    // the installer with its live log — the same component the wizard mounts
+    llmInstallerCleanup?.();
+    llmInstallerCleanup = mountLlamaInstaller(binaryHost, {
+      status,
+      extraControls: (current) => (current?.server_running
+        ? [iconButton("stop", t("llmModels.stopServer"), async () => {
+            await api.llmStopServer().catch((e) => toast(e.message));
+            await refreshLlmSection();
+          })]
+        : []),
+    });
   }
 
   const catalogHost = el("llm-catalog");

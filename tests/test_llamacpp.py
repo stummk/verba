@@ -721,3 +721,119 @@ def test_an_unrepairable_installation_is_removed(
 
     assert llamacpp.server_binary() is None
     assert not dest.exists()
+
+
+# ── the installation log the UI shows ─────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _clean_install_state():
+    """Every test starts with an empty installation log."""
+    llamacpp._install_state.update(running=False, percent=0, detail="", error="", log=[])
+    yield
+
+
+def test_the_status_carries_an_idle_installation(client):
+    install = client.get("/api/models/llm").json()["install"]
+    assert install == {"running": False, "percent": 0, "detail": "", "error": "", "log": []}
+
+
+def test_every_step_becomes_a_log_line():
+    llamacpp._install_event(0, "Suche aktuelles llama.cpp-Release ...")
+    llamacpp._install_event(10, "Lade llama.cpp ...")
+    llamacpp._install_event(20, "Lade llama.cpp ...")  # the percent ticks repeat
+    llamacpp._install_event(100, "llama.cpp installiert: /opt/llama", state="done")
+
+    state = llamacpp.install_state()
+    assert state["log"] == [
+        "Suche aktuelles llama.cpp-Release ...",
+        "Lade llama.cpp ...",
+        "llama.cpp installiert: /opt/llama",
+    ]
+    assert state["running"] is False
+    assert state["percent"] == 100
+
+
+def test_the_log_reaches_the_ui_with_every_event(monkeypatch):
+    events = []
+    monkeypatch.setattr(llamacpp.hub, "publish", lambda name, data: events.append((name, data)))
+
+    llamacpp._install_event(0, "Entpacke llama.cpp ...")
+    llamacpp._install_event(0, "Installiere fehlendes Systempaket libgomp1 (apt) ...")
+
+    assert [name for name, _ in events] == ["model.download", "model.download"]
+    assert events[-1][1]["scope"] == "llm-binary"
+    assert events[-1][1]["log"] == [
+        "Entpacke llama.cpp ...",
+        "Installiere fehlendes Systempaket libgomp1 (apt) ...",
+    ]
+
+
+def test_the_log_does_not_grow_without_bound():
+    for number in range(llamacpp._INSTALL_LOG_LINES + 50):
+        llamacpp._install_event(0, f"Schritt {number}")
+    log = llamacpp.install_state()["log"]
+    assert len(log) == llamacpp._INSTALL_LOG_LINES
+    assert log[-1] == f"Schritt {llamacpp._INSTALL_LOG_LINES + 49}"
+
+
+def test_a_failed_installation_ends_in_the_log(monkeypatch):
+    """The wizard shows why it did not work, in German and without a reload."""
+    monkeypatch.setattr(
+        llamacpp,
+        "resolve_release",
+        lambda: (_ for _ in ()).throw(RuntimeError("Für dieses System gibt es kein Release")),
+    )
+
+    assert llamacpp.start_binary_install() is True
+    assert _wait_for(lambda: not llamacpp.install_state()["running"])
+
+    state = llamacpp.install_state()
+    assert "kein Release" in state["error"]
+    assert state["log"][-1] == state["error"]
+
+
+def test_a_second_install_starts_with_an_empty_log(monkeypatch):
+    llamacpp._install_event(0, "alter Lauf")
+    monkeypatch.setattr(llamacpp, "install_binary", lambda: "/opt/llama-server")
+
+    assert llamacpp.start_binary_install() is True
+    assert _wait_for(lambda: not llamacpp.install_state()["running"])
+
+    assert "alter Lauf" not in llamacpp.install_state()["log"]
+
+
+def test_the_log_tells_the_whole_story(http_source, monkeypatch, package_manager, tmp_path):
+    """Release, package, unpacking, the repaired library and the version."""
+    archive = tmp_path / "llama-b1-bin-ubuntu-x64.tar.gz"
+    _tar_release(archive)
+    http_source.handler.payload = archive.read_bytes()
+    monkeypatch.setattr(llamacpp, "binary_dir", lambda: tmp_path / "tools" / "llama")
+    verify = _failing_verify(["libgomp.so.1"])
+    monkeypatch.setattr(
+        llamacpp,
+        "_verify_binary",
+        lambda binary: verify(binary) or "version: 0.3.0-dev (build 10621)",
+    )
+    monkeypatch.setattr(
+        llamacpp,
+        "resolve_release",
+        lambda: (
+            {"tag_name": "b1", "assets": []},
+            {
+                "name": archive.name,
+                "size": len(http_source.handler.payload),
+                "browser_download_url": http_source.url,
+            },
+        ),
+    )
+
+    llamacpp.install_binary()
+
+    log = "\n".join(llamacpp.install_state()["log"])
+    assert "Release b1, Paket llama-b1-bin-ubuntu-x64.tar.gz" in log
+    assert "Entpacke" in log
+    assert "libgomp.so.1" in log and "libgomp1" in log
+    assert "version: 0.3.0-dev (build 10621)" in log
+    assert "llama.cpp installiert:" in log
+    assert llamacpp.install_state()["percent"] == 100
