@@ -55,6 +55,10 @@ the onboarding — in tests via `setup_check.install_group(...)` when needed.
 - Code/comments/commits in English. UI texts via the i18n catalog
   (`frontend/i18n/`, at least de/en/ru); always add new strings to all
   catalogs, default language German.
+- **Line endings come from `.gitattributes`**, not from a local
+  `core.autocrlf`: the repository stores LF, only `*.bat` and `*.iss` are
+  checked out as CRLF. Never rewrite a whole file's line endings as a side
+  effect of an edit — a diff of thousands of lines hides the actual change.
 
 ## Test Routines
 

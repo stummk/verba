@@ -1,0 +1,12 @@
+# Line endings belong to the repository, not to each machine's core.autocrlf:
+# a checkout used to depend on the developer's Git configuration, which is how
+# single files ended up committed with CRLF while everything around them was LF.
+* text=auto eol=lf
+
+# Windows-only tooling that wants CRLF on disk; the repository still stores LF.
+*.bat text eol=crlf
+*.iss text eol=crlf
+
+# Binary assets are never converted or diffed as text.
+*.png binary
+*.ico binary
