@@ -95,3 +95,33 @@ def test_llama_cpp_can_be_installed_in_the_wizard_and_in_the_settings():
 
     settings = (FRONTEND / "js" / "views" / "settings.js").read_text(encoding="utf-8")
     assert "mountLlamaInstaller" in settings
+
+
+def test_api_key_label_is_required_and_gates_the_button():
+    """A key is only recognisable by its label, so the form insists on one."""
+    source = (FRONTEND / "js" / "views" / "settings.js").read_text(encoding="utf-8")
+    form = source.split('id="apikey-name"', 1)[1][:400]
+    assert "required" in form and 'aria-required="true"' in form
+    assert 'class="required-mark"' in source, "the label carries a visible marker"
+    # the button starts disabled and follows the field
+    assert 'id="apikey-create" disabled' in source
+    assert "apiKeyCreate.disabled = !apiKeyName.value.trim();" in source
+    assert ".required-mark" in (FRONTEND / "styles.css").read_text(encoding="utf-8")
+
+
+def test_settings_actions_are_icon_buttons():
+    """Opening the documentation and creating a key are icon-only actions."""
+    source = (FRONTEND / "js" / "views" / "settings.js").read_text(encoding="utf-8")
+    # both views (administrator and personal settings) offer the documentation
+    assert source.count('class="btn icon-btn" href="#/docs"') == 2
+    assert source.count('iconSvg("help")') == 2
+    assert 'class="icon-btn" id="apikey-create"' in source
+    assert 'iconSvg("add")' in source
+    # an icon-only button still names its action for tooltip and screen reader
+    for button in ('href="#/docs"', 'id="apikey-create"'):
+        block = source.split(button, 1)[1][:400]
+        assert "title=" in block and "aria-label=" in block
+
+    icons = (FRONTEND / "js" / "icons.js").read_text(encoding="utf-8")
+    for name in ("help", "add"):
+        assert f"  {name}:" in icons, f"icon '{name}' is missing"

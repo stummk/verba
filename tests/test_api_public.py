@@ -47,6 +47,17 @@ def test_create_key_returns_plaintext_exactly_once(client):
     assert listed[0]["name"] == "CI"
 
 
+def test_key_label_must_carry_something(client):
+    """The settings form marks the label required — the API agrees."""
+    assert client.post("/api/apikeys", json={"name": "   "}).status_code == 422
+    assert client.post("/api/apikeys", json={"name": ""}).status_code == 422
+    assert client.get("/api/apikeys").json() == []
+
+    created = client.post("/api/apikeys", json={"name": "  padded  "})
+    assert created.status_code == 201
+    assert created.json()["name"] == "padded"
+
+
 def test_delete_key(client):
     created = client.post("/api/apikeys", json={"name": "tmp"}).json()
     assert client.delete(f"/api/apikeys/{created['id']}").json() == {"deleted": True}

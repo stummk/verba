@@ -842,7 +842,9 @@ alles, was mit dem OpenAI-SDK spricht.
   antwortet, sobald die Transkription fertig ist.
 
 **API-Schlüssel:** In den Einstellungen unter „API" lassen sich Schlüssel
-erstellen und löschen. Sobald mindestens ein Schlüssel existiert, verlangt der
+erstellen und löschen. Die **Bezeichnung** ist Pflicht — nur an ihr ist ein
+Schlüssel später wiederzuerkennen, deshalb wird der Knopf zum Erstellen erst
+aktiv, sobald das Feld etwas enthält. Sobald mindestens ein Schlüssel existiert, verlangt der
 Endpunkt `Authorization: Bearer <Schlüssel>`; ohne Schlüssel ist die API offen
 — das ist nur für rein lokale Nutzung gedacht. Jeder Schlüssel wird genau
 einmal im Klartext angezeigt, danach ist nur noch sein Anfang sichtbar.

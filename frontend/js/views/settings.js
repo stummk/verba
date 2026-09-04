@@ -1,10 +1,10 @@
 // Settings: UI language, whisper defaults, LLM, storage/logs, model management.
 
 import { api } from "../api.js";
-import { el, html, toast } from "../dom.js";
+import { el, html, raw, toast } from "../dom.js";
 import { fillEmbeddingSelect } from "../embeddings.js";
 import { applyFitHint, endpointEstimate, fitBadge, hardwareLine, isLocalEndpoint } from "../hardware.js";
-import { iconButton } from "../icons.js";
+import { iconButton, iconSvg } from "../icons.js";
 import { SUPPORTED_LANGUAGES, currentLanguage, t } from "../i18n.js";
 import { jobCardHost } from "../jobs.js";
 import { fillLanguageSelect } from "../languages.js";
@@ -48,7 +48,9 @@ export async function render(view) {
           </div>
           <div>
             <label>${t("settings.docs")}</label>
-            <a class="btn tonal" href="#/docs">${t("settings.docsOpen")}</a>
+            <a class="btn icon-btn" href="#/docs"
+               title="${t("settings.docsOpen")}" aria-label="${t("settings.docsOpen")}"
+               >${raw(iconSvg("help"))}</a>
             <p class="hint">${t("settings.docsHint")}</p>
           </div>
         </div>
@@ -204,14 +206,18 @@ export async function render(view) {
         <div id="apikey-list"></div>
         <div class="form-grid">
           <div>
-            <label for="apikey-name">${t("settings.apiKeyName")}</label>
-            <input id="apikey-name" maxlength="100" autocomplete="off">
+            <label for="apikey-name">
+              ${t("settings.apiKeyName")}<span class="required-mark" aria-hidden="true">*</span>
+            </label>
+            <input id="apikey-name" maxlength="100" autocomplete="off"
+                   required aria-required="true">
           </div>
           <div>
             <label>&nbsp;</label>
-            <button type="button" class="text-btn" id="apikey-create">
-              ${t("settings.apiKeyCreate")}
-            </button>
+            <button type="button" class="icon-btn" id="apikey-create" disabled
+                    title="${t("settings.apiKeyCreate")}"
+                    aria-label="${t("settings.apiKeyCreate")}"
+                    >${raw(iconSvg("add"))}</button>
           </div>
         </div>
         <p class="hint">${t("settings.apiDocsHint")}</p>
@@ -344,12 +350,21 @@ export async function render(view) {
     }
   };
 
-  el("apikey-create").onclick = async () => {
-    const name = el("apikey-name").value.trim();
+  // a key without a label cannot be told apart later — the button stays
+  // disabled until the field holds something
+  const apiKeyName = el("apikey-name");
+  const apiKeyCreate = el("apikey-create");
+  apiKeyName.oninput = () => {
+    apiKeyCreate.disabled = !apiKeyName.value.trim();
+  };
+
+  apiKeyCreate.onclick = async () => {
+    const name = apiKeyName.value.trim();
     if (!name) return;
     try {
       const created = await api.createApiKey(name);
-      el("apikey-name").value = "";
+      apiKeyName.value = "";
+      apiKeyCreate.disabled = true;
       showNewApiKey(created.key);
       await refreshApiKeys();
     } catch (error) {
@@ -516,7 +531,9 @@ async function renderPersonalSettings(view, settings) {
           </div>
           <div>
             <label>${t("settings.docs")}</label>
-            <a class="btn tonal" href="#/docs">${t("settings.docsOpen")}</a>
+            <a class="btn icon-btn" href="#/docs"
+               title="${t("settings.docsOpen")}" aria-label="${t("settings.docsOpen")}"
+               >${raw(iconSvg("help"))}</a>
             <p class="hint">${t("settings.docsHint")}</p>
           </div>
         </div>

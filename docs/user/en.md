@@ -804,7 +804,9 @@ OpenAI SDK.
 - Every request runs through the same fair queue as the app and responds as
   soon as the transcription is done.
 
-**API keys:** Keys can be created and deleted in the settings under "API". As
+**API keys:** Keys can be created and deleted in the settings under "API".
+The **label** is required — it is the only thing a key is later recognised by,
+so the create button stays inactive until the field holds something. As
 soon as at least one key exists, the endpoint requires
 `Authorization: Bearer <key>`; without any key the API is open — intended for
 strictly local use only. Each key is shown in plaintext exactly once; after

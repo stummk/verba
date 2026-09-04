@@ -299,6 +299,8 @@ input:focus, select:focus {
   outline-offset: -.125rem;
   border-color: transparent;
 }
+/* a required field says so on its label; the input carries `required` too */
+.required-mark { margin-left: .15rem; color: var(--md-error); }
 .form-grid { display: grid; grid-template-columns: 1fr; column-gap: 1.25rem; }
 @media (min-width: 40em) { .form-grid { grid-template-columns: 1fr 1fr; } }
 .inline-form { display: flex; gap: .6rem; }
