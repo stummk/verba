@@ -372,9 +372,16 @@ published GitHub release and attaches them to it:
 2. `Verba-<version>-x86_64.AppImage` — Linux desktop
 3. `verba-server-<version>.zip` — headless server package
 
-The version comes from the tag (`v1.0.0` → `1.0.0`). Quality gate:
-`.github/workflows/ci.yml` (ruff + pytest, Ubuntu and Windows) runs on every
-push.
+The version comes from the tag (`v1.0.0` → `1.0.0`) — it names the artifacts
+and, via `packaging/stamp_version.py`, is written into
+`backend/verba/__init__.py` before each of the three builds. That is why the
+app reports the released version under Settings → System instead of whatever
+was committed last; a manual bump before tagging is not needed, and the number
+in the repository is only the value for runs from source
+(`tests/test_version_stamp.py`).
+
+Quality gate: `.github/workflows/ci.yml` (ruff + pytest, Ubuntu and Windows)
+runs on every push.
 
 ## Server Deployment
 

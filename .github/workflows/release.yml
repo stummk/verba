@@ -35,6 +35,9 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install -r requirements/core.txt pyinstaller
 
+      - name: Stamp release version into the backend
+        run: python packaging/stamp_version.py ${{ steps.version.outputs.version }}
+
       - name: PyInstaller build
         run: pyinstaller packaging/verba.spec --noconfirm
 
@@ -95,6 +98,9 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install -r requirements/core.txt pyinstaller
 
+      - name: Stamp release version into the backend
+        run: python packaging/stamp_version.py ${{ steps.version.outputs.version }}
+
       - name: PyInstaller build
         run: pyinstaller packaging/verba.spec --noconfirm
 
@@ -113,9 +119,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
       - name: Resolve version from tag
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp release version into the backend
+        run: python packaging/stamp_version.py ${{ steps.version.outputs.version }}
 
       - name: Assemble server package
         run: |
