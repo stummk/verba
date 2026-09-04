@@ -7,12 +7,22 @@ settings page offers exactly what an administrator would type in over SSH:
     apt-get update
     apt-get --yes upgrade
 
-Nothing more: no ``dist-upgrade`` (that one may remove packages), no
-``autoremove``, no reboot — an upgrade that needs one says so and leaves the
-decision to the administrator. Both commands run non-interactively and keep
-the configuration files that are on the machine, and every line they say goes
-into a log the page shows live (event ``system.upgrade``). That log lives in
-this process only: it is the record of one action somebody watched happen.
+and, when the administrator ticks the box next to the button, the thorough
+variant instead:
+
+    apt-get --yes dist-upgrade
+    apt-get --yes autoremove
+
+That one is off by default. ``dist-upgrade`` also installs packages whose
+dependencies changed and may remove packages on the way, and ``autoremove``
+clears out what nothing needs any more — on a server both are a decision
+about the machine, so they are taken per run and never remembered.
+
+What is never done is the reboot: an upgrade that needs one says so and
+leaves that to the administrator. Every command runs non-interactively and
+keeps the configuration files that are on the machine, and every line it says
+goes into a log the page shows live (event ``system.upgrade``). That log lives
+in this process only: it is the record of one action somebody watched happen.
 
 Offered only where it applies. A Windows installation has no apt, and a
 desktop installation is not somebody's server — there the operating system is
@@ -119,6 +129,8 @@ _run: dict[str, Any] = {
     "error": "",
     "log": [],
     "reboot": False,
+    #: whether this run was the dist-upgrade one — it says so in the log
+    "full": False,
     "finished_at": 0.0,
 }
 
@@ -163,26 +175,43 @@ def _emit(message: str, state: str = "running") -> None:
 # ── the update itself ─────────────────────────────────────────────────
 
 
-def start() -> dict[str, Any]:
-    """Update the system packages in a background thread (API entry point)."""
+def start(full: bool = False) -> dict[str, Any]:
+    """Update the system packages in a background thread (API entry point).
+
+    `full` is the checkbox next to the button: `dist-upgrade` instead of
+    `upgrade`, and `autoremove` afterwards. It is off by default, because both
+    of them may remove packages — on a server that is a decision, not a
+    detail, so it is taken per run and never remembered.
+    """
     ok, reason = ready()
     if not ok:
         return {"started": False, "reason": reason}
     with _lock:
         if _run["running"]:
             return {"started": False, "reason": "Die Serveraktualisierung läuft bereits."}
-        _run.update(running=True, detail="", error="", log=[], reboot=False, finished_at=0.0)
-    threading.Thread(target=_upgrade, daemon=True, name="server-update").start()
+        _run.update(
+            running=True, detail="", error="", log=[], reboot=False, full=full, finished_at=0.0
+        )
+    threading.Thread(target=_upgrade, args=(full,), daemon=True, name="server-update").start()
     return {"started": True, "reason": ""}
 
 
-def _upgrade() -> None:
+def _upgrade(full: bool = False) -> None:
     elevate = _elevation() or []
     try:
         _emit("apt-get update — die Paketlisten werden gelesen")
         _apt([*elevate, APT, "update"], UPDATE_TIMEOUT_S)
-        _emit("apt-get upgrade — die Pakete werden installiert")
-        _apt([*elevate, APT, "--yes", *_KEEP_CONFIG, "upgrade"], UPGRADE_TIMEOUT_S)
+        if full:
+            _emit(
+                "apt-get dist-upgrade — die Pakete werden installiert, auch wenn dafür "
+                "Abhängigkeiten wechseln"
+            )
+            _apt([*elevate, APT, "--yes", *_KEEP_CONFIG, "dist-upgrade"], UPGRADE_TIMEOUT_S)
+            _emit("apt-get autoremove — nicht mehr benötigte Pakete werden entfernt")
+            _apt([*elevate, APT, "--yes", "autoremove"], UPGRADE_TIMEOUT_S)
+        else:
+            _emit("apt-get upgrade — die Pakete werden installiert")
+            _apt([*elevate, APT, "--yes", *_KEEP_CONFIG, "upgrade"], UPGRADE_TIMEOUT_S)
         reboot = REBOOT_MARKER.exists()
         with _lock:
             _run["reboot"] = reboot

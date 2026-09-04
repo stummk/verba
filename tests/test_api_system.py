@@ -174,3 +174,16 @@ def test_starting_a_server_update_answers_with_the_reason_it_refused(client, mon
     response = client.post("/api/system/os-update")
     assert response.status_code == 200
     assert response.json() == {"started": False, "reason": "Kein apt auf diesem Server."}
+
+
+def test_the_thorough_server_upgrade_is_only_run_when_asked(client, monkeypatch):
+    """A plain POST is the plain upgrade — removing packages needs the flag."""
+    asked: list[bool] = []
+    monkeypatch.setattr(
+        osupdate, "start", lambda full=False: asked.append(full) or {"started": True, "reason": ""}
+    )
+
+    client.post("/api/system/os-update")
+    client.post("/api/system/os-update", json={"full": True})
+
+    assert asked == [False, True]

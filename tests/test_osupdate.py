@@ -20,7 +20,9 @@ from verba.services import osupdate, updates
 @pytest.fixture(autouse=True)
 def fresh_state():
     """Every test starts without a log and without a running update."""
-    osupdate._run.update(running=False, detail="", error="", log=[], reboot=False, finished_at=0.0)
+    osupdate._run.update(
+        running=False, detail="", error="", log=[], reboot=False, full=False, finished_at=0.0
+    )
     yield
 
 
@@ -175,6 +177,53 @@ def test_both_commands_run_in_order_and_without_asking(monkeypatch):
         assert call["env"]["LC_ALL"] == "C"
     assert osupdate.state()["error"] == ""
     assert osupdate.state()["running"] is False
+
+
+def test_the_thorough_upgrade_has_to_be_asked_for(monkeypatch):
+    """dist-upgrade and autoremove may remove packages — never by default."""
+    allow(monkeypatch)
+    calls = fake_apt(monkeypatch, [FakeProcess([]), FakeProcess([]), FakeProcess([])])
+
+    osupdate._upgrade(full=True)
+
+    assert [call["command"][1:] for call in calls] == [
+        ["update"],
+        [
+            "--yes",
+            "-o",
+            "Dpkg::Options::=--force-confdef",
+            "-o",
+            "Dpkg::Options::=--force-confold",
+            "dist-upgrade",
+        ],
+        ["--yes", "autoremove"],
+    ]
+    # the log names what ran, so the record says which of the two it was
+    log = " ".join(osupdate.state()["log"])
+    assert "dist-upgrade" in log and "autoremove" in log
+
+
+def test_nothing_is_removed_unless_the_box_was_ticked(monkeypatch):
+    allow(monkeypatch)
+    calls = fake_apt(monkeypatch, [FakeProcess([]), FakeProcess([])])
+
+    osupdate._upgrade()
+
+    assert [call["command"][-1] for call in calls] == ["update", "upgrade"]
+    assert "autoremove" not in " ".join(osupdate.state()["log"])
+
+
+def test_a_failed_dist_upgrade_removes_nothing_afterwards(monkeypatch):
+    allow(monkeypatch)
+    calls = fake_apt(
+        monkeypatch,
+        [FakeProcess([]), FakeProcess(["E: Unmet dependencies"], code=100)],
+    )
+
+    osupdate._upgrade(full=True)
+
+    assert [call["command"][-1] for call in calls] == ["update", "dist-upgrade"]
+    assert "100" in osupdate.state()["error"]
 
 
 def test_sudo_is_put_in_front_of_both_commands(monkeypatch):

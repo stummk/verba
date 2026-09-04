@@ -406,9 +406,11 @@ Settings → System, streaming apt's output into the same kind of live,
 in-memory log (event `system.upgrade`). `supported()` decides whether the row
 exists at all — Linux, not the AppImage, not desktop mode — and `ready()` why
 the button is off: no apt, or no way to become root (the service user needs
-passwordless sudo). Nothing else is run: no `dist-upgrade`, no `autoremove`,
-and a reboot a package asks for (`/var/run/reboot-required`) is reported at
-the end of the log instead of performed.
+passwordless sudo). `start(full=True)` — the checkbox next to the button —
+runs `dist-upgrade` and then `autoremove` instead; it is off by default and
+never remembered, because both may remove packages. A reboot a package asks
+for (`/var/run/reboot-required`) is reported at the end of the log instead of
+performed.
 
 Quality gate: `.github/workflows/ci.yml` (ruff + pytest, Ubuntu and Windows)
 runs on every push.

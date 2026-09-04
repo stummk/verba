@@ -129,7 +129,9 @@ python -m ruff format --check backend/ tests/ run.py
     osupdate (the machine itself, not Verba: a Linux server installation
     updates its system packages with `apt-get update` and
     `apt-get --yes upgrade`, non-interactively and keeping the installed
-    configuration. Every line apt says is broadcast as `system.upgrade` and
+    configuration; a checkbox makes it `dist-upgrade` plus `autoremove`
+    instead, which is off by default because both may remove packages and is
+    decided per run. Every line apt says is broadcast as `system.upgrade` and
     kept in the process only, so the settings page can show the run while it
     happens. Offered nowhere else — not on Windows, not for the AppImage, not
     in desktop mode — and only with root or passwordless sudo; a reboot a

@@ -293,6 +293,10 @@ export async function render(view) {
                     >${raw(iconSvg("upgrade"))}</button>
           </div>
           <p class="hint" id="os-status"></p>
+          <label class="checkline">
+            <input type="checkbox" id="os-full"> ${t("osUpdate.full")}
+          </label>
+          <p class="hint">${t("osUpdate.fullHint")}</p>
           <p class="small muted" id="os-log-title" hidden>${t("osUpdate.logTitle")}</p>
           <div class="setup-log" id="os-log" hidden></div>
         </div>
@@ -427,13 +431,17 @@ export async function render(view) {
     }
   };
 
+  // an icon-only button has to say which of the two runs it starts
+  el("os-full").onchange = () => nameOsAction();
   el("os-run").onclick = async () => {
     const button = el("os-run");
     button.disabled = true;
     button.classList.remove("filled");
+    // the choice for this run has been sent — it must not look changeable
+    el("os-full").disabled = true;
     el("os-status").textContent = t("osUpdate.running");
     try {
-      const result = await api.startOsUpdate();
+      const result = await api.startOsUpdate(el("os-full").checked);
       if (!result.started) {
         toast(result.reason);
         await refreshOsUpdate();
@@ -1148,6 +1156,9 @@ async function refreshOsUpdate() {
   const button = el("os-run");
   button.disabled = !info.can_run;
   button.classList.toggle("filled", info.can_run);
+  // while apt runs, the choice for that run has been made
+  el("os-full").disabled = !info.can_run;
+  nameOsAction();
 
   const run = info.run ?? {};
   const status = el("os-status");
@@ -1159,6 +1170,14 @@ async function refreshOsUpdate() {
   else status.textContent = info.reason || t("osUpdate.hint");
 
   showOsProgress(run);
+}
+
+function nameOsAction() {
+  const button = el("os-run");
+  if (!button) return;
+  const action = el("os-full")?.checked ? t("osUpdate.runFull") : t("osUpdate.run");
+  button.title = action;
+  button.setAttribute("aria-label", action);
 }
 
 function showOsProgress(run) {

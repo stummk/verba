@@ -99,7 +99,7 @@ export const api = {
   updateInfo: (refresh = false) => request("GET", `/api/system/update?refresh=${refresh}`),
   startUpdate: () => request("POST", "/api/system/update"),
   osUpdateInfo: () => request("GET", "/api/system/os-update"),
-  startOsUpdate: () => request("POST", "/api/system/os-update"),
+  startOsUpdate: (full = false) => request("POST", "/api/system/os-update", { full }),
   shutdown: () => request("POST", "/api/system/shutdown"),
   runSetup: (includeOptional = true) =>
     request("POST", "/api/system/setup/run", { include_optional: includeOptional }),

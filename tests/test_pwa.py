@@ -162,6 +162,10 @@ def test_only_a_linux_server_sees_the_system_package_button():
     # what apt does is shown while it happens
     assert 'id="os-log"' in source
     assert 'on("system.upgrade"' in source
+    # dist-upgrade and autoremove may remove packages: a switch, and off
+    assert 'id="os-full"' in source
+    assert 'api.startOsUpdate(el("os-full").checked)' in source
+    assert 'checked ? t("osUpdate.runFull") : t("osUpdate.run")' in source
 
 
 def test_a_new_release_is_announced_where_the_user_looks():

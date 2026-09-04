@@ -118,6 +118,15 @@ es ist der Mitschnitt dieses einen Vorgangs. Verba selbst bleibt dabei
 unangetastet, und der Server startet nie von allein neu: verlangt ein Paket
 einen Neustart, sagt das Protokoll das am Ende.
 
+Darunter steht **Vollständiges Upgrade (dist-upgrade und autoremove)**. Mit
+Häkchen läuft `apt dist-upgrade` statt `apt upgrade` — das installiert auch
+Pakete, für die Abhängigkeiten wechseln, und kann dabei Pakete entfernen —
+und danach `apt autoremove`, das aufräumt, was nichts mehr braucht. Das ist
+die gründliche Variante und deshalb bewusst abzuwählen: ohne Häkchen bleibt
+die Paketauswahl des Servers unverändert. Die Entscheidung gilt für diesen
+einen Durchlauf und wird nicht gespeichert; der Tooltip des Knopfes sagt,
+welche der beiden Varianten er startet.
+
 Installieren darf nur, wer darf: der Dienst läuft als root oder darf `sudo`
 ohne Passwort benutzen. Fehlt das, bleibt der Knopf inaktiv und die Zeile
 darunter nennt den Grund.

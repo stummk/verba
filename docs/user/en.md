@@ -113,6 +113,15 @@ prints, as it appears. The log is not stored — it is the recording of this one
 run. Verba itself is left alone, and the server never restarts on its own: if
 a package needs a restart, the log says so at the end.
 
+Below that sits **Full upgrade (dist-upgrade and autoremove)**. Ticked, it
+runs `apt dist-upgrade` instead of `apt upgrade` — which also installs
+packages whose dependencies changed, and may remove packages on the way — and
+then `apt autoremove`, which clears out what nothing needs any more. That is
+the thorough variant, and therefore one to choose deliberately: without the
+tick the server's set of packages stays as it is. The choice applies to this
+one run and is not remembered; the button's tooltip says which of the two it
+starts.
+
 Installing packages needs the rights for it: the service runs as root or may
 use `sudo` without a password. Without that the button stays inactive and the
 line below names the reason.

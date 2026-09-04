@@ -18,6 +18,11 @@ class SetupRunRequest(BaseModel):
     include_optional: bool = True
 
 
+class OsUpdateRequest(BaseModel):
+    #: dist-upgrade plus autoremove instead of a plain upgrade
+    full: bool = False
+
+
 def _data_move_pending() -> bool:
     """Whether a chosen data directory is still waiting for a restart.
 
@@ -109,9 +114,13 @@ def get_os_update(user: dict = AdminUser) -> dict:
 
 
 @router.post("/os-update")
-def start_os_update(user: dict = AdminUser) -> dict:
-    """Update the system packages of the server; output arrives via WebSocket."""
-    return osupdate.start()
+def start_os_update(body: OsUpdateRequest | None = None, user: dict = AdminUser) -> dict:
+    """Update the system packages of the server; output arrives via WebSocket.
+
+    Without a body this is the plain upgrade — the thorough variant has to be
+    asked for, because it may remove packages.
+    """
+    return osupdate.start(full=bool(body and body.full))
 
 
 @router.post("/shutdown")
