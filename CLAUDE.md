@@ -125,7 +125,15 @@ python -m ruff format --check backend/ tests/ run.py
     systemd service exits with code 42. The installation log lives in the
     process only — an update ends in a restart — and `cleanup_downloads()`
     wipes the artifact at the next start. A source checkout is left to git,
-    and the whole check can be switched off)
+    and the whole check can be switched off),
+    osupdate (the machine itself, not Verba: a Linux server installation
+    updates its system packages with `apt-get update` and
+    `apt-get --yes upgrade`, non-interactively and keeping the installed
+    configuration. Every line apt says is broadcast as `system.upgrade` and
+    kept in the process only, so the settings page can show the run while it
+    happens. Offered nowhere else — not on Windows, not for the AppImage, not
+    in desktop mode — and only with root or passwordless sudo; a reboot a
+    package asks for is reported, never performed)
   - `api/` — REST routers; `deps.py` holds the whole authorisation surface
     (`current_user`, `require_admin`, `project_or_403`, `file_or_403`) and returns
     a permissive result while the user management is off, so there is no second

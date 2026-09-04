@@ -104,6 +104,24 @@ schaltet **Automatisch nach neuen Versionen suchen** in Einstellungen →
 System ab; dann verlässt dafür keine Anfrage den Rechner, und Updates laufen
 über die Releases-Seite des Projekts.
 
+### Die Systempakete des Servers
+
+Läuft Verba auf einem Linux-Server, steht unter der Versionszeile eine zweite
+Zeile: **Linux-Server**, mit einem runden Knopf, der die Systempakete der
+Maschine aktualisiert — `apt update` und `apt upgrade`, also genau das, was
+man sonst über SSH eintippt. Auf Windows und auf dem Desktop gibt es diese
+Zeile nicht.
+
+Ein Klick startet beides und zeigt darunter das Serverprotokoll: jede Zeile,
+die apt ausgibt, während sie entsteht. Das Protokoll wird nicht gespeichert —
+es ist der Mitschnitt dieses einen Vorgangs. Verba selbst bleibt dabei
+unangetastet, und der Server startet nie von allein neu: verlangt ein Paket
+einen Neustart, sagt das Protokoll das am Ende.
+
+Installieren darf nur, wer darf: der Dienst läuft als root oder darf `sudo`
+ohne Passwort benutzen. Fehlt das, bleibt der Knopf inaktiv und die Zeile
+darunter nennt den Grund.
+
 ## Ersteinrichtung {#first-run}
 
 Die Ersteinrichtung führt in sechs Schritten durch alles, was Verba braucht:

@@ -399,6 +399,17 @@ part of it. The installation log is broadcast as `update.progress` and kept in
 memory only: an update ends in a restart, and the new version comes up with an
 empty log and its new version number in the settings page.
 
+A server installation also updates the machine it runs on:
+`backend/verba/services/osupdate.py` runs `apt-get update` and
+`apt-get --yes upgrade` for an administrator who presses the button in
+Settings → System, streaming apt's output into the same kind of live,
+in-memory log (event `system.upgrade`). `supported()` decides whether the row
+exists at all — Linux, not the AppImage, not desktop mode — and `ready()` why
+the button is off: no apt, or no way to become root (the service user needs
+passwordless sudo). Nothing else is run: no `dist-upgrade`, no `autoremove`,
+and a reboot a package asks for (`/var/run/reboot-required`) is reported at
+the end of the log instead of performed.
+
 Quality gate: `.github/workflows/ci.yml` (ruff + pytest, Ubuntu and Windows)
 runs on every push.
 

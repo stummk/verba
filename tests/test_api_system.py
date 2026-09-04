@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from verba import procutil, setup_check
-from verba.services import updates
+from verba.services import osupdate, updates
 
 
 def test_health(client):
@@ -159,3 +159,18 @@ def test_shutdown_endpoint_is_disabled_outside_desktop_mode(client, monkeypatch)
     response = client.post("/api/system/shutdown")
     assert response.status_code == 200
     assert response.json() == {"stopped": False}
+
+
+def test_the_server_update_endpoint_answers_everywhere(client):
+    """Also on Windows: the answer is what tells the page to hide the row."""
+    data = client.get("/api/system/os-update").json()
+    assert isinstance(data["supported"], bool)
+    assert isinstance(data["can_run"], bool)
+    assert data["run"]["log"] == []
+
+
+def test_starting_a_server_update_answers_with_the_reason_it_refused(client, monkeypatch):
+    monkeypatch.setattr(osupdate, "ready", lambda: (False, "Kein apt auf diesem Server."))
+    response = client.post("/api/system/os-update")
+    assert response.status_code == 200
+    assert response.json() == {"started": False, "reason": "Kein apt auf diesem Server."}

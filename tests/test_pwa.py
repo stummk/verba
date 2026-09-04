@@ -149,6 +149,21 @@ def test_the_system_card_offers_the_update_next_to_the_version():
     assert 'updates: { check_enabled: el("update-auto").checked }' in source
 
 
+def test_only_a_linux_server_sees_the_system_package_button():
+    """The row lives in the card but stays hidden until the backend says so."""
+    source = (FRONTEND / "js" / "views" / "settings.js").read_text(encoding="utf-8")
+    assert 'id="os-section" hidden' in source
+    assert "section.hidden = !info.supported" in source
+    # one icon button, which names itself for tooltip and screen reader
+    assert 'class="icon-btn" id="os-run"' in source
+    block = source.split('id="os-run"', 1)[1][:300]
+    assert "title=" in block and "aria-label=" in block
+    assert 'iconSvg("upgrade")' in source
+    # what apt does is shown while it happens
+    assert 'id="os-log"' in source
+    assert 'on("system.upgrade"' in source
+
+
 def test_a_new_release_is_announced_where_the_user_looks():
     """A toast while the app is open, a reminder on the start page afterwards."""
     app = (FRONTEND / "js" / "app.js").read_text(encoding="utf-8")

@@ -8,7 +8,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from .. import __version__, config, datamove, lifecycle, setup_check
-from ..services import updates
+from ..services import osupdate, updates
 from .deps import AdminUser
 
 router = APIRouter(prefix="/api/system", tags=["system"])
@@ -96,6 +96,22 @@ def get_update(refresh: bool = False, user: dict = AdminUser) -> dict:
 def start_update(user: dict = AdminUser) -> dict:
     """Download and install the newest release; progress arrives via WebSocket."""
     return updates.start_update()
+
+
+@router.get("/os-update")
+def get_os_update(user: dict = AdminUser) -> dict:
+    """Whether this server updates its own system packages, and the last run.
+
+    Answers for every installation; `supported` is what decides whether the
+    settings page shows the row at all.
+    """
+    return osupdate.info()
+
+
+@router.post("/os-update")
+def start_os_update(user: dict = AdminUser) -> dict:
+    """Update the system packages of the server; output arrives via WebSocket."""
+    return osupdate.start()
 
 
 @router.post("/shutdown")

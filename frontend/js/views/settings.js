@@ -284,6 +284,18 @@ export async function render(view) {
           <input type="checkbox" id="update-auto"> ${t("settings.updateCheck")}
         </label>
         <p class="hint">${t("settings.updateCheckHint")}</p>
+        <div id="os-section" hidden>
+          <div class="model-row" id="os-row">
+            <span class="model-name">${t("osUpdate.title")}</span>
+            <span class="spacer"></span>
+            <button type="button" class="icon-btn" id="os-run" disabled
+                    title="${t("osUpdate.run")}" aria-label="${t("osUpdate.run")}"
+                    >${raw(iconSvg("upgrade"))}</button>
+          </div>
+          <p class="hint" id="os-status"></p>
+          <p class="small muted" id="os-log-title" hidden>${t("osUpdate.logTitle")}</p>
+          <div class="setup-log" id="os-log" hidden></div>
+        </div>
         <dl class="info-list" id="system-info"></dl>
       </div>
 
@@ -415,12 +427,30 @@ export async function render(view) {
     }
   };
 
+  el("os-run").onclick = async () => {
+    const button = el("os-run");
+    button.disabled = true;
+    button.classList.remove("filled");
+    el("os-status").textContent = t("osUpdate.running");
+    try {
+      const result = await api.startOsUpdate();
+      if (!result.started) {
+        toast(result.reason);
+        await refreshOsUpdate();
+      }
+    } catch (error) {
+      toast(error.message);
+      await refreshOsUpdate();
+    }
+  };
+
   // independent sections, each with its own error handling — load in parallel
   await Promise.all([
     refreshModels(),
     refreshLlmSection(),
     refreshSystemInfo(),
     refreshUpdate(),
+    refreshOsUpdate(),
     refreshEmbeddingModels(settings.search?.embedding_model),
     refreshSearchStatus(),
     refreshPaths(),
@@ -457,6 +487,13 @@ export async function render(view) {
       showUpdateProgress(info);
       if (info.state === "error") toast(t("update.failed", { detail: info.detail }));
       if (info.state !== "running") await refreshUpdate();
+    }),
+    // the server updates its own packages: apt says what it does, line by line
+    on("system.upgrade", async (run) => {
+      if (!el("os-row")) return; // the view moved on
+      showOsProgress(run);
+      if (run.state === "error") toast(t("osUpdate.failed", { detail: run.detail }));
+      if (run.state !== "running") await refreshOsUpdate();
     }),
   ];
 
@@ -1085,6 +1122,52 @@ function showUpdateProgress(install) {
   log.scrollTop = log.scrollHeight;
   bar.hidden = !install.running;
   bar.firstElementChild.style.width = `${install.percent ?? 0}%`;
+}
+
+// ── server packages ───────────────────────────────────────────────────
+
+// Only a Linux server updates its own operating system, so the whole row
+// stays out of the card everywhere else — the backend decides that
+// (services/osupdate.py). What apt says arrives as `system.upgrade` events
+// and is shown as a growing log, which is the point of the button: an
+// administrator watches what happens on the machine.
+
+async function refreshOsUpdate() {
+  const section = el("os-section");
+  if (!section) return;
+  let info;
+  try {
+    info = await api.osUpdateInfo();
+  } catch {
+    return; // the section stays as it is — nothing here is worth an error
+  }
+  if (!el("os-section")) return; // the request outlived the view
+  section.hidden = !info.supported;
+  if (!info.supported) return;
+
+  const button = el("os-run");
+  button.disabled = !info.can_run;
+  button.classList.toggle("filled", info.can_run);
+
+  const run = info.run ?? {};
+  const status = el("os-status");
+  if (run.running) status.textContent = t("osUpdate.running");
+  else if (run.error) status.textContent = t("osUpdate.failed", { detail: run.error });
+  else if (run.reboot) status.textContent = t("osUpdate.reboot");
+  else if (run.finished_at) status.textContent = t("osUpdate.done");
+  // why the button is off comes from the backend, which words it for the user
+  else status.textContent = info.reason || t("osUpdate.hint");
+
+  showOsProgress(run);
+}
+
+function showOsProgress(run) {
+  const lines = run.log ?? [];
+  const log = el("os-log");
+  el("os-log-title").hidden = lines.length === 0;
+  log.hidden = lines.length === 0;
+  log.textContent = lines.join("\n");
+  log.scrollTop = log.scrollHeight;
 }
 
 // ── system info ───────────────────────────────────────────────────────

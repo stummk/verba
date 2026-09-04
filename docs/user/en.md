@@ -101,6 +101,22 @@ The check asks GitHub for the newest release. If that is not wanted, switch
 then leaves the machine for it, and updates go through the project's releases
 page.
 
+### The server's system packages
+
+When Verba runs on a Linux server, a second row sits below the version row:
+**Linux server**, with one round button that updates the machine's system
+packages — `apt update` and `apt upgrade`, exactly what one would otherwise
+type in over SSH. On Windows and on the desktop that row does not exist.
+
+One click starts both and shows the server log below it: every line apt
+prints, as it appears. The log is not stored — it is the recording of this one
+run. Verba itself is left alone, and the server never restarts on its own: if
+a package needs a restart, the log says so at the end.
+
+Installing packages needs the rights for it: the service runs as root or may
+use `sudo` without a password. Without that the button stays inactive and the
+line below names the reason.
+
 ## First-run setup {#first-run}
 
 The first-run setup walks through everything Verba needs, in six steps:
