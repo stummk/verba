@@ -303,6 +303,8 @@ input:focus, select:focus {
 .required-mark { margin-left: .15rem; color: var(--md-error); }
 .form-grid { display: grid; grid-template-columns: 1fr; column-gap: 1.25rem; }
 @media (min-width: 40em) { .form-grid { grid-template-columns: 1fr 1fr; } }
+/* the guide is only its icon button — it lines up with the field beside it */
+.docs-cell { display: flex; align-items: flex-end; margin-top: .9rem; }
 .inline-form { display: flex; gap: .6rem; }
 .inline-form input { flex: 1; }
 

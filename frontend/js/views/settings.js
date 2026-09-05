@@ -46,12 +46,10 @@ export async function render(view) {
             <label for="ui-language">${t("settings.uiLanguage")}</label>
             <select id="ui-language"></select>
           </div>
-          <div>
-            <label>${t("settings.docs")}</label>
+          <div class="docs-cell">
             <a class="btn icon-btn" href="#/docs"
                title="${t("settings.docsOpen")}" aria-label="${t("settings.docsOpen")}"
                >${raw(iconSvg("help"))}</a>
-            <p class="hint">${t("settings.docsHint")}</p>
           </div>
         </div>
       </div>
@@ -627,12 +625,10 @@ async function renderPersonalSettings(view, settings) {
             <label for="ui-language">${t("settings.uiLanguage")}</label>
             <select id="ui-language"></select>
           </div>
-          <div>
-            <label>${t("settings.docs")}</label>
+          <div class="docs-cell">
             <a class="btn icon-btn" href="#/docs"
                title="${t("settings.docsOpen")}" aria-label="${t("settings.docsOpen")}"
                >${raw(iconSvg("help"))}</a>
-            <p class="hint">${t("settings.docsHint")}</p>
           </div>
         </div>
         <div class="actions">
