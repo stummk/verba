@@ -202,7 +202,11 @@ selbst.
 
 Beim Import liest Verba **Metadaten** automatisch aus: Titel und Datum aus
 MP3-Tags sowie aus Dateinamen nach dem Schema `JJJJMMTT_Titel` (z. B.
-`20240817_Titel.mp3`).
+`20240817_Titel.mp3`). **Das Datum aus dem Dateinamen gilt**: Tags liefern nur
+das Datum, das der Name nicht nennt. Sonst würde bei einer m4a/MP4 der
+Container-Zeitstempel `creation_time` gewinnen — und der sagt, wann die Datei
+zuletzt geschrieben wurde (Kopieren vom Aufnahmegerät, Konvertieren), nicht wann
+aufgenommen wurde.
 
 ## Transkripttypen {#types}
 

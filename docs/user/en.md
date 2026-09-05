@@ -193,7 +193,10 @@ yourself first.
 
 On import Verba extracts **metadata** automatically: title and date from MP3
 tags and from filenames following the `YYYYMMDD_Title` scheme (e.g.
-`20240817_Title.mp3`).
+`20240817_Title.mp3`). **The date in the file name wins**: tags only supply the
+date the name does not state. Otherwise an m4a/MP4 would be dated by its
+container timestamp `creation_time`, which says when the file was last written
+(copied off the recorder, converted) rather than when it was recorded.
 
 ## Transcript types {#types}
 

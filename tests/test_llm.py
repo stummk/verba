@@ -194,6 +194,39 @@ def test_filename_scheme_parses_languages_and_header_fields(tmp_path):
     assert metadata.format_display_date(result["recorded_at"]) == "01.04.2026"
 
 
+def test_a_date_in_the_name_beats_the_containers_timestamp(tmp_path, monkeypatch):
+    """creation_time is the day the file was muxed, not the day it was recorded."""
+    monkeypatch.setattr(
+        metadata, "_read_tags", lambda path: {"creation_time": "2026-09-03T07:12:00.000000Z"}
+    )
+    path = tmp_path / "20260731_ru__Ewert_Valerie.m4a"
+    path.write_bytes(b"not-audio")
+
+    assert metadata.extract_metadata(path)["recorded_at"] == "2026-07-31"
+
+
+def test_tags_still_supply_the_date_a_name_does_not_give(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        metadata, "_read_tags", lambda path: {"creation_time": "2026-09-03T07:12:00.000000Z"}
+    )
+    path = tmp_path / "Ewert_Valerie.m4a"
+    path.write_bytes(b"not-audio")
+
+    assert metadata.extract_metadata(path)["recorded_at"] == "2026-09-03"
+
+
+def test_an_authored_year_beats_the_containers_timestamp(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        metadata,
+        "_read_tags",
+        lambda path: {"year": "2019", "creation_time": "2026-09-03T07:12:00.000000Z"},
+    )
+    path = tmp_path / "Ewert.m4a"
+    path.write_bytes(b"not-audio")
+
+    assert metadata.extract_metadata(path)["recorded_at"] == "2019-01-01"
+
+
 # ── turning a reasoning model down ─────────────────────────────────────
 
 

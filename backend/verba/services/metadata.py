@@ -1,8 +1,9 @@
 """Metadata extraction from audio tags (via `av`) and filename schemes.
 
 Filenames may use ``date_source-target_title_addition.ext``. Empty fields
-are allowed; MP3/MP4 tags may still provide a title or date.
-Tag values win over filename-derived values.
+are allowed; MP3/MP4 tags may still provide a title or date. A tag title wins
+over the one from the file name, a tag date only fills in what the name does
+not state — see `extract_metadata`.
 """
 
 from __future__ import annotations
@@ -104,10 +105,17 @@ def extract_metadata(path: Path) -> dict[str, Any]:
 
     if tags.get("title"):
         result["title"] = tags["title"].strip()
-    for key in ("date", "creation_time", "year"):
-        if tags.get(key):
-            normalized = _normalize_tag_date(tags[key])
-            if normalized:
-                result["recorded_at"] = normalized
-                break
+    # A date in the file name was typed for exactly this purpose, so it stands:
+    # tags only supply the date the name does not give. That matters most for
+    # `creation_time`, which is not authored at all — it is whatever muxed the
+    # file last, and for a recording copied off a device or re-encoded that is
+    # the day it was processed, not the day it was recorded. Among the tags the
+    # authored ones therefore come first.
+    if not result["recorded_at"]:
+        for key in ("date", "year", "creation_time"):
+            if tags.get(key):
+                normalized = _normalize_tag_date(tags[key])
+                if normalized:
+                    result["recorded_at"] = normalized
+                    break
     return result
