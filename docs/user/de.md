@@ -397,7 +397,10 @@ transkribierten Datei öffnet den Editor — einen
 **Arbeitsbereich** für Audio, Transkript und KI-Texte:
 
 - **Wellenform** mit Abspielen/Pause; Klick auf einen Segment-Zeitstempel springt
-  im Audio dorthin; beim Abspielen wird das aktive Segment hervorgehoben
+  im Audio dorthin; beim Abspielen wird das aktive Segment hervorgehoben — die
+  Liste scrollt dabei nicht mit, sie bleibt stehen, wo man sie gelassen hat.
+  Nur ein Treffer aus der Suche wird beim Öffnen einmal in den sichtbaren
+  Bereich geholt.
 - **Drei Bereiche** unter der Timeline: *Segmente* (Originaltranskript),
   *Bereinigt* und *Übersetzung* — alle direkt editierbar mit automatischem
   Speichern. Auf großen Bildschirmen stehen die Bereiche **nebeneinander** wie

@@ -231,6 +231,9 @@ export async function render(view, _status, params) {
     if (startAt !== null && Number.isFinite(startAt)) {
       wavesurfer.setTime(startAt);
       wavesurfer.play();
+      // a link from the search points at one hit deep in the transcript, so
+      // that row is brought into view — once, on arrival
+      highlightActiveSegment(startAt, { scroll: true });
     }
   });
   wavesurfer.on("play", () => setIcon(el("play-toggle"), "pause", t("editor.pause")));
@@ -406,7 +409,11 @@ export async function render(view, _status, params) {
   };
 
   let activeRow = null;
-  function highlightActiveSegment(time) {
+
+  // Playback marks the current segment and nothing more: a list that follows
+  // along on its own pulls the row one is reading or editing out from under
+  // the cursor. Only the caller that jumps somewhere asks for the scroll.
+  function highlightActiveSegment(time, { scroll = false } = {}) {
     const rows = el("segment-list")?.children ?? [];
     let match = null;
     for (const row of rows) {
@@ -415,13 +422,14 @@ export async function render(view, _status, params) {
         break;
       }
     }
-    if (match === activeRow) return;
-    activeRow?.classList.remove("active");
-    match?.classList.add("active");
-    activeRow = match;
-    if (match && wavesurfer.isPlaying()) {
-      match.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (match !== activeRow) {
+      activeRow?.classList.remove("active");
+      match?.classList.add("active");
+      activeRow = match;
     }
+    // not tied to the mark changing: seeking to the hit may have marked it
+    // already, and the row would then never be scrolled to
+    if (match && scroll) match.scrollIntoView({ block: "center" });
   }
 
   // ── workspace panels: segments | cleaned text | translations ────────

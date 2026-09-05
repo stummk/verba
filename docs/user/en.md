@@ -377,7 +377,9 @@ document icon ("Open in editor") on a transcribed file opens the editor — a
 transcript and AI texts:
 
 - **Waveform** with play/pause; clicking a segment timestamp jumps the audio
-  there; during playback the active segment is highlighted
+  there; during playback the active segment is highlighted — the list does not
+  scroll along, it stays where it was left. Only a hit opened from the search is
+  brought into view once, on arrival.
 - **Three areas** below the timeline: *segments* (original transcript),
   *cleaned* and *translation* — all directly editable with automatic saving.
   On large displays the areas sit **side by side** like in a desktop app and
