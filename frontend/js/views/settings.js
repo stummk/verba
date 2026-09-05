@@ -476,19 +476,6 @@ export async function render(view) {
     }
   };
 
-  // independent sections, each with its own error handling — load in parallel
-  await Promise.all([
-    refreshModels(),
-    refreshLlmSection(),
-    refreshSystemInfo(),
-    refreshUpdate(),
-    refreshOsUpdate(),
-    refreshEmbeddingModels(settings.search?.embedding_model),
-    refreshSearchStatus(),
-    refreshPaths(),
-    refreshApiKeys(),
-  ]);
-
   // reindex and workspace move run in the background — show them where they
   // were started instead of only in the top bar
   const searchJobs = jobCardHost(el("search-jobs"), {
@@ -601,6 +588,7 @@ export async function render(view) {
 
   const saveButton = el("settings-save");
   let pristine = JSON.stringify(collectPayload());
+  let touched = false;
   function refreshDirty() {
     saveButton.disabled = JSON.stringify(collectPayload()) === pristine;
   }
@@ -609,8 +597,12 @@ export async function render(view) {
     saveButton.disabled = true;
   }
   const form = el("settings-form");
-  form.addEventListener("input", refreshDirty);
-  form.addEventListener("change", refreshDirty);
+  const onEdit = () => {
+    touched = true;
+    refreshDirty();
+  };
+  form.addEventListener("input", onEdit);
+  form.addEventListener("change", onEdit);
 
   form.onsubmit = async (event) => {
     event.preventDefault();
@@ -646,18 +638,44 @@ export async function render(view) {
         ...stored
       } = saved;
       settings = stored;
-      await Promise.all([
+      // the save is through — a section that fails to redraw itself is not a
+      // failed save and must not be reported as one
+      await Promise.allSettled([
         refreshPaths(),
         refreshSearchStatus(),
         refreshEmbeddingModels(settings.search?.embedding_model),
         refreshLlmSection(),
       ]);
+      touched = false;
       markPristine(); // what is on screen is what the backend now holds
     } catch (error) {
       toast(t("settings.saveError", { message: error.message }));
       refreshDirty(); // the change is still there and still wants saving
     }
   };
+
+  // Loaded last, and none of it can take the form with it: the sections only
+  // decorate the page (model lists, hardware lines, index status), while
+  // saving is what the page is for. A single rejected loader used to abort
+  // the render before the submit handler existed — every section's save then
+  // did nothing at all, without a hint anywhere.
+  const sections = await Promise.allSettled([
+    refreshModels(),
+    refreshLlmSection(),
+    refreshSystemInfo(),
+    refreshUpdate(),
+    refreshOsUpdate(),
+    refreshEmbeddingModels(settings.search?.embedding_model),
+    refreshSearchStatus(),
+    refreshPaths(),
+    refreshApiKeys(),
+  ]);
+  for (const section of sections) {
+    if (section.status === "rejected") console.error("settings section failed:", section.reason);
+  }
+  // the loaders filled selects — that is the baseline, unless the user was
+  // quicker than they were
+  if (!touched) markPristine();
 }
 
 /**
