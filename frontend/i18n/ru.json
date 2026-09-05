@@ -224,7 +224,7 @@
   "editor.noLlm": "Языковая модель не настроена — настройте её в настройках.",
   "editor.createCleanup": "Создать очистку",
   "editor.createTranslation": "Создать перевод ({lang})",
-  "editor.switchFile": "Открыть другой файл …",
+  "editor.switchFile": "Сменить файл",
   "editor.rerun": "Создать заново",
   "editor.rerunHint": "ИИ создаст этот текст заново — существующий текст будет заменён.",
   "editor.jobFailed": "Шаг ИИ завершился с ошибкой.",

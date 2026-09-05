@@ -411,9 +411,10 @@ transkribierten Datei öffnet den Editor — einen
 - In der Sprachauswahl der Übersetzung sind die Sprachen in **„Bereits
   übersetzt"** und **„Noch nicht übersetzt"** gruppiert; das Umschalten zeigt
   sofort die jeweilige Fassung.
-- **Datei wechseln und exportieren ohne Umweg**: Oben wechselt eine Auswahlliste
-  zu einer anderen Datei desselben Transkripts, daneben startet das PDF-Symbol
-  den **Export** direkt aus dem Editor.
+- **Datei wechseln und exportieren ohne Umweg**: Oben listet eine Auswahlliste
+  alle Dateien desselben Transkripts und zeigt die geöffnete als ausgewählt an —
+  ein Griff genügt, um zu einer anderen zu wechseln; daneben startet das
+  PDF-Symbol den **Export** direkt aus dem Editor.
 - **Text und Sprecher** direkt in den Segmentzeilen bearbeiten — Änderungen werden
   automatisch gespeichert („Gespeichert"-Anzeige), **Rückgängig** hebt die letzten
   Änderungen schrittweise auf

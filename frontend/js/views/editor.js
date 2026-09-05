@@ -38,7 +38,7 @@ export async function render(view, _status, params) {
   // a dialogue layout builds its PDF from the segments (it needs the speakers),
   // every other layout prefers the cleaned text — the hint below says which
   const dialogueLayout = ["dialogue", "script"].includes(project?.type_structure);
-  const projectFiles = (project?.files ?? []).filter((f) => f.id !== fileId);
+  const projectFiles = project?.files ?? [];
   view.classList.add("wide"); // workspace uses the full width on large displays
   let derivedTexts = textsData?.texts ?? [];
   const llmEnabled = settings?.llm?.mode && settings.llm.mode !== "none";
@@ -135,17 +135,19 @@ export async function render(view, _status, params) {
   el("editor-export").innerHTML = iconSvg("pdf");
   el("editor-export").onclick = () => openExportDialog({ fileId });
 
-  // ── switch to another file of the same transcript ───────────────────
-  if (projectFiles.length) {
+  // ── switch between the files of the same transcript ────────────────
+  // the open file is listed and selected, so the dropdown says where one is
+  if (projectFiles.length > 1) {
     const switcher = el("file-switch");
     switcher.hidden = false;
-    switcher.append(new Option(t("editor.switchFile"), ""));
     for (const other of projectFiles) {
       switcher.append(new Option(other.filename, String(other.id)));
     }
-    switcher.value = "";
+    switcher.value = String(fileId);
     switcher.onchange = () => {
-      if (switcher.value) location.hash = `#/editor/${switcher.value}`;
+      if (switcher.value && switcher.value !== String(fileId)) {
+        location.hash = `#/editor/${switcher.value}`;
+      }
     };
   }
 

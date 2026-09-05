@@ -224,7 +224,7 @@
   "editor.noLlm": "No language model configured — set one up in the settings.",
   "editor.createCleanup": "Create cleanup",
   "editor.createTranslation": "Create translation ({lang})",
-  "editor.switchFile": "Open another file …",
+  "editor.switchFile": "Switch file",
   "editor.rerun": "Regenerate",
   "editor.rerunHint": "Lets the AI build this text again — the existing text is replaced.",
   "editor.jobFailed": "The AI step failed.",

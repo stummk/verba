@@ -224,7 +224,7 @@
   "editor.noLlm": "Kein Sprachmodell konfiguriert — in den Einstellungen einrichten.",
   "editor.createCleanup": "Bereinigung erstellen",
   "editor.createTranslation": "Übersetzung erstellen ({lang})",
-  "editor.switchFile": "Andere Datei öffnen …",
+  "editor.switchFile": "Datei wechseln",
   "editor.rerun": "Neu erzeugen",
   "editor.rerunHint": "Lässt die KI diesen Text neu erstellen — der vorhandene Text wird dabei ersetzt.",
   "editor.jobFailed": "Der KI-Schritt ist fehlgeschlagen.",

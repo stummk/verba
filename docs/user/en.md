@@ -391,9 +391,10 @@ transcript and AI texts:
 - In the translation language picker the languages are grouped into **"Already
   translated"** and **"Not translated yet"**; switching shows the matching
   version right away.
-- **Switch files and export without a detour**: a picker at the top switches to
-  another file of the same transcript, and next to it the PDF icon starts the
-  **export** straight from the editor.
+- **Switch files and export without a detour**: a picker at the top lists every
+  file of the same transcript and shows the open one as selected — one pick
+  moves to another; next to it the PDF icon starts the **export** straight from
+  the editor.
 - **Text and speaker** are edited directly in the segment rows — changes are
   saved automatically ("Saved" indicator), **Undo** reverts recent changes
   step by step
