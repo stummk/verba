@@ -738,6 +738,9 @@ Die Einstellungen sind in Bereiche gegliedert: Auf dem Smartphone erscheint —
 wie in einer nativen App — zuerst eine Liste der Bereiche; ein Tipp öffnet den
 Bereich als eigene Seite („Alle Einstellungen" führt zurück). Auf dem Desktop
 steht die Bereichsliste als Seitenleiste neben dem gewählten Bereich.
+**Speichern** erscheint nur in den Bereichen, die Einstellungen enthalten, und
+wird erst anklickbar, sobald sich etwas geändert hat; nach dem Speichern
+bestätigt eine kurze Meldung.
 
 - **Oberfläche:** Sprache (Deutsch, Englisch, Russisch), Dokumentation —
   das Handbuch erscheint dort in Abschnitten mit Symbol, jeder Abschnitt lässt

@@ -15,7 +15,25 @@ let unsubscribe = null;
 let unsubscribers = [];
 let llmInstallerCleanup = null;
 
+// The sections that feed the settings payload — the others (API keys, account)
+// have their own buttons, so a save button below them would save nothing.
+const SAVEABLE_SECTIONS = new Set([
+  "card-ui",
+  "card-transcribe",
+  "card-ai",
+  "card-search",
+  "card-storage",
+  "card-system",
+]);
+// A changed interface language reloads the page; the confirmation has to
+// survive that reload, so it waits here until the view is built again.
+const SAVED_FLAG = "verba.settingsSaved";
+
 export async function render(view) {
+  if (sessionStorage.getItem(SAVED_FLAG)) {
+    sessionStorage.removeItem(SAVED_FLAG);
+    toast(t("settings.saved"));
+  }
   let settings = await api.getSettings();
   // A normal user gets nothing to configure beyond their own account: the
   // reduced payload the backend sends has no whisper/paths/keys sections at
@@ -208,7 +226,7 @@ export async function render(view) {
               ${t("settings.apiKeyName")}<span class="required-mark" aria-hidden="true">*</span>
             </label>
             <input id="apikey-name" maxlength="100" autocomplete="off"
-                   required aria-required="true">
+                   aria-required="true">
           </div>
           <div>
             <label>&nbsp;</label>
@@ -310,8 +328,8 @@ export async function render(view) {
         <a class="btn tonal" href="#/users">${t("settings.usersOpen")}</a>
       </div>
 
-      <div class="actions">
-        <button type="submit">${t("common.save")}</button>
+      <div class="actions" id="settings-actions">
+        <button type="submit" id="settings-save" disabled>${t("common.save")}</button>
       </div>
     </form>
     </div>
@@ -358,6 +376,10 @@ export async function render(view) {
   const sectionButtons = [...el("settings-nav").querySelectorAll("button")];
   function selectSection(id, openDetail) {
     for (const card of cards) card.hidden = card.id !== id;
+    // the button belongs to the sections that hold settings — and stays with
+    // an unsaved change, so switching sections cannot strand it
+    el("settings-actions").hidden =
+      !SAVEABLE_SECTIONS.has(id) && el("settings-save").disabled;
     for (const button of sectionButtons) {
       button.classList.toggle("selected", button.dataset.target === id);
     }
@@ -383,8 +405,10 @@ export async function render(view) {
     }
   };
 
-  // a key without a label cannot be told apart later — the button stays
-  // disabled until the field holds something
+  // A key without a label cannot be told apart later — the button stays
+  // disabled until the field holds something. That is also why the input
+  // carries no `required`: it sits in the settings form, where an empty
+  // required field would block saving from every section.
   const apiKeyName = el("apikey-name");
   const apiKeyCreate = el("apikey-create");
   apiKeyName.oninput = () => {
@@ -530,10 +554,11 @@ export async function render(view) {
     }
   };
 
-  el("settings-form").onsubmit = async (event) => {
-    event.preventDefault();
-    const previousLanguage = settings.general.ui_language || "de";
-    const payload = {
+  // ── save only what changed ──────────────────────────────────────────
+  // The button stays disabled until a field differs from what the backend
+  // sent, so "Save" always means there is something to save.
+  function collectPayload() {
+    return {
       ...settings,
       whisper: {
         model: el("whisper-model").value.trim(),
@@ -570,9 +595,30 @@ export async function render(view) {
         retention_days: Number(el("log-retention").value),
       },
     };
+  }
+
+  const saveButton = el("settings-save");
+  let pristine = JSON.stringify(collectPayload());
+  function refreshDirty() {
+    saveButton.disabled = JSON.stringify(collectPayload()) === pristine;
+  }
+  function markPristine() {
+    pristine = JSON.stringify(collectPayload());
+    saveButton.disabled = true;
+  }
+  const form = el("settings-form");
+  form.addEventListener("input", refreshDirty);
+  form.addEventListener("change", refreshDirty);
+
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    saveButton.disabled = true; // the run is under way — nothing to press again
+    const previousLanguage = settings.general.ui_language || "de";
+    const payload = collectPayload();
     try {
       const saved = await api.updateSettings(payload);
       if (payload.general.ui_language !== previousLanguage) {
+        sessionStorage.setItem(SAVED_FLAG, "1"); // confirmed after the reload
         location.reload(); // reload with the new catalog
         return;
       }
@@ -604,8 +650,10 @@ export async function render(view) {
         refreshEmbeddingModels(settings.search?.embedding_model),
         refreshLlmSection(),
       ]);
+      markPristine(); // what is on screen is what the backend now holds
     } catch (error) {
       toast(t("settings.saveError", { message: error.message }));
+      refreshDirty(); // the change is still there and still wants saving
     }
   };
 }
@@ -632,7 +680,7 @@ async function renderPersonalSettings(view, settings) {
           </div>
         </div>
         <div class="actions">
-          <button type="submit">${t("common.save")}</button>
+          <button type="submit" id="settings-save" disabled>${t("common.save")}</button>
         </div>
       </div>
       <div class="card">
@@ -649,6 +697,12 @@ async function renderPersonalSettings(view, settings) {
   }
   uiLanguageSelect.value = settings.general.ui_language || currentLanguage();
 
+  // nothing to save until the one field a normal user owns actually changes
+  const chosenLanguage = uiLanguageSelect.value;
+  uiLanguageSelect.onchange = () => {
+    el("settings-save").disabled = uiLanguageSelect.value === chosenLanguage;
+  };
+
   el("settings-form").onsubmit = async (event) => {
     event.preventDefault();
     try {
@@ -658,7 +712,7 @@ async function renderPersonalSettings(view, settings) {
         ...settings,
         general: { ...settings.general, ui_language: uiLanguageSelect.value },
       });
-      toast(t("settings.saved"));
+      sessionStorage.setItem(SAVED_FLAG, "1"); // confirmed after the reload
       location.reload(); // the whole interface changes language
     } catch (error) {
       toast(error.message);

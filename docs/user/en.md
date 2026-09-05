@@ -706,7 +706,9 @@ says the index came from another model, **Rebuild index** is all it takes.
 The settings are organised into sections: on a phone — like in a native app —
 a list of sections appears first; tapping one opens it as its own page ("All
 settings" leads back). On desktop the section list sits as a sidebar next to
-the selected section.
+the selected section. **Save** appears only in the sections that hold
+settings, and only becomes clickable once something has changed; a short
+message confirms the save.
 
 - **Interface:** language (German, English, Russian), documentation — the
   guide appears there as sections with an icon, each one collapsible. With a
