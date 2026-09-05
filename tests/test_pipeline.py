@@ -40,7 +40,7 @@ def fake_chat(recorded: list):
     def chat(messages, model_override="", **kwargs):
         recorded.append(messages)
         user_text = messages[-1]["content"]
-        if "übersetzt" in messages[0]["content"].lower():
+        if messages[0]["content"].startswith("You translate"):
             return f"[EN] {user_text}"
         return user_text.replace("ähm ", "")
 
@@ -83,6 +83,36 @@ def test_type_prompt_flows_into_system_message(file_with_segments, monkeypatch):
 
     system_message = calls[0][0]["content"]
     assert "Refrain" in system_message  # the Lied type prompt was appended
+
+
+def test_type_prompt_reaches_the_translation_too(file_with_segments, monkeypatch):
+    """What kind of text this is decides the wording, not just the cleanup."""
+    from verba.services import project_types
+
+    project_types.seed_builtin_types()
+    lied = next(t for t in project_types.list_types() if t["key"] == "lied")
+    workspace.update_project(file_with_segments["project_id"], {"type_id": lied["id"]})
+
+    calls: list = []
+    monkeypatch.setattr(pipeline.llm, "chat", fake_chat(calls))
+    run_job(file_with_segments["id"], {"steps": ["translate"], "target_language": "en"})
+
+    system_message = calls[0][0]["content"]
+    assert system_message.startswith("You translate")
+    assert "Refrain" in system_message
+
+
+def test_translation_prompt_asks_for_the_register_of_the_original(file_with_segments, monkeypatch):
+    """A sermon must not come back in everyday phrasing."""
+    calls: list = []
+    monkeypatch.setattr(pipeline.llm, "chat", fake_chat(calls))
+    run_job(file_with_segments["id"], {"steps": ["translate"], "target_language": "en"})
+
+    system_message = calls[0][0]["content"]
+    assert "register" in system_message
+    assert "biblical" in system_message
+    assert "everyday paraphrase" in system_message
+    assert "English" in system_message  # the target language, spelled out
 
 
 def test_translation_uses_cleanup_result(file_with_segments, monkeypatch):

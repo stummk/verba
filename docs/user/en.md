@@ -333,7 +333,15 @@ Once a language model is configured (section "Setting up a language model
   obvious mishearings — the transcript type flows in as context (a "revelation"
   is only minimally corrected, "minutes" get a summary and a to-do list)
 - **Translate** renders the cleaned text (or the raw transcript) into nearly
-  any language — all ~100 languages Whisper knows are available as targets
+  any language — all ~100 languages Whisper knows are available as targets. The
+  translation carries the **register and subject matter of the original** over:
+  a sermon, a prophecy or a liturgical text comes back in the established
+  biblical wording of the target language ("thus says the Holy Spirit" rather
+  than a plain paraphrase; "walk before God" rather than "go before God"), a
+  specialist text in the settled terminology of its field — not in everyday
+  language. As with the cleanup, the **transcript type flows in as context**:
+  what its prompt says about the kind of text also steers the wording of the
+  translation
 - Long recordings are split automatically along segment boundaries (with
   overlap) so even local models with small context windows work cleanly — a
   two-hour recording makes about 17 requests, whose results Verba joins again

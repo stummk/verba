@@ -350,7 +350,14 @@ Schritt 2 der Aktionskarte der Knopf **KI-Aufbereitung (alle)**:
   (z.B. wird ein „Protokoll" zusammengefasst und mit To-do-Liste versehen)
 - **Übersetzen** überträgt den bereinigten Text (oder das Roh-Transkript) in
   nahezu jede Sprache — zur Auswahl stehen alle rund 100 Sprachen, die auch
-  Whisper kennt
+  Whisper kennt. Die Übersetzung übernimmt dabei **Sprachebene und Fachgebiet
+  des Originals**: Eine Predigt, eine Offenbarung oder ein liturgischer Text
+  kommt in der gewachsenen biblischen Sprache der Zielsprache zurück
+  („so spricht der Heilige Geist", nicht „so sagt der Heilige Geist";
+  „wandle vor Gott", nicht „geh vor Gott"), ein Fachtext in der Terminologie
+  seines Gebiets — nicht in Alltagssprache. Wie beim Bereinigen fließt auch
+  hier der **Transkripttyp als Kontext** ein: Was im Prompt des Typs über die
+  Art des Textes steht, steuert die Wortwahl der Übersetzung mit
 - Lange Aufnahmen werden automatisch in Abschnitte entlang der Segmentgrenzen
   zerlegt (mit Überlappung), damit auch lokale Modelle mit kleinem Kontext
   sauber arbeiten — eine Zwei-Stunden-Aufnahme sind rund 17 Anfragen, deren

@@ -28,12 +28,24 @@ CLEANUP_SYSTEM_PROMPT = (
     "without commentary."
 )
 
+# The register is part of the meaning: a sermon that comes back in everyday
+# phrasing ("so sagt der Heilige Geist" for "so spricht der Heilige Geist") is
+# not wrong word by word and still reads as the wrong text. So the translation
+# is asked to carry the register and the subject matter over, and it is given
+# the same type context the cleanup gets.
 TRANSLATE_SYSTEM_PROMPT = (
-    "You translate transcriptions accurately and completely into {language}. Übersetzt "
-    "content must preserve "
-    "the paragraphs and structure of the original. Reply only with the translation, "
-    "without commentary."
+    "You translate transcriptions accurately and completely into {language}. Carry the "
+    "register and the subject matter of the original over: a sermon, a prophecy or a "
+    "liturgical text is translated in the established biblical wording of {language}, a "
+    "technical, legal or scholarly text in the settled terminology of its field — never "
+    "in everyday paraphrase. Where the original uses a fixed expression of its domain, "
+    "use the fixed expression the target language has for it, and keep names, quotations "
+    "and references in the form that domain uses. Preserve the paragraphs and structure "
+    "of the original. Reply only with the translation, without commentary."
 )
+
+# both steps hang the type's own prompt off the same heading
+TYPE_CONTEXT_HEADING = "\n\nKontext zum Transkript:\n"
 
 
 # ── derived texts ─────────────────────────────────────────────────────
@@ -373,7 +385,7 @@ def cleanup_segments(
     """LLM cleanup of raw segments — also used by the public API."""
     system_prompt = CLEANUP_SYSTEM_PROMPT
     if type_prompt:
-        system_prompt += "\n\nKontext zum Transkript:\n" + type_prompt
+        system_prompt += TYPE_CONTEXT_HEADING + type_prompt
 
     chunks = chunking.chunk_segments(segments)
     parts: list[str] = []
@@ -417,12 +429,17 @@ def run_translation(
     file_id: int,
     source_text: str,
     target_language: str,
+    type_prompt: str,
     model_override: str,
     cancel: threading.Event,
     report: Callable[[int, str], None],
     progress_range: tuple[int, int] = (0, 100),
 ) -> str:
     system_prompt = TRANSLATE_SYSTEM_PROMPT.format(language=language_name(target_language))
+    # what the type says about the transcript decides the wording just as much
+    # as it does for the cleanup — that is where "this is a sermon" is written
+    if type_prompt:
+        system_prompt += TYPE_CONTEXT_HEADING + type_prompt
 
     chunks = _chunk_text(source_text)
     parts: list[str] = []
@@ -480,7 +497,9 @@ def handle_llm_process_job(
                 source = segments_text(transcripts.list_segments(file_id))
             if not source.strip():
                 raise RuntimeError(NO_TEXT_MESSAGE)
-            run_translation(file_id, source, target, model_override, cancel, report, (lo, hi))
+            run_translation(
+                file_id, source, target, type_prompt, model_override, cancel, report, (lo, hi)
+            )
         else:
             raise RuntimeError(f"Unknown pipeline step: {step}")
 

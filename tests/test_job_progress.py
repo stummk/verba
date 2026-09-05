@@ -139,7 +139,7 @@ def test_cleanup_and_translation_report_their_chunk(env, monkeypatch):
     _, file_row = make_file(env)
     pipeline.cleanup_segments(segments, "", "", NO_CANCEL, lambda p, m: seen.append((p, m)))
     pipeline.run_translation(
-        file_row["id"], "Hallo", "en", "", NO_CANCEL, lambda p, m: seen.append((p, m))
+        file_row["id"], "Hallo", "en", "", "", NO_CANCEL, lambda p, m: seen.append((p, m))
     )
 
     assert any(re.match(r"Bereinigung \d+/\d+", message) for _, message in seen)
