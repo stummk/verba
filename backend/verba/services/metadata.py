@@ -14,6 +14,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from .languages import LANGUAGE_NAMES
+
 logger = logging.getLogger(__name__)
 
 _FILENAME_DATE = re.compile(
@@ -42,24 +44,47 @@ def format_display_date(value: str) -> str:
     return _ISO_DATE.sub(replace, value)
 
 
+def _field_date(field: str) -> str:
+    """The ISO date a whole field states, or "" — 20240817, 2024-08-17, 2024.08.17."""
+    match = re.fullmatch(r"(\d{4})[-.]?(\d{2})[-.]?(\d{2})", field)
+    if not match:
+        return ""
+    try:
+        return date(*(int(part) for part in match.groups())).isoformat()
+    except ValueError:
+        return ""  # 20241301 and friends
+
+
+def _is_language_slot(field: str) -> bool:
+    """A scheme slot for a language: a code Whisper knows, or left empty."""
+    return field == "" or field.lower() in LANGUAGE_NAMES
+
+
 def _parse_filename(stem: str) -> dict[str, str]:
     result = {"title": "", "recorded_at": "", "language": "", "target_language": "", "addition": ""}
+
+    # The scheme is read by position, not by counting fields: a date, then up to
+    # two language slots, then what is left. Requiring all five fields made
+    # "20260731_ru_de_Wesner Ronald" fall through to the plain path, where the
+    # language codes ended up inside the title. Only a field that is a language
+    # code (or empty for "not given") is taken as one, so a title is never
+    # swallowed, and nothing past the fifth field is dropped any more.
     fields = stem.split("_")
-    if len(fields) >= 5 and fields[0].isdigit():
-        (
-            raw_date,
-            result["language"],
-            result["target_language"],
-            result["title"],
-            result["addition"],
-        ) = fields[:5]
-        try:
-            parsed = date(int(raw_date[:4]), int(raw_date[4:6]), int(raw_date[6:8]))
-            if len(raw_date) == 8:
-                result["recorded_at"] = parsed.isoformat()
-        except (ValueError, IndexError):
-            pass
+    scheme_date = _field_date(fields[0])
+    if scheme_date:
+        result["recorded_at"] = scheme_date
+        rest = fields[1:]
+        for key in ("language", "target_language"):
+            if not rest or not _is_language_slot(rest[0]):
+                break
+            result[key] = rest.pop(0).lower()
+        if rest:
+            # the last field is the addition — but only where the name says
+            # more than the title, so a title with underscores stays whole
+            result["title"] = " ".join(rest[:-1]) if len(rest) > 1 else rest[0]
+            result["addition"] = rest[-1] if len(rest) > 1 else ""
         return result
+
     match = _FILENAME_DATE.match(stem)
     rest = stem
     if match:

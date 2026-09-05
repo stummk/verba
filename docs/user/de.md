@@ -479,7 +479,19 @@ transkribierten Datei öffnet den Editor — einen
   unverändert stehen.
 - Dateinamen können optional als `Datum_Dateisprache_Zielsprache_Titel_Zusatz` aufgebaut
   sein. Dadurch werden Sprache, optionale Übersetzung sowie die Headerfelder automatisch
-  vorbelegt.
+  vorbelegt. **Gelesen wird der Reihe nach, nicht nach Anzahl der Teile** — jedes
+  Feld hinter dem Datum darf fehlen:
+  - Das Datum steht am Anfang, als `JJJJMMTT` oder `JJJJ-MM-TT`.
+  - Danach folgen bis zu zwei Sprachfelder. Als Sprache zählt nur ein Kürzel,
+    das Whisper kennt (`de`, `ru`, …), oder ein leeres Feld für „nicht
+    angegeben": `20260731_ru__Titel` heißt Quelle Russisch, keine Übersetzung.
+    Ein Titel wird also nie versehentlich als Sprache gelesen.
+  - Der Rest ist der **Titel**. Nur wenn danach noch ein weiteres Feld kommt,
+    ist das letzte der **Zusatz**. `20260731_ru_de_Wesner Ronald` ergibt also
+    den Titel „Wesner Ronald", `20260731_ru_de_Wesner_Ronald` dagegen den Titel
+    „Wesner" mit dem Zusatz „Ronald".
+  - Einen **Ort** kennt das Schema nicht; er steht im Editor im freien Feld
+    *Ort und Datum rechts* (z. B. `Bremen-Mahndorf, 2026-07-31`).
 
 ## Whisper-Modelle {#whisper}
 

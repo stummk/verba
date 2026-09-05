@@ -194,6 +194,43 @@ def test_filename_scheme_parses_languages_and_header_fields(tmp_path):
     assert metadata.format_display_date(result["recorded_at"]) == "01.04.2026"
 
 
+@pytest.mark.parametrize(
+    ("stem", "recorded_at", "language", "target", "title", "addition"),
+    [
+        # the report: four fields, no addition — the title must stay whole
+        ("20260731_ru_de_Wesner Ronald", "2026-07-31", "ru", "de", "Wesner Ronald", ""),
+        # an omitted target language is an empty slot, the addition still counts
+        ("20260731_ru__Ewert_Valerie", "2026-07-31", "ru", "", "Ewert", "Valerie"),
+        # only a source language
+        ("20240817_de_Titel", "2024-08-17", "de", "", "Titel", ""),
+        # nothing past the fifth field is dropped any more
+        (
+            "20260731_ru_de_Der_Grosse_Titel_Zusatz",
+            "2026-07-31",
+            "ru",
+            "de",
+            "Der Grosse Titel",
+            "Zusatz",
+        ),
+        # the date may be written the readable way too
+        ("2026-07-31_ru_de_Wesner Ronald", "2026-07-31", "ru", "de", "Wesner Ronald", ""),
+        # a title is never mistaken for a language slot
+        ("20240817_Rede vom Sonntag", "2024-08-17", "", "", "Rede vom Sonntag", ""),
+    ],
+)
+def test_filename_scheme_reads_by_position_not_by_field_count(
+    stem, recorded_at, language, target, title, addition, tmp_path
+):
+    path = tmp_path / f"{stem}.m4a"
+    path.write_bytes(b"not-audio")
+    result = metadata.extract_metadata(path)
+    assert result["recorded_at"] == recorded_at
+    assert result["language"] == language
+    assert result["target_language"] == target
+    assert result["title"] == title
+    assert result["addition"] == addition
+
+
 def test_a_date_in_the_name_beats_the_containers_timestamp(tmp_path, monkeypatch):
     """creation_time is the day the file was muxed, not the day it was recorded."""
     monkeypatch.setattr(

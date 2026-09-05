@@ -454,6 +454,19 @@ transcript and AI texts:
   left as it is.
 - File names may optionally follow `date_source-language_target-language_title_addition`;
   this pre-fills the language, optional translation target, and header fields.
+  **It is read by position, not by counting fields** — every field after the
+  date may be missing:
+  - The date comes first, as `YYYYMMDD` or `YYYY-MM-DD`.
+  - Then up to two language fields. Only a code Whisper knows (`de`, `ru`, …)
+    or an empty field for "not given" counts as one: `20260731_ru__Title`
+    means source Russian, no translation. A title is therefore never mistaken
+    for a language.
+  - What is left is the **title**. Only when another field follows it is the
+    last one the **addition**. So `20260731_ru_de_Wesner Ronald` gives the
+    title "Wesner Ronald", while `20260731_ru_de_Wesner_Ronald` gives the title
+    "Wesner" with the addition "Ronald".
+  - The scheme has no field for a **place**; it goes into the editor's free
+    *place and date on the right* field (e.g. `Bremen-Mahndorf, 2026-07-31`).
 
 ## Whisper models {#whisper}
 
