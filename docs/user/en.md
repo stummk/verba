@@ -286,7 +286,11 @@ transcript are skipped and the bar says how many) and **Delete**. The selection 
 
 - **Single file:** microphone icon in the file row (finished files show a
   repeat icon for another run instead)
-- **Everything:** "Transcribe all" in step 2 of the action card
+- **Everything:** "Transcribe all" in step 2 of the action card — the button
+  takes the files that are still open. Once they are all transcribed it offers a
+  second run over the whole list and asks first, because that replaces the
+  existing segments, manually edited ones included. The same question comes up
+  when a selection contains finished files.
 - **Advanced (expandable):** change the Whisper model and recording language
   for this run only — saved settings stay unchanged
 - Progress appears live per file; running jobs can be cancelled
@@ -399,6 +403,12 @@ transcript and AI texts:
 - In the translation language picker the languages are grouped into **"Already
   translated"** and **"Not translated yet"**; switching shows the matching
   version right away.
+- **Deleting a translation**: next to the language picker the bin icon removes
+  the shown translation for good after a confirmation — including its file in
+  the workspace. The language moves back under "Not translated yet", the PDF
+  export no longer offers it, and the *translated* mark disappears from the file
+  row. Clearing the text box alone achieves the same for the mark and the
+  export; the empty entry itself stays until it is deleted.
 - **Switch files and export without a detour**: a picker at the top lists every
   file of the same transcript and shows the open one as selected — one pick
   moves to another; next to it the PDF icon starts the **export** straight from
@@ -406,6 +416,14 @@ transcript and AI texts:
 - **Text and speaker** are edited directly in the segment rows — changes are
   saved automatically ("Saved" indicator), **Undo** reverts recent changes
   step by step
+- **Spell checking**: segments, cleaned text and translation are checked by the
+  browser's own spell checker — each text **in its own language**: segments and
+  cleanup in the language of the transcription, every translation in its target
+  language. Speaker names are exempt, otherwise every name would be underlined.
+  The icon at the top of the workspace switches the check off and on again; the
+  choice is remembered in the browser. Only what the browser has a dictionary
+  for is marked — if one is missing for a language, it has to be added in the
+  browser settings (Chrome/Edge: Languages → Spell check).
 - **Selection** by dragging on the waveform, then:
   - **Re-transcribe selection** — only this section is recognised again and
     replaces exactly the affected segments

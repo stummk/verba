@@ -628,7 +628,9 @@ def translation_languages(file_id: int) -> list[str]:
     return sorted(
         text["language"]
         for text in pipeline.list_texts(file_id)
-        if text["kind"] == "translation" and text["language"]
+        # an emptied translation is offered nowhere: the export would only
+        # fail on it later, in a job the user has to go looking for
+        if text["kind"] == "translation" and text["language"] and text["content"].strip()
     )
 
 

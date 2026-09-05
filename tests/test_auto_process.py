@@ -114,6 +114,27 @@ def test_edit_derived_text(done_file, client):
     assert md.read_text(encoding="utf-8") == "Editiert"
 
 
+def test_delete_derived_text(done_file, client):
+    """A translation has to be removable — clearing the box leaves a shell."""
+    from pathlib import Path
+
+    pipeline.save_text(done_file["id"], "translation", "Hello", language="en", model="m")
+    project = workspace.get_project(done_file["project_id"])
+    md = Path(project["workspace"]) / "transcripts" / "a.translation.en.md"
+    assert md.exists()
+
+    response = client.delete(f"/api/files/{done_file['id']}/texts/translation?language=en")
+    assert response.status_code == 200
+    assert pipeline.get_text(done_file["id"], "translation", "en") is None
+    assert not md.exists()  # the workspace copy goes with it
+    assert workspace.get_file(done_file["id"])["derived_kinds"] is None
+
+
+def test_delete_missing_text_404(done_file, client):
+    response = client.delete(f"/api/files/{done_file['id']}/texts/translation?language=en")
+    assert response.status_code == 404
+
+
 def test_edit_missing_text_404(done_file, client):
     response = client.put(
         f"/api/files/{done_file['id']}/texts/translation?language=en",
@@ -223,3 +244,22 @@ def test_file_row_names_its_derived_texts(done_file):
     pipeline.save_text(done_file["id"], "translation", "   ", language="en")
     kinds = workspace.list_files(done_file["project_id"])[0]["derived_kinds"]
     assert kinds == "cleanup"
+
+
+def test_texts_changed_event_carries_the_remaining_kinds(done_file, monkeypatch):
+    """The file row updates from the event alone, so it must say what is left."""
+    seen: list = []
+    monkeypatch.setattr(
+        pipeline.hub, "publish", lambda name, payload, **kwargs: seen.append(payload)
+    )
+
+    pipeline.save_text(done_file["id"], "cleanup", "Bereinigt")
+    pipeline.save_text(done_file["id"], "translation", "Hello", language="en")
+    assert seen[-1]["kinds"] == "cleanup,translation"
+
+    # emptying the box is a delete as far as the chips are concerned
+    pipeline.update_text_content(done_file["id"], "translation", "en", "  ")
+    assert seen[-1]["kinds"] == "cleanup"
+
+    pipeline.delete_text(done_file["id"], "cleanup")
+    assert seen[-1]["kinds"] == ""

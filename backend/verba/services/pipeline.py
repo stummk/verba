@@ -68,11 +68,48 @@ def save_text(file_id: int, kind: str, content: str, language: str = "", model: 
             (file_id, kind, language, content, model),
         )
     _write_workspace_copy(file_id, kind, language, content)
+    _publish_change(file_id, kind, language)
+
+
+def delete_text(file_id: int, kind: str, language: str = "") -> bool:
+    """Drop a derived text for good — the row and its workspace copy."""
+    with db.get_conn() as conn:
+        cursor = conn.execute(
+            "DELETE FROM derived_texts WHERE file_id = ? AND kind = ? AND language = ?",
+            (file_id, kind, language),
+        )
+        if cursor.rowcount == 0:
+            return False
+    _remove_workspace_copy(file_id, kind, language)
+    _publish_change(file_id, kind, language)
+    return True
+
+
+def _publish_change(file_id: int, kind: str, language: str) -> None:
+    # The kinds travel with the event: an emptied or deleted text has to take
+    # the "cleaned"/"translated" chip off the file row, and the receiver cannot
+    # tell from one language alone whether the kind is gone for the whole file.
     hub.publish(
         "texts.changed",
-        {"file_id": file_id, "kind": kind, "language": language},
+        {
+            "file_id": file_id,
+            "kind": kind,
+            "language": language,
+            "kinds": present_kinds(file_id),
+        },
         file_id=file_id,
     )
+
+
+def present_kinds(file_id: int) -> str:
+    """The file's non-empty derived kinds, comma separated as in FILE_SELECT."""
+    with db.get_conn() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT kind FROM derived_texts "
+            "WHERE file_id = ? AND trim(content) != '' ORDER BY kind",
+            (file_id,),
+        ).fetchall()
+    return ",".join(row["kind"] for row in rows)
 
 
 def update_text_content(
@@ -87,26 +124,34 @@ def update_text_content(
         if cursor.rowcount == 0:
             return None
     _write_workspace_copy(file_id, kind, language, content)
-    hub.publish(
-        "texts.changed",
-        {"file_id": file_id, "kind": kind, "language": language},
-        file_id=file_id,
-    )
+    _publish_change(file_id, kind, language)
     return get_text(file_id, kind, language)
 
 
-def _write_workspace_copy(file_id: int, kind: str, language: str, content: str) -> None:
+def _workspace_copy_path(file_id: int, kind: str, language: str) -> Path | None:
     file_row = workspace.get_file(file_id)
     if file_row is None:
-        return
+        return None
     project = workspace.get_project(file_row["project_id"])
     if project is None:
-        return
+        return None
     stem = Path(file_row["rel_path"]).stem
     suffix = f"{kind}.{language}" if language else kind
-    target = workspace.project_dir(project) / "transcripts" / f"{stem}.{suffix}.md"
+    return workspace.project_dir(project) / "transcripts" / f"{stem}.{suffix}.md"
+
+
+def _write_workspace_copy(file_id: int, kind: str, language: str, content: str) -> None:
+    target = _workspace_copy_path(file_id, kind, language)
+    if target is None:
+        return
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
+
+
+def _remove_workspace_copy(file_id: int, kind: str, language: str) -> None:
+    target = _workspace_copy_path(file_id, kind, language)
+    if target is not None:
+        target.unlink(missing_ok=True)
 
 
 # ── text chunking for already-joined text (translation input) ─────────

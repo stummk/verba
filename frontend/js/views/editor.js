@@ -8,11 +8,12 @@ import { confirmDelete } from "../confirm.js";
 import { el, formatDuration, html, toast } from "../dom.js";
 import { closeExportDialog, openExportDialog } from "../export-dialog.js";
 import { iconButton, iconSvg, setIcon } from "../icons.js";
-import { t } from "../i18n.js";
+import { currentLanguage, t } from "../i18n.js";
 import { languageLabel, languageName, sortedLanguages } from "../languages.js";
 import { on } from "../ws.js";
 
 const AUTOSAVE_DELAY = 700;
+const SPELLCHECK_KEY = "verba.spellcheck";
 
 let wavesurfer = null;
 let unsubscribers = [];
@@ -102,6 +103,8 @@ export async function render(view, _status, params) {
         </div>
         <span class="spacer"></span>
         <span id="save-state" class="muted small"></span>
+        <button id="spellcheck-toggle" class="icon-btn"
+                title="${t("editor.spellcheck")}" aria-label="${t("editor.spellcheck")}"></button>
         <button id="undo-button" class="icon-btn" disabled
                 title="${t("editor.undo")}" aria-label="${t("editor.undo")}"></button>
       </div>
@@ -126,15 +129,46 @@ export async function render(view, _status, params) {
     </div>
   `);
 
+  // ── spell checking: the browser's own, in the language of the text ──
+  //
+  // Every editable text says which language it is in, so the browser reaches
+  // for the right dictionary — a translation is checked against its target
+  // language, not against the transcript's. It marks only what it has a
+  // dictionary for; a language the browser does not know simply stays
+  // unchecked. Speaker names are exempt: they are names, and every one of
+  // them would be underlined.
+  const sourceLanguage = file.language || settings?.whisper?.language || currentLanguage();
+  let spellcheckOn = localStorage.getItem(SPELLCHECK_KEY) !== "off";
+
+  function bindSpellcheck(field, language) {
+    field.lang = language || "";
+    field.dataset.spell = "1";
+    field.spellcheck = spellcheckOn;
+  }
+
+  function applySpellcheck() {
+    for (const field of view.querySelectorAll("[data-spell]")) field.spellcheck = spellcheckOn;
+    const button = el("spellcheck-toggle");
+    button.setAttribute("aria-pressed", String(spellcheckOn));
+    button.classList.toggle("active", spellcheckOn);
+  }
+
   // icon-only tool buttons (labels live in title/aria-label)
   el("play-toggle").innerHTML = iconSvg("play");
   el("undo-button").innerHTML = iconSvg("undo");
+  el("spellcheck-toggle").innerHTML = iconSvg("spellcheck");
   el("range-transcribe").innerHTML = iconSvg("mic");
   el("audio-trim").innerHTML = iconSvg("crop");
   el("audio-cut").innerHTML = iconSvg("cut");
   el("clear-selection").innerHTML = iconSvg("close");
   el("editor-export").innerHTML = iconSvg("pdf");
   el("editor-export").onclick = () => openExportDialog({ fileId });
+  el("spellcheck-toggle").onclick = () => {
+    spellcheckOn = !spellcheckOn;
+    localStorage.setItem(SPELLCHECK_KEY, spellcheckOn ? "on" : "off");
+    applySpellcheck();
+  };
+  applySpellcheck();
 
   // ── switch between the files of the same transcript ────────────────
   // the open file is listed and selected, so the dropdown says where one is
@@ -293,12 +327,14 @@ export async function render(view, _status, params) {
     speaker.className = "seg-speaker";
     speaker.value = segment.speaker ?? "";
     speaker.placeholder = t("editor.speakerPlaceholder");
+    speaker.spellcheck = false;
     bindAutosave(speaker, segment.id, "speaker");
 
     const text = document.createElement("textarea");
     text.className = "seg-text";
     text.rows = 1;
     text.value = segment.text;
+    bindSpellcheck(text, sourceLanguage);
     bindAutosave(text, segment.id, "text");
     queueMicrotask(() => autoGrow(text));
     text.addEventListener("input", () => autoGrow(text));
@@ -392,13 +428,13 @@ export async function render(view, _status, params) {
   const desktopQuery = matchMedia("(min-width: 68.75em)");
   const activePanels = new Set(["segments"]);
   let translationLanguage =
-    derivedTexts.find((x) => x.kind === "translation")?.language ?? "en";
+    derivedTexts.find((x) => x.kind === "translation" && x.content.trim())?.language ?? "en";
   const textTimers = new Map();
 
   function setupPanels() {
     if (desktopQuery.matches) {
-      if (derivedTexts.some((x) => x.kind === "cleanup")) activePanels.add("cleanup");
-      if (derivedTexts.some((x) => x.kind === "translation")) activePanels.add("translation");
+      if (hasText("cleanup")) activePanels.add("cleanup");
+      if (hasText("translation")) activePanels.add("translation");
     }
     for (const tab of el("panel-tabs").querySelectorAll("button")) {
       tab.onclick = () => {
@@ -471,6 +507,11 @@ export async function render(view, _status, params) {
     return derivedTexts.find((x) => x.kind === kind && (!language || x.language === language));
   }
 
+  // an emptied text is not a result any more, only a leftover row
+  function hasText(kind) {
+    return derivedTexts.some((x) => x.kind === kind && x.content.trim());
+  }
+
   function renderDerivedPanels() {
     renderTextPanel("cleanup-panel", "cleanup", "");
     renderTranslationPanel();
@@ -520,6 +561,7 @@ export async function render(view, _status, params) {
     const area = document.createElement("textarea");
     area.className = "dtext";
     area.value = text.content;
+    bindSpellcheck(area, kind === "translation" ? language : sourceLanguage);
     bindTextAutosave(area, kind, language);
     return [head, area];
   }
@@ -554,7 +596,9 @@ export async function render(view, _status, params) {
     select.className = "lang-select";
     // two groups, so a glance answers "which language is already translated?"
     const existing = [...new Set(
-      derivedTexts.filter((x) => x.kind === "translation").map((x) => x.language)
+      derivedTexts
+        .filter((x) => x.kind === "translation" && x.content.trim())
+        .map((x) => x.language)
     )];
     const done = document.createElement("optgroup");
     done.label = t("editor.langTranslated");
@@ -569,9 +613,38 @@ export async function render(view, _status, params) {
     if (existing.length) select.append(done);
     select.append(open);
     select.value = translationLanguage;
+    // A translation is the one derived text that piles up: one per language,
+    // and a wrong or unwanted one would otherwise stay in the file and in the
+    // export list forever — clearing the textarea leaves an empty shell behind.
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "icon-btn";
+    remove.innerHTML = iconSvg("delete");
+    remove.title = t("editor.deleteTranslation");
+    remove.setAttribute("aria-label", remove.title);
+    remove.onclick = async () => {
+      const language = translationLanguage;
+      const ok = await confirmDelete({
+        message: t("editor.deleteTranslationConfirm", { lang: languageName(language) }),
+      });
+      if (!ok) return;
+      try {
+        await api.deleteText(fileId, "translation", language);
+        derivedTexts = derivedTexts.filter(
+          (x) => !(x.kind === "translation" && x.language === language)
+        );
+        renderDerivedPanels();
+      } catch (error) {
+        toast(error.message);
+      }
+    };
+    const head = document.createElement("div");
+    head.className = "lang-row";
+    head.append(select, remove);
     const body = document.createElement("div");
     const fillBody = () => {
       const text = derivedText("translation", translationLanguage);
+      remove.hidden = !text;
       body.replaceChildren(
         ...(text
           ? buildTextEditor(text, "translation", translationLanguage)
@@ -584,7 +657,7 @@ export async function render(view, _status, params) {
       fillBody();
     };
     fillBody();
-    host.replaceChildren(select, body);
+    host.replaceChildren(head, body);
   }
 
   function buildCreateAction(kind, language) {

@@ -280,6 +280,15 @@ def update_text(
     return updated
 
 
+@router.delete("/files/{file_id}/texts/{kind}")
+def delete_text(file_id: int, kind: str, request: Request, language: str = "") -> dict:
+    """Throw a derived text away — the AI step can be run again afterwards."""
+    _file_or_404(file_id, request)
+    if not pipeline.delete_text(file_id, kind, language):
+        raise HTTPException(status_code=404, detail="No such AI text available")
+    return {"ok": True}
+
+
 # ── results ───────────────────────────────────────────────────────────
 
 

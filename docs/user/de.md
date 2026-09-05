@@ -299,7 +299,11 @@ Aufträge laufen und die Zeilen sich aktualisieren.
 
 - **Einzelne Datei:** Mikrofon-Symbol in der Dateizeile (fertige Dateien
   zeigen stattdessen ein Wiederholen-Symbol für einen erneuten Lauf)
-- **Alles:** „Alle transkribieren" in Schritt 2 der Aktionskarte
+- **Alles:** „Alle transkribieren" in Schritt 2 der Aktionskarte — der Knopf
+  nimmt sich die noch offenen Dateien. Sind schon alle transkribiert, bietet er
+  einen zweiten Lauf über die ganze Liste an und fragt vorher nach, denn dabei
+  werden die vorhandenen Segmente ersetzt, auch von Hand geänderte. Dieselbe
+  Rückfrage kommt, wenn eine Auswahl fertige Dateien enthält.
 - **Erweitert (aufklappbar):** Whisper-Modell und Aufnahmesprache nur für diesen
   Lauf ändern — die gespeicherten Einstellungen bleiben unberührt
 - Fortschritt erscheint live pro Datei; laufende Aufträge sind abbrechbar
@@ -421,6 +425,12 @@ transkribierten Datei öffnet den Editor — einen
 - In der Sprachauswahl der Übersetzung sind die Sprachen in **„Bereits
   übersetzt"** und **„Noch nicht übersetzt"** gruppiert; das Umschalten zeigt
   sofort die jeweilige Fassung.
+- **Übersetzung löschen**: Neben der Sprachauswahl entfernt das Papierkorb-Symbol
+  die angezeigte Übersetzung nach einer Rückfrage endgültig — samt ihrer Datei im
+  Arbeitsordner. Die Sprache steht danach wieder unter „Noch nicht übersetzt",
+  das PDF bietet sie nicht mehr an, und die Markierung *übersetzt* verschwindet
+  aus der Dateizeile. Wer das Textfeld nur leert, erreicht dasselbe für die
+  Markierung und den Export; der leere Eintrag selbst bleibt bis zum Löschen.
 - **Datei wechseln und exportieren ohne Umweg**: Oben listet eine Auswahlliste
   alle Dateien desselben Transkripts und zeigt die geöffnete als ausgewählt an —
   ein Griff genügt, um zu einer anderen zu wechseln; daneben startet das
@@ -428,6 +438,15 @@ transkribierten Datei öffnet den Editor — einen
 - **Text und Sprecher** direkt in den Segmentzeilen bearbeiten — Änderungen werden
   automatisch gespeichert („Gespeichert"-Anzeige), **Rückgängig** hebt die letzten
   Änderungen schrittweise auf
+- **Rechtschreibprüfung**: Segmente, bereinigter Text und Übersetzung werden von
+  der Rechtschreibprüfung des Browsers geprüft — jeder Text **in seiner eigenen
+  Sprache**: Segmente und Bereinigung in der Sprache der Transkription, jede
+  Übersetzung in ihrer Zielsprache. Sprechernamen bleiben ausgenommen, sonst
+  wäre jeder Name markiert. Das Symbol oben im Arbeitsbereich schaltet die
+  Prüfung ab und wieder an; die Entscheidung bleibt im Browser gespeichert.
+  Markiert wird nur, wofür der Browser ein Wörterbuch hat — fehlt es für eine
+  Sprache, muss es in den Browser-Einstellungen ergänzt werden (Chrome/Edge:
+  Sprachen → Rechtschreibprüfung).
 - **Auswahl** durch Ziehen auf der Wellenform, dann:
   - **Auswahl neu transkribieren** — nur dieser Abschnitt wird neu erkannt und
     ersetzt exakt die betroffenen Segmente

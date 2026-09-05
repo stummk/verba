@@ -175,6 +175,9 @@ export const api = {
   updateText: (fileId, kind, language, content) =>
     request("PUT", `/api/files/${fileId}/texts/${kind}?language=${encodeURIComponent(language)}`,
       { content }),
+  deleteText: (fileId, kind, language) =>
+    request("DELETE",
+      `/api/files/${fileId}/texts/${kind}?language=${encodeURIComponent(language)}`),
 
   // transcription & jobs
   transcribeFile: (fileId, options = {}) =>

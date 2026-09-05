@@ -2,7 +2,7 @@
 // live progress, per-run advanced options (model/language), segment preview.
 
 import { api } from "../api.js";
-import { confirmDelete } from "../confirm.js";
+import { confirmAction, confirmDelete } from "../confirm.js";
 import { el, esc, formatDuration, html, raw, toast } from "../dom.js";
 import { closeExportDialog, openExportDialog } from "../export-dialog.js";
 import { iconButton, iconSvg } from "../icons.js";
@@ -293,20 +293,47 @@ export async function render(view, _status, params) {
   });
 
   el("transcribe-all").onclick = async () => {
-    try {
-      const jobs = [];
-      for (const fileRow of files.values()) {
-        if (fileRow.status === "done" || fileRow.status === "transcribing" || fileJobs.has(fileRow.id)) {
-          continue;
-        }
-        jobs.push(await api.transcribeFile(fileRow.id, fileOptions(fileRow)));
-      }
-      if (!jobs.length) throw new Error(t("project.noFilesToTranscribe"));
-      toast(t("project.jobsStarted", { count: jobs.length }));
-    } catch (error) {
-      toast(error.message);
-    }
+    const busy = (fileRow) => fileRow.status === "transcribing" || fileJobs.has(fileRow.id);
+    const rows = [...files.values()].filter((fileRow) => !busy(fileRow));
+    // Pressed in front of a list where everything is already transcribed, the
+    // button used to answer "no files" — which reads as if the list were empty.
+    // What is meant then is a second run, so that is what it offers.
+    const open = rows.filter((fileRow) => fileRow.status !== "done");
+    await startTranscriptions(
+      open.length ? open : rows,
+      files.size ? t("project.alreadyRunning") : t("project.noFiles"),
+    );
   };
+
+  // The one place both bulk buttons agree on: a run over files that are
+  // already transcribed replaces their segments — and every manual edit in
+  // them — so it asks once before it starts. A single row's "Erneut" button
+  // stays as it is: one file is a deliberate choice, not a sweep.
+  async function startTranscriptions(rows, emptyMessage) {
+    if (!rows.length) {
+      toast(emptyMessage);
+      return;
+    }
+    const again = rows.filter((fileRow) => fileRow.status === "done").length;
+    if (again) {
+      const ok = await confirmAction({
+        title: t("project.retranscribeTitle"),
+        message: t("project.retranscribeConfirm", { count: again }),
+        confirmLabel: t("project.retranscribeStart"),
+      });
+      if (!ok) return;
+    }
+    let started = 0;
+    for (const fileRow of rows) {
+      try {
+        await api.transcribeFile(fileRow.id, fileOptions(fileRow));
+        started += 1;
+      } catch (error) {
+        toast(`${fileRow.filename}: ${error.message}`);
+      }
+    }
+    if (started) toast(t("project.jobsStarted", { count: started }));
+  }
 
   el("process-all").onclick = () => openAiDialog({ projectId });
   el("export-all").onclick = () => openExportDialog({ projectId });
@@ -319,21 +346,14 @@ export async function render(view, _status, params) {
     renderRows(files);
   };
 
-  el("bulk-transcribe").onclick = async () => {
-    const rows = selectedRows();
-    let started = 0;
-    for (const fileRow of rows) {
-      if (fileRow.status === "transcribing" || fileJobs.has(fileRow.id)) continue;
-      try {
-        await api.transcribeFile(fileRow.id, fileOptions(fileRow));
-        started += 1;
-      } catch (error) {
-        toast(`${fileRow.filename}: ${error.message}`);
-      }
-    }
-    if (started) toast(t("project.jobsStarted", { count: started }));
-    else toast(t("project.noFilesToTranscribe"));
-  };
+  // the bulk bar only exists with a selection, so an empty result means the
+  // selected files are all running already
+  el("bulk-transcribe").onclick = () => startTranscriptions(
+    selectedRows().filter(
+      (fileRow) => fileRow.status !== "transcribing" && !fileJobs.has(fileRow.id)
+    ),
+    t("project.alreadyRunning"),
+  );
 
   el("bulk-export").onclick = () => {
     // only a transcribed file has anything to put into a PDF
@@ -430,15 +450,13 @@ export async function render(view, _status, params) {
     }),
     on("texts.changed", (data) => {
       // the file status does not change with a derived text, so the row has to
-      // learn about the new one from this event
+      // learn about it from this event — which carries the kinds the file has
+      // left, so an emptied or deleted text takes its chip off the row again
       const fileRow = files.get(data.file_id);
       if (fileRow) {
-        const kinds = new Set((fileRow.derived_kinds ?? "").split(",").filter(Boolean));
-        kinds.add(data.kind);
-        fileRow.derived_kinds = [...kinds].join(",");
+        fileRow.derived_kinds = data.kinds ?? "";
         renderRows(files);
       }
-      if (openTextsRefresh) openTextsRefresh(data.file_id);
     }),
   ];
 
@@ -656,13 +674,10 @@ export async function render(view, _status, params) {
   }
 
   // ── AI processing dialog (cleanup / translation, per file or project) ──
-  let openTextsRefresh = null;
-
   function openAiDialog({ fileId = null, projectId: forProject = null }) {
     const host = el("browser-modal");
 
-    async function show() {
-      const textsData = fileId ? await api.getTexts(fileId).catch(() => null) : null;
+    function show() {
       host.replaceChildren(html`
         <div class="modal-backdrop">
           <div class="modal">
@@ -681,13 +696,11 @@ export async function render(view, _status, params) {
             <div class="actions">
               <button id="ai-start">${t("ai.start")}</button>
             </div>
-            <div id="ai-texts"></div>
           </div>
         </div>
       `);
 
       fillLanguageSelect(el("ai-language"), { selected: "en" });
-      renderTexts(textsData);
 
       el("modal-close").onclick = close;
       host.querySelector(".modal-backdrop").onclick = (event) => {
@@ -720,41 +733,7 @@ export async function render(view, _status, params) {
       };
     }
 
-    function renderTexts(textsData) {
-      const container = el("ai-texts");
-      if (!container || !textsData?.texts?.length) return;
-      const tabs = document.createElement("div");
-      tabs.className = "tabs";
-      const body = document.createElement("pre");
-      body.className = "text-view";
-      for (const [index, text] of textsData.texts.entries()) {
-        const tab = document.createElement("button");
-        tab.className = "text-btn small-btn";
-        tab.textContent = text.kind === "translation"
-          ? `${t("ai.tabTranslation")} (${text.language})`
-          : t("ai.tabCleanup");
-        tab.onclick = () => {
-          body.textContent = text.content;
-          tabs.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
-          tab.classList.add("active");
-        };
-        tabs.append(tab);
-        if (index === 0) {
-          body.textContent = text.content;
-          tab.classList.add("active");
-        }
-      }
-      container.replaceChildren(tabs, body);
-    }
-
-    openTextsRefresh = async (changedFileId) => {
-      if (fileId && changedFileId === fileId && el("ai-texts")) {
-        renderTexts(await api.getTexts(fileId).catch(() => null));
-      }
-    };
-
     function close() {
-      openTextsRefresh = null;
       host.replaceChildren();
     }
 

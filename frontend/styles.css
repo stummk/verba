@@ -844,19 +844,6 @@ dialog::backdrop { background: var(--md-scrim); }
   font-size: .92rem;
 }
 .checkline input[type="checkbox"] { width: 1.1rem; height: 1.1rem; accent-color: var(--md-primary); }
-.tabs { display: flex; gap: .35rem; flex-wrap: wrap; margin-top: .75rem; }
-.tabs .active { background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
-.text-view {
-  margin-top: .5rem;
-  max-height: 40vh;
-  overflow: auto;
-  white-space: pre-wrap;
-  font-family: inherit;
-  font-size: .9rem;
-  background: var(--md-surface-container);
-  border-radius: var(--shape-md);
-  padding: .75rem .9rem;
-}
 dialog textarea {
   width: 100%;
   resize: vertical;
@@ -1026,6 +1013,13 @@ dialog textarea {
   gap: .6rem;
   padding: 1rem 0;
 }
+.lang-row {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  margin-bottom: .6rem;
+}
+.lang-row .lang-select { flex: 1; margin-bottom: 0; }
 .lang-select { margin-bottom: .6rem; }
 .auto-line {
   display: flex;
@@ -1196,6 +1190,11 @@ dialog textarea {
   color: var(--md-on-surface);
 }
 .icon-btn:disabled { opacity: .38; }
+/* a toggle that stays on has to look different from one that was just clicked */
+.icon-btn.active {
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
 .icon-btn svg { display: block; }
 .icon-btn.filled {
   background: var(--md-primary);

@@ -171,6 +171,7 @@ def test_the_file_routes_are_closed_for_a_foreign_private_transcript(team, as_jo
     for method, path in [
         ("get", f"/api/files/{file_row['id']}/segments"),
         ("get", f"/api/files/{file_row['id']}/texts"),
+        ("delete", f"/api/files/{file_row['id']}/texts/translation?language=en"),
         ("get", f"/api/files/{file_row['id']}/audio"),
         ("delete", f"/api/files/{file_row['id']}"),
         ("get", f"/api/projects/{project['id']}/exports"),
