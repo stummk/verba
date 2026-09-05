@@ -392,6 +392,7 @@
   "settings.embeddingSpeed.balanced": "сбалансированно",
   "settings.embeddingSpeed.quality": "тщательно",
   "settings.embeddingCacheHint": "Скачивается при первом использовании в: {path}",
+  "settings.embeddingCatalogFailed": "Не удалось загрузить список моделей — проверьте журналы.",
   "settings.searchModelMismatch": "Индекс построен другой моделью — пересоберите его.",
   "settings.workspacesCurrent": "Сейчас: {path} (папок транскриптов: {count})",
   "settings.workspacesMoveHint": "При сохранении нового пути существующие папки транскриптов переносятся туда (фоновая задача).",

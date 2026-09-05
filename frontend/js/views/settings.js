@@ -206,6 +206,7 @@ export async function render(view) {
                    value="${settings.search?.embeddings_dir ?? ""}">
             <p class="hint">${t("settings.embeddingsDirHint")}</p>
             <p class="hint" id="search-embedding-cache"></p>
+            <p class="error" id="search-embedding-error" hidden></p>
           </div>
           <div>
             <label>&nbsp;</label>
@@ -989,6 +990,14 @@ function updateLlmDownloadProgress(info) {
 async function refreshEmbeddingModels(selected) {
   const select = el("search-embedding-model");
   if (!select) return;
+  // An empty picker used to be the only sign that the catalog call failed —
+  // and it is the field that would have fixed the cause, so it says why.
+  const note = (text) => {
+    const node = el("search-embedding-error");
+    if (!node) return;
+    node.textContent = text ?? "";
+    node.hidden = !text;
+  };
   try {
     const catalog = await api.searchModels();
     fillEmbeddingSelect(select, catalog, selected, { hint: el("search-embedding-fit") });
@@ -997,8 +1006,10 @@ async function refreshEmbeddingModels(selected) {
     el("search-embedding-cache").textContent = t("settings.embeddingCacheHint", {
       path: catalog.cache_dir,
     });
+    note(catalog.cache_dir_error);
   } catch {
     select.disabled = true;
+    note(t("settings.embeddingCatalogFailed"));
   }
 }
 

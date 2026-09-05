@@ -442,6 +442,23 @@ def workspaces_dir(settings: Settings) -> Path:
     return path
 
 
+def ensure_dir(path: Path) -> OSError | None:
+    """Create a configured directory; answer with the reason if that fails.
+
+    A configured path can be out of reach at any moment — a drive that is not
+    connected right now, a removable disk, a read-only location. That is a
+    wrong setting, not a broken program, so the caller keeps
+    the path (the settings field has to go on showing it) and reports the
+    reason, instead of an OSError escaping a getter that every request calls.
+    """
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        logger.warning("configured directory %s cannot be created: %s", path, exc)
+        return exc
+    return None
+
+
 def default_embeddings_dir() -> Path:
     return base_data_dir() / "models" / "embeddings"
 
@@ -451,12 +468,13 @@ def embeddings_dir(settings: Settings | None = None) -> Path:
 
     Configurable, so a model that already sits somewhere on disk (a moved
     HuggingFace cache, a folder copied from another machine) is reused
-    instead of downloaded a second time.
+    instead of downloaded a second time. An unreachable one is answered
+    anyway — the search then finds no model there and says so.
     """
     settings = settings or get_settings()
     configured = settings.search.embeddings_dir
     path = Path(configured) if configured else default_embeddings_dir()
-    path.mkdir(parents=True, exist_ok=True)
+    ensure_dir(path)
     return path
 
 

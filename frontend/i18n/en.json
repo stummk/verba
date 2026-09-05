@@ -392,6 +392,7 @@
   "settings.embeddingSpeed.balanced": "balanced",
   "settings.embeddingSpeed.quality": "thorough",
   "settings.embeddingCacheHint": "Downloaded on first use to: {path}",
+  "settings.embeddingCatalogFailed": "The model list could not be loaded — please check the logs.",
   "settings.searchModelMismatch": "The index was built with another model — please rebuild it.",
   "settings.workspacesCurrent": "Currently: {path} ({count} transcript folders)",
   "settings.workspacesMoveHint": "Saving a new path moves existing transcript folders there (background job).",

@@ -749,7 +749,19 @@ vollständig offline. Wohin, bestimmt **Modellverzeichnis (Embeddings)**
 **von dort geladen statt erneut heruntergeladen** — erkannt werden sowohl ein
 einfacher Ordner (`bge-m3/`, `BAAI_bge-m3/`) als auch ein verschobener
 HuggingFace-Cache (`models--BAAI--bge-m3/snapshots/…`). In der Auswahlliste
-steht bei solchen Modellen „lokal vorhanden". Ein Wechsel
+steht bei solchen Modellen „lokal vorhanden".
+
+Ein HuggingFace-Cache legt die Dateien eines Snapshots nur als Verknüpfungen
+auf `blobs/` ab. Windows kann das Verfolgen einer solchen Verknüpfung
+verweigern („nicht vertrauenswürdiger Bereitstellungspunkt", WinError 448) —
+etwa in einem Cloud- oder virtuellen Laufwerk, in einem als Ordner
+eingehängten Volume oder in einem verschlüsselten Container; der
+Laufwerksbuchstabe sagt darüber nichts. Ein Modell dort lässt sich dann nicht
+laden, und unter dem Feld steht, dass das Verzeichnis nicht nutzbar ist. Abhilfe:
+ein **gewöhnlicher Ordner** ohne Verknüpfungen (`bge-m3/`) oder das
+Standardverzeichnis — Verba lädt das Modell dann einmal selbst dorthin.
+
+Ein Wechsel
 macht alle gespeicherten Vektoren ungültig und startet deshalb automatisch
 einen kompletten Neuindex. Steht im Status „Index stammt von einem anderen
 Modell", genügt **Index neu aufbauen**.

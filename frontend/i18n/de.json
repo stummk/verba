@@ -392,6 +392,7 @@
   "settings.embeddingSpeed.balanced": "ausgewogen",
   "settings.embeddingSpeed.quality": "gründlich",
   "settings.embeddingCacheHint": "Wird beim ersten Gebrauch heruntergeladen nach: {path}",
+  "settings.embeddingCatalogFailed": "Die Modellliste konnte nicht geladen werden — bitte die Protokolle prüfen.",
   "settings.searchModelMismatch": "Index stammt von einem anderen Modell — bitte neu aufbauen.",
   "settings.workspacesCurrent": "Aktuell: {path} ({count} Transkript-Ordner)",
   "settings.workspacesMoveHint": "Beim Speichern eines neuen Pfades werden vorhandene Transkript-Ordner dorthin verschoben (Hintergrund-Job).",

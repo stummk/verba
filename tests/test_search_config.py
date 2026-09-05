@@ -8,6 +8,8 @@ instead of refusing to start.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from verba import config, db
@@ -363,3 +365,76 @@ def test_the_catalog_endpoint_says_what_is_already_there(client, tmp_path):
 
     assert models["BAAI/bge-m3"] is True
     assert models[config.DEFAULT_EMBEDDING_MODEL] is False
+
+
+# ── a directory the OS refuses to read ────────────────────────────────
+
+
+def block_traversal(monkeypatch, marker: str) -> None:
+    """Let every stat below `marker` fail the way Windows does.
+
+    A HuggingFace cache stores a snapshot's files as symlinks into `blobs/`,
+    and Windows refuses to follow those on a network or removable drive
+    ("WinError 448: untrusted mount point"). Such a path does not answer
+    "no" — the stat raises, and pathlib passes that on.
+    """
+    real = Path.is_file
+
+    def guarded(self, *args, **kwargs):
+        if marker in str(self):
+            raise OSError(
+                "[WinError 448] Der Pfad kann nicht durchlaufen werden, "
+                f"da er einen nicht vertrauenswürdigen Bereitstellungspunkt enthält: {self}"
+            )
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "is_file", guarded)
+
+
+def test_an_unreadable_model_folder_counts_as_absent(tmp_path, monkeypatch):
+    configure_dir(tmp_path)
+    place_model(tmp_path, "models--BAAI--bge-m3/snapshots/abc123")
+    block_traversal(monkeypatch, "snapshots")
+    entry = config.embedding_model("BAAI/bge-m3")
+
+    assert vectorstore.local_model_dir(entry) is None
+    assert vectorstore.model_present_locally(entry) is False
+
+
+def test_the_catalog_survives_an_unreadable_directory(client, tmp_path, monkeypatch):
+    """The list must stay answerable — it holds the field that fixes the cause.
+
+    An escaping OSError turned GET /api/search/models into a 500: the settings
+    page then showed an empty picker, so the directory could no longer be
+    corrected there, and the search answered 500 as well.
+    """
+    configure_dir(tmp_path)
+    place_model(tmp_path, "models--BAAI--bge-m3/snapshots/abc123")
+    block_traversal(monkeypatch, "snapshots")
+
+    response = client.get("/api/search/models")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert [m["name"] for m in data["models"]] == [e.name for e in config.EMBEDDING_MODELS]
+    assert not any(m["present"] for m in data["models"])
+    assert "WinError 448" in data["cache_dir_error"]
+
+
+def test_a_readable_directory_reports_no_error(client, tmp_path):
+    configure_dir(tmp_path)
+    place_model(tmp_path, "bge-m3")
+    assert client.get("/api/search/models").json()["cache_dir_error"] == ""
+
+
+def test_a_directory_that_cannot_be_created_is_reported_not_raised(client, tmp_path):
+    """A mapped drive that is not connected must not take the settings down."""
+    blocker = tmp_path / "kein-verzeichnis"
+    blocker.write_text("", encoding="utf-8")
+    configure_dir(blocker / "embeddings")
+
+    response = client.get("/api/search/models")
+
+    assert response.status_code == 200
+    assert response.json()["cache_dir_error"]
+    assert not any(m["present"] for m in response.json()["models"])

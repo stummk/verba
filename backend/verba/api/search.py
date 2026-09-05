@@ -88,6 +88,8 @@ def list_embedding_models(user: dict = AdminUser) -> dict:
     `present` says whether the model already lies in the models directory: the
     UI can then promise "no download" instead of guessing. `fit` says whether
     this machine has the memory for it — the index is built here, locally.
+    `cache_dir_error` names a directory the OS will not let us read, which is
+    why nothing in it counts as present.
     """
     hw = hardware.probe()
     alternatives = [(entry.label, entry.size_mb) for entry in config.EMBEDDING_MODELS]
@@ -110,6 +112,7 @@ def list_embedding_models(user: dict = AdminUser) -> dict:
         "default": config.DEFAULT_EMBEDDING_MODEL,
         "configured": config.get_settings().search.embedding_model,
         "cache_dir": str(config.embeddings_dir()),
+        "cache_dir_error": vectorstore.directory_error(),
         "hardware": hw,
     }
 

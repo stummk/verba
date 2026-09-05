@@ -717,7 +717,17 @@ to is set by **models directory (embeddings)** (default:
 there instead of downloaded again** — both a plain folder (`bge-m3/`,
 `BAAI_bge-m3/`) and a moved HuggingFace cache
 (`models--BAAI--bge-m3/snapshots/…`) are recognised. Such models are marked
-"already on disk" in the pick list. Switching models invalidates every
+"already on disk" in the pick list.
+
+A HuggingFace cache stores a snapshot's files as links into `blobs/` only.
+Windows can refuse to follow such a link ("untrusted mount point", WinError
+448) — in a cloud or virtual drive, in a volume mounted as a folder, or in an
+encrypted container; the drive letter says nothing about it. A model in there
+cannot be loaded, and a line below the field says the directory is not usable.
+The remedy: a **plain folder** without links (`bge-m3/`), or the default
+directory — Verba then downloads the model there once itself.
+
+Switching models invalidates every
 stored vector and therefore starts a full reindex automatically. If the status
 says the index came from another model, **Rebuild index** is all it takes.
 

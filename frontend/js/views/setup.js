@@ -548,11 +548,12 @@ async function renderSearchStep(body) {
     fillEmbeddingSelect(el("wizard-embedding"), catalog, settings.search?.embedding_model, {
       hint: el("wizard-embedding-fit"),
     });
-    el("wizard-embedding-hint").textContent = t("settings.embeddingCacheHint", {
-      path: catalog.cache_dir,
-    });
+    // a directory that cannot be read makes the download hint a lie
+    el("wizard-embedding-hint").textContent =
+      catalog.cache_dir_error || t("settings.embeddingCacheHint", { path: catalog.cache_dir });
   } catch {
     el("wizard-embedding").disabled = true;
+    el("wizard-embedding-hint").textContent = t("settings.embeddingCatalogFailed");
   }
 
   const status = await api.searchStatus().catch(() => null);

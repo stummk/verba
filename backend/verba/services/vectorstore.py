@@ -79,35 +79,92 @@ class EmbeddingUnavailable(RuntimeError):
 # ── embedding model ───────────────────────────────────────────────────
 
 
-def local_model_dir(entry: config.EmbeddingModel) -> Path | None:
-    """A folder in the embeddings directory that already holds this model.
+def _scan_local(entry: config.EmbeddingModel) -> tuple[Path | None, OSError | None]:
+    """Look for a local copy of the model; report a path we cannot even read.
 
     Two layouts count, because both turn up in practice: a plain folder (the
     repo copied or cloned by hand, `bge-m3/` or `BAAI_bge-m3/`) and the
     HuggingFace cache layout (`models--BAAI--bge-m3/snapshots/<rev>/`). A hit
     is loaded from disk, so the model is never downloaded twice.
+
+    Every probe survives an unreadable path instead of raising. A HuggingFace
+    cache stores its snapshot files as symlinks into `blobs/`, and following
+    one can be refused outright: Windows answers WinError 448 ("untrusted
+    mount point") when the traversal crosses a reparse point that a
+    filesystem filter driver or a mount point will not let the caller
+    through — a cloud-sync or virtual drive, a folder-mounted volume, an
+    encrypted container. The drive type says nothing about it. Such an entry
+    is simply not a usable local model; letting the OSError escape took the
+    whole catalog with it, and with it the settings field that would have let
+    the directory be corrected.
     """
     root = config.embeddings_dir()
     org, _, repo = entry.name.partition("/")
+    failure: OSError | None = None
+
+    def readable(path: Path) -> bool:
+        nonlocal failure
+        try:
+            return path.is_file()
+        except OSError as exc:
+            logger.warning("embeddings directory: cannot read %s (%s)", path, exc)
+            failure = failure or exc
+            return False
+
     plain = [
         root / repo,
         root / entry.name.replace("/", "_"),
         root / entry.name.replace("/", "--"),
     ]
     for candidate in plain:
-        if (candidate / "config.json").is_file():
-            return candidate
+        if readable(candidate / "config.json"):
+            return candidate, failure
     cache = root / f"models--{org}--{repo}" / "snapshots"
-    if cache.is_dir():
-        for snapshot in sorted(cache.iterdir(), reverse=True):
-            if (snapshot / "config.json").is_file():
-                return snapshot
-    return None
+    try:
+        snapshots = sorted(cache.iterdir(), reverse=True) if cache.is_dir() else []
+    except OSError as exc:
+        logger.warning("embeddings directory: cannot list %s (%s)", cache, exc)
+        return None, failure or exc
+    for snapshot in snapshots:
+        if readable(snapshot / "config.json"):
+            return snapshot, failure
+    return None, failure
+
+
+def local_model_dir(entry: config.EmbeddingModel) -> Path | None:
+    """A folder in the embeddings directory that already holds this model."""
+    return _scan_local(entry)[0]
 
 
 def model_present_locally(entry: config.EmbeddingModel) -> bool:
     """Whether using this model needs a download first (settings UI)."""
     return local_model_dir(entry) is not None
+
+
+def directory_error() -> str:
+    """Why the embeddings directory is unusable, or "" when it is fine.
+
+    Two ways it can be: the directory cannot be created at all (a drive that
+    is not connected right now), or single entries cannot be read. Either way
+    no model in there loads and none counts as present, so the settings say
+    that next to the field instead of quietly offering a fresh download that
+    would land in the same directory and fail again.
+    """
+    root = config.embeddings_dir()
+    failure = config.ensure_dir(root)
+    if failure is None:
+        for entry in config.EMBEDDING_MODELS:
+            found, problem = _scan_local(entry)
+            if found is None and problem is not None:
+                failure = problem
+                break
+    if failure is None:
+        return ""
+    return (
+        f"Das Modellverzeichnis {root} ist nicht nutzbar: {failure}. Modelle darin "
+        "lassen sich nicht laden — bitte das Laufwerk verbinden oder ein Verzeichnis "
+        "auf einer lokalen Festplatte wählen."
+    )
 
 
 def _load_model() -> Any:
