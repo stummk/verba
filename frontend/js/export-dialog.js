@@ -26,9 +26,18 @@ export function closeExportDialog() {
   el(HOST_ID)?.replaceChildren();
 }
 
-/** Ask for the language and start a PDF export — for one file or a project. */
-export function openExportDialog({ fileId = null, projectId = null } = {}) {
+/**
+ * Ask for the language and start a PDF export — for one file, for a selection
+ * of files or for a whole project. A selection of several files ends up in one
+ * PDF, each file a section of it, exactly like the export of the whole
+ * transcript; it just leaves the files out that were not selected.
+ */
+export function openExportDialog({ fileId = null, fileIds = null, projectId = null } = {}) {
   const host = modalHost();
+  const selection = fileIds ?? (fileId ? [fileId] : []);
+  const intro = selection.length > 1
+    ? t("export.introFiles", { count: selection.length })
+    : (selection.length ? t("export.introFile") : t("export.introProject"));
   host.replaceChildren(html`
     <div class="modal-backdrop">
       <div class="modal">
@@ -36,7 +45,7 @@ export function openExportDialog({ fileId = null, projectId = null } = {}) {
           <strong>${t("export.title")}</strong>
           <button class="text-btn small-btn" id="modal-close">${t("common.close")}</button>
         </div>
-        <p class="small muted">${fileId ? t("export.introFile") : t("export.introProject")}</p>
+        <p class="small muted">${intro}</p>
         <label for="export-language">${t("export.language")}</label>
         <select id="export-language"></select>
         <p class="hint">${t("export.hint")}</p>
@@ -65,8 +74,13 @@ export function openExportDialog({ fileId = null, projectId = null } = {}) {
     const choice = el("export-language").value;
     const options = choice === COMBINED ? { combine: true } : { language: choice };
     try {
-      if (fileId) await api.exportFile(fileId, options);
-      else await api.exportProject(projectId, options);
+      if (selection.length === 1) {
+        await api.exportFile(selection[0], options);
+      } else {
+        // no selection: the whole transcript; a selection: the same job, told
+        // which files belong in the one PDF it renders
+        await api.exportProject(projectId, { ...options, file_ids: selection });
+      }
       toast(t("export.started"));
       closeExportDialog();
     } catch (error) {

@@ -5,6 +5,7 @@
 // well — this view only decides what is worth showing.
 
 import { api } from "../api.js";
+import { confirmDelete } from "../confirm.js";
 import { el, esc, html, toast } from "../dom.js";
 import { iconButton } from "../icons.js";
 import { t } from "../i18n.js";
@@ -87,7 +88,12 @@ function renderAccess() {
       }
     };
     el("auth-disable").onclick = async () => {
-      if (!confirm(t("users.disableConfirm"))) return;
+      const ok = await confirmDelete({
+        title: t("users.disable"),
+        message: t("users.disableConfirm"),
+        confirmLabel: t("users.disable"),
+      });
+      if (!ok) return;
       try {
         await api.disableAuth();
         location.reload();
@@ -166,7 +172,7 @@ function renderList() {
     const actions = document.createElement("span");
     actions.className = "row-actions";
     actions.append(iconButton("edit", t("users.edit"), () => openUserDialog(user)));
-    actions.append(iconButton("delete", t("users.delete"), () => confirmDelete(user)));
+    actions.append(iconButton("delete", t("users.delete"), () => deleteUser(user)));
     row.append(actions);
     return row;
   }));
@@ -237,14 +243,14 @@ function openUserDialog(user) {
   dialog.showModal();
 }
 
-async function confirmDelete(user) {
+async function deleteUser(user) {
   // The strategy is spelled out rather than summarised: what disappears and
   // what changes hands is not something to find out afterwards.
   const message = t("users.deleteConfirm", {
     name: user.display_name || user.username,
     count: user.project_count,
   });
-  if (!confirm(message)) return;
+  if (!await confirmDelete({ message })) return;
   try {
     const result = await api.deleteUser(user.id);
     toast(t("users.deleted", {

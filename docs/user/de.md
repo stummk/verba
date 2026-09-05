@@ -285,6 +285,16 @@ Beim Hochladen (auch per Drag & Drop) zeigt eine Fortschrittskarte, welche
 Datei gerade übertragen wird („Datei 2 von 7“), wie weit die gesamte
 Auswahl gediehen ist und wann der Server die Datei speichert.
 
+**Mehrere Dateien auf einmal.** Jede Zeile der Dateiliste trägt vorn ein
+Kästchen, das Kästchen in der Kopfzeile wählt alle aus. Sobald etwas
+ausgewählt ist, erscheint über der Liste eine Leiste mit der Anzahl und drei
+Aktionen für genau diese Auswahl: **Transkribieren**, **Als PDF exportieren**
+(ein einziges PDF, in dem jede ausgewählte Datei ein Abschnitt ist — wie der
+Export des ganzen Transkripts, nur ohne die nicht ausgewählten Dateien; Dateien
+ohne Transkript werden übersprungen und die Leiste sagt wie viele) und
+**Löschen**. Die Auswahl bleibt erhalten, während
+Aufträge laufen und die Zeilen sich aktualisieren.
+
 ## Transkribieren {#transcribe}
 
 - **Einzelne Datei:** Mikrofon-Symbol in der Dateizeile (fertige Dateien
@@ -656,6 +666,18 @@ erzeugen, das nur die Kopfzeile enthält.
 Abschnitt, nur durch Abstand getrennt — ohne Inhaltsverzeichnis und ohne
 zusätzliche Titel. Fertige PDFs erscheinen in der Karte **Exporte (PDF)** zum
 Herunterladen oder Löschen; im Workspace liegen sie unter `exports/`.
+Ein PDF aus einer Auswahl heißt nach seiner ersten Datei mit der Zahl der
+weiteren dahinter (`eins+2.pdf`) und überschreibt damit weder den Export des
+ganzen Transkripts noch den einer einzelnen Datei.
+
+Auch in dieser Karte trägt jede Zeile ein Kästchen. Mehrere ausgewählte PDFs
+lassen sich zusammen **löschen** oder in einem Zug **herunterladen** — mehr als
+eines kommt als ZIP-Datei, damit der Browser nur einmal nachfragt.
+
+**Vor jedem Löschen fragt Verba nach.** Datei, PDF, Abschnitt im Editor,
+Transkripttyp, Modell, API-Schlüssel, Konto: überall erscheint derselbe Dialog
+und nennt, was verschwindet — bei einer Auswahl auch, wie viele es sind.
+Gelöschtes lässt sich nicht zurückholen.
 
 ## Suche {#search}
 

@@ -12,6 +12,7 @@ const SHELL = [
   "/i18n/ru.json",
   "/js/api.js",
   "/js/app.js",
+  "/js/confirm.js",
   "/js/dom.js",
   "/js/embeddings.js",
   "/js/export-dialog.js",

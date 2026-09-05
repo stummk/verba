@@ -274,6 +274,14 @@ While files are uploading (drag & drop included) a progress card shows which
 file is going over the wire (“File 2 of 7”), how far the whole selection has
 come and when the server is storing the file.
 
+**Several files at once.** Every row of the file list carries a checkbox in
+front, and the one in the header selects them all. As soon as something is
+selected, a bar appears above the list with the count and three actions for
+exactly that selection: **Transcribe**, **Export as PDF** (a single PDF in
+which every selected file is one section — like the export of the whole
+transcript, just without the files that were not selected; files without a
+transcript are skipped and the bar says how many) and **Delete**. The selection survives while jobs run and the rows update.
+
 ## Transcribing {#transcribe}
 
 - **Single file:** microphone icon in the file row (finished files show a
@@ -628,6 +636,18 @@ the header line.
 section separated by spacing only — no table of contents and no extra titles.
 Finished PDFs appear in the **Exports (PDF)** card for download or deletion;
 in the workspace they live under `exports/`.
+A PDF made from a selection is named after its first file with the number of
+further ones behind it (`one+2.pdf`), so it overwrites neither the export of
+the whole transcript nor that of a single file.
+
+Every row in that card carries a checkbox too. Several selected PDFs can be
+**deleted** together or **downloaded** in one go — more than one arrives as a
+zip file, so the browser only asks once.
+
+**Verba asks before every delete.** File, PDF, segment in the editor,
+transcript type, model, API key, account: the same dialog appears everywhere
+and names what disappears — for a selection also how many. What is deleted
+cannot be brought back.
 
 ## Search {#search}
 

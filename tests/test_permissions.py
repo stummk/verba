@@ -174,6 +174,7 @@ def test_the_file_routes_are_closed_for_a_foreign_private_transcript(team, as_jo
         ("get", f"/api/files/{file_row['id']}/audio"),
         ("delete", f"/api/files/{file_row['id']}"),
         ("get", f"/api/projects/{project['id']}/exports"),
+        ("get", f"/api/projects/{project['id']}/exports.zip?names=a.pdf"),
     ]:
         response = getattr(as_jonas, method)(path)
         assert response.status_code == 404, f"{method} {path} → {response.status_code}"

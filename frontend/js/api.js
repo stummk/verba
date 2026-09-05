@@ -158,15 +158,20 @@ export const api = {
   // PDF export
   exportFile: (fileId, options = {}) =>
     request("POST", `/api/files/${fileId}/export`, { language: "", combine: false, ...options }),
+  // file_ids narrows it to a selection — still one PDF, only of those files
   exportProject: (projectId, options = {}) =>
     request("POST", `/api/projects/${projectId}/export`, {
-      language: "", combine: false, ...options,
+      language: "", combine: false, file_ids: [], ...options,
     }),
   listExports: (projectId) => request("GET", `/api/projects/${projectId}/exports`),
   deleteExport: (projectId, name) =>
     request("DELETE", `/api/projects/${projectId}/exports/${encodeURIComponent(name)}`),
   exportUrl: (projectId, name) =>
     `/api/projects/${projectId}/exports/${encodeURIComponent(name)}`,
+  // several PDFs at once: one zip, so the browser asks about one download
+  exportsZipUrl: (projectId, names) =>
+    `/api/projects/${projectId}/exports.zip?` +
+    names.map((name) => `names=${encodeURIComponent(name)}`).join("&"),
   updateText: (fileId, kind, language, content) =>
     request("PUT", `/api/files/${fileId}/texts/${kind}?language=${encodeURIComponent(language)}`,
       { content }),

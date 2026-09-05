@@ -1,6 +1,7 @@
 // Settings: UI language, whisper defaults, LLM, storage/logs, model management.
 
 import { api } from "../api.js";
+import { confirmDelete } from "../confirm.js";
 import { el, html, raw, toast } from "../dom.js";
 import { fillEmbeddingSelect } from "../embeddings.js";
 import { applyFitHint, endpointEstimate, fitBadge, hardwareLine, isLocalEndpoint } from "../hardware.js";
@@ -759,7 +760,11 @@ function mountAccount(host) {
   };
 
   el("account-delete").onclick = async () => {
-    if (!confirm(t("settings.deleteAccountConfirm"))) return;
+    const ok = await confirmDelete({
+      title: t("settings.deleteAccount"),
+      message: t("settings.deleteAccountConfirm"),
+    });
+    if (!ok) return;
     const password = prompt(t("login.currentPassword"));
     if (!password) return;
     try {
@@ -834,6 +839,7 @@ function modelRow(name, { installed, downloading, custom, fit }) {
       className: "badge badge-done", textContent: t("models.installed"),
     }));
     row.append(iconButton("delete", t("common.delete"), async () => {
+      if (!await confirmDelete({ message: t("models.deleteConfirm", { name }) })) return;
       try {
         await api.deleteModel(name);
         toast(t("models.deleted"));
@@ -910,6 +916,10 @@ async function refreshLlmSection() {
           className: "badge badge-done", textContent: t("models.installed"),
         }));
         row.append(iconButton("delete", t("common.delete"), async () => {
+          const ok = await confirmDelete({
+            message: t("models.deleteConfirm", { name: entry.label }),
+          });
+          if (!ok) return;
           await api.llmDeleteModel(entry.file).catch((e) => toast(e.message));
           toast(t("models.deleted"));
           await refreshLlmSection();
@@ -1086,6 +1096,10 @@ async function refreshApiKeys() {
       : t("settings.apiKeyNeverUsed");
     row.append(name, meta, Object.assign(document.createElement("span"), { className: "spacer" }));
     row.append(iconButton("delete", t("common.delete"), async () => {
+      const ok = await confirmDelete({
+        message: t("settings.apiKeyDeleteConfirm", { name: key.name }),
+      });
+      if (!ok) return;
       try {
         await api.deleteApiKey(key.id);
         toast(t("settings.apiKeyDeleted"));

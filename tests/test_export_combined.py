@@ -238,6 +238,7 @@ def test_api_accepts_the_combine_flag(client, tmp_path, monkeypatch):
     assert payloads[-1] == {
         "scope": "project",
         "project_id": project["id"],
+        "file_ids": [],  # empty: the whole transcript, not a selection of it
         "language": "en",
         "combine": False,
     }

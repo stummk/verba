@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import io
 import threading
 import time
+import zipfile
 
 import pytest
 
@@ -346,6 +348,17 @@ def wait_for_job(client, job_id, timeout=15.0):
     raise AssertionError("Job wurde nicht fertig")
 
 
+def _add_done_file(tmp_path, project, name, status="done"):
+    """Another file in an existing transcript — with a transcript of its own."""
+    source = tmp_path / name
+    source.write_bytes(b"x")
+    [file_row] = workspace.import_paths(workspace.get_project(project["id"]), [str(source)])
+    if status == "done":
+        workspace.set_file_status(file_row["id"], "done")
+        pipeline.save_text(file_row["id"], "cleanup", f"Text aus {name}.")
+    return file_row
+
+
 def test_export_endpoints_end_to_end(client, tmp_path):
     settings = config.get_settings()
     settings.general.workspaces_dir = str(tmp_path / "workspaces")
@@ -380,6 +393,65 @@ def test_project_export_collects_done_files(client, tmp_path):
     assert exports[0]["name"] == f"{project['slug']}.pdf"
 
 
+def test_a_selection_becomes_one_pdf_of_exactly_those_files(client, tmp_path, monkeypatch):
+    """Several files selected: one PDF with a section per file, not one each."""
+    settings = config.get_settings()
+    settings.general.workspaces_dir = str(tmp_path / "workspaces")
+    config.save_settings(settings)
+
+    first, project = make_done_file(tmp_path, name="eins.mp3")
+    second = _add_done_file(tmp_path, project, "zwei.mp3")
+    _add_done_file(tmp_path, project, "drei.mp3")
+
+    rendered: list[list[dict]] = []
+    original = pdf.render_pdf
+
+    def spy(docs, structure, target, **kwargs):
+        rendered.append(docs)
+        return original(docs, structure, target, **kwargs)
+
+    monkeypatch.setattr(pdf, "render_pdf", spy)
+
+    job = client.post(
+        f"/api/projects/{project['id']}/export",
+        json={"file_ids": [first["id"], second["id"]]},
+    ).json()
+    assert wait_for_job(client, job["id"])["status"] == "done"
+
+    # one render, two sections — the third file was not selected
+    assert len(rendered) == 1
+    assert [doc["title"] for doc in rendered[0]] == ["eins", "zwei"]
+    # one PDF, named after the first file and how many follow it
+    exports = client.get(f"/api/projects/{project['id']}/exports").json()
+    assert [e["name"] for e in exports] == ["eins+1.pdf"]
+
+
+def test_a_selection_of_one_file_that_has_no_transcript_is_refused(client, tmp_path):
+    settings = config.get_settings()
+    settings.general.workspaces_dir = str(tmp_path / "workspaces")
+    config.save_settings(settings)
+
+    _done, project = make_done_file(tmp_path, name="eins.mp3")
+    pending = _add_done_file(tmp_path, project, "zwei.mp3", status="pending")
+    response = client.post(
+        f"/api/projects/{project['id']}/export", json={"file_ids": [pending["id"]]}
+    )
+    assert response.status_code == 422
+
+
+def test_a_selection_cannot_reach_into_another_transcript(client, tmp_path):
+    settings = config.get_settings()
+    settings.general.workspaces_dir = str(tmp_path / "workspaces")
+    config.save_settings(settings)
+
+    _own, project = make_done_file(tmp_path, name="eins.mp3")
+    foreign, _other = make_done_file(tmp_path, name="fremd.mp3")
+    response = client.post(
+        f"/api/projects/{project['id']}/export", json={"file_ids": [foreign["id"]]}
+    )
+    assert response.status_code == 404
+
+
 def test_project_export_requires_done_files(client, tmp_path):
     settings = config.get_settings()
     settings.general.workspaces_dir = str(tmp_path / "workspaces")
@@ -387,6 +459,41 @@ def test_project_export_requires_done_files(client, tmp_path):
     project = workspace.create_project("Leer")
     response = client.post(f"/api/projects/{project['id']}/export", json={})
     assert response.status_code == 422
+
+
+def test_several_exports_come_down_as_one_zip(client, tmp_path):
+    """Multi-select in the export list: one download instead of three."""
+    settings = config.get_settings()
+    settings.general.workspaces_dir = str(tmp_path / "workspaces")
+    config.save_settings(settings)
+
+    project = workspace.create_project("Sammlung")
+    exports = pdf.exports_dir(workspace.get_project(project["id"]))
+    exports.mkdir(parents=True, exist_ok=True)
+    for name in ("eins.pdf", "zwei.pdf", "drei.pdf"):
+        (exports / name).write_bytes(b"%PDF-" + name.encode())
+
+    response = client.get(
+        f"/api/projects/{project['id']}/exports.zip",
+        params={"names": ["eins.pdf", "drei.pdf"]},
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    with zipfile.ZipFile(io.BytesIO(response.content)) as bundle:
+        assert sorted(bundle.namelist()) == ["drei.pdf", "eins.pdf"]
+        assert bundle.read("eins.pdf") == b"%PDF-eins.pdf"
+
+
+def test_the_zip_refuses_an_export_outside_the_folder(client, tmp_path):
+    settings = config.get_settings()
+    settings.general.workspaces_dir = str(tmp_path / "workspaces")
+    config.save_settings(settings)
+    project = workspace.create_project("Sicher")
+    response = client.get(
+        f"/api/projects/{project['id']}/exports.zip", params={"names": ["../project.json"]}
+    )
+    assert response.status_code in (403, 404)
+    assert client.get(f"/api/projects/{project['id']}/exports.zip").status_code == 422
 
 
 def test_export_download_rejects_traversal(client, tmp_path):

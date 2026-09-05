@@ -4,6 +4,7 @@
 import WaveSurfer from "/vendor/wavesurfer.esm.js";
 import RegionsPlugin from "/vendor/wavesurfer.regions.esm.js";
 import { api } from "../api.js";
+import { confirmDelete } from "../confirm.js";
 import { el, formatDuration, html, toast } from "../dom.js";
 import { closeExportDialog, openExportDialog } from "../export-dialog.js";
 import { iconButton, iconSvg, setIcon } from "../icons.js";
@@ -305,6 +306,9 @@ export async function render(view, _status, params) {
     const remove = iconButton("close", t("common.delete"));
     remove.classList.add("seg-delete");
     remove.onclick = async () => {
+      // undo only reaches text and speaker edits — a deleted segment is gone
+      const ok = await confirmDelete({ message: t("editor.segmentDeleteConfirm") });
+      if (!ok) return;
       try {
         await api.deleteSegment(segment.id);
         segments = segments.filter((s) => s.id !== segment.id);

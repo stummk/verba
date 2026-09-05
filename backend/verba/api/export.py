@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Header, HTTPException, Request
+import os
+import tempfile
+import zipfile
+from typing import Annotated
+
+from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 
 from ..services import pdf, workspace
 from .deps import file_or_403 as _file_or_404
@@ -17,11 +23,13 @@ class ExportOptions(BaseModel):
     """language empty = original text (cleanup, else transcript).
 
     combine ignores `language` and puts the original plus every stored
-    translation into one PDF, separated by a divider line.
+    translation into one PDF, separated by a divider line. file_ids narrows a
+    project export to a selection — still one PDF, only of those files.
     """
 
     language: str = Field(default="", max_length=10)
     combine: bool = False
+    file_ids: list[int] = Field(default_factory=list)
 
 
 @router.post("/files/{file_id}/export")
@@ -48,11 +56,21 @@ def export_project(
     x_session_id: str = Header(default="", alias="X-Session-Id"),
 ) -> dict:
     project = _project_or_404(project_id, request)
-    if not any(f["status"] == "done" for f in workspace.list_files(project_id)):
-        raise HTTPException(status_code=422, detail="No transcribed files available")
     options = body or ExportOptions()
+    files = workspace.list_files(project_id)
+    # a selection is checked against this transcript: an id from somewhere else
+    # must not slip into its PDF
+    chosen = set(options.file_ids)
+    if chosen and not chosen <= {f["id"] for f in files}:
+        raise HTTPException(status_code=404, detail="Datei gehört nicht zu diesem Transkript")
+    if not any(f["status"] == "done" and (not chosen or f["id"] in chosen) for f in files):
+        raise HTTPException(status_code=422, detail="No transcribed files available")
     return pdf.enqueue_project_export(
-        project["id"], options.language, x_session_id, combine=options.combine
+        project["id"],
+        options.language,
+        x_session_id,
+        combine=options.combine,
+        file_ids=options.file_ids,
     )
 
 
@@ -76,6 +94,32 @@ def _export_path_or_404(project_id: int, name: str, request: Request):
 def download_export(project_id: int, name: str, request: Request) -> FileResponse:
     path = _export_path_or_404(project_id, name, request)
     return FileResponse(path, filename=path.name, media_type="application/pdf")
+
+
+@router.get("/projects/{project_id}/exports.zip")
+def download_exports(
+    project_id: int,
+    request: Request,
+    names: Annotated[list[str], Query()] = [],  # noqa: B006 — FastAPI reads it, never mutates
+) -> FileResponse:
+    """Several PDFs in one download — a browser only asks once for a zip."""
+    project = _project_or_404(project_id, request)
+    if not names:
+        raise HTTPException(status_code=422, detail="Keine Exporte ausgewählt")
+    paths = [_export_path_or_404(project_id, name, request) for name in names]
+    handle, bundle_path = tempfile.mkstemp(suffix=".zip")
+    os.close(handle)
+    # stored, not deflated: a PDF is compressed already, and packing one again
+    # costs time without saving anything worth mentioning
+    with zipfile.ZipFile(bundle_path, "w", zipfile.ZIP_STORED) as bundle:
+        for path in paths:
+            bundle.write(path, arcname=path.name)
+    return FileResponse(
+        bundle_path,
+        filename=f"{project['slug']}-exports.zip",
+        media_type="application/zip",
+        background=BackgroundTask(os.unlink, bundle_path),  # gone once it is sent
+    )
 
 
 @router.delete("/projects/{project_id}/exports/{name}")

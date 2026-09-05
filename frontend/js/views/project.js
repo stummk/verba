@@ -2,6 +2,7 @@
 // live progress, per-run advanced options (model/language), segment preview.
 
 import { api } from "../api.js";
+import { confirmDelete } from "../confirm.js";
 import { el, esc, formatDuration, html, raw, toast } from "../dom.js";
 import { closeExportDialog, openExportDialog } from "../export-dialog.js";
 import { iconButton, iconSvg } from "../icons.js";
@@ -125,18 +126,47 @@ export async function render(view, _status, params) {
     <div id="upload-progress" hidden></div>
     <div id="project-jobs" hidden></div>
     <div class="card">
+      <div class="bulk-bar" id="file-bulk" hidden>
+        <span id="file-bulk-count"></span>
+        <span class="spacer"></span>
+        <button type="button" class="tonal small-btn icon-label" id="bulk-transcribe">
+          ${raw(iconSvg("mic"))} ${t("project.transcribe")}
+        </button>
+        <button type="button" class="tonal small-btn icon-label" id="bulk-export">
+          ${raw(iconSvg("pdf"))} ${t("export.file")}
+        </button>
+        <button type="button" class="danger small-btn icon-label" id="bulk-delete">
+          ${raw(iconSvg("delete"))} ${t("common.delete")}
+        </button>
+      </div>
+      <div class="table-scroll">
       <table class="filetable">
         <thead><tr>
+          <th class="col-select">
+            <input type="checkbox" id="file-select-all"
+                   title="${t("project.selectAll")}" aria-label="${t("project.selectAll")}">
+          </th>
           <th>${t("project.colFile")}</th><th>${t("project.colLanguage")}</th>
           <th>${t("project.colDuration")}</th>
           <th>${t("project.colStatus")}</th><th class="col-actions"></th>
         </tr></thead>
         <tbody id="file-rows"></tbody>
       </table>
+      </div>
       <p class="muted small" id="no-files" hidden>${t("project.noFiles")}</p>
     </div>
     <div class="card" id="exports-card" hidden>
       <h2>${t("export.exports")}</h2>
+      <div class="bulk-bar" id="export-bulk" hidden>
+        <span id="export-bulk-count"></span>
+        <span class="spacer"></span>
+        <button type="button" class="tonal small-btn icon-label" id="export-bulk-download">
+          ${raw(iconSvg("download"))} ${t("export.download")}
+        </button>
+        <button type="button" class="danger small-btn icon-label" id="export-bulk-delete">
+          ${raw(iconSvg("delete"))} ${t("common.delete")}
+        </button>
+      </div>
       <div id="export-list"></div>
     </div>
     <div id="browser-modal"></div>
@@ -168,6 +198,10 @@ export async function render(view, _status, params) {
 
   const files = new Map(project.files.map((f) => [f.id, f]));
   const fileLanguages = new Map();
+  // What the bar above the table acts on. Survives a re-render (a row is
+  // rebuilt on every job event), and forgets a file that is gone.
+  const selectedFiles = new Set();
+  const selectedExports = new Set();
   fileJobs.clear();
   fileJobErrors.clear();
   renderRows(files);
@@ -278,6 +312,69 @@ export async function render(view, _status, params) {
   el("export-all").onclick = () => openExportDialog({ projectId });
   refreshExports();
 
+  // ── the selection in the file table ─────────────────────────────────
+  el("file-select-all").onchange = (event) => {
+    selectedFiles.clear();
+    if (event.target.checked) for (const id of files.keys()) selectedFiles.add(id);
+    renderRows(files);
+  };
+
+  el("bulk-transcribe").onclick = async () => {
+    const rows = selectedRows();
+    let started = 0;
+    for (const fileRow of rows) {
+      if (fileRow.status === "transcribing" || fileJobs.has(fileRow.id)) continue;
+      try {
+        await api.transcribeFile(fileRow.id, fileOptions(fileRow));
+        started += 1;
+      } catch (error) {
+        toast(`${fileRow.filename}: ${error.message}`);
+      }
+    }
+    if (started) toast(t("project.jobsStarted", { count: started }));
+    else toast(t("project.noFilesToTranscribe"));
+  };
+
+  el("bulk-export").onclick = () => {
+    // only a transcribed file has anything to put into a PDF
+    const ready = selectedRows().filter((fileRow) => fileRow.status === "done");
+    if (!ready.length) {
+      toast(t("project.noFilesToExport"));
+      return;
+    }
+    if (ready.length < selectedFiles.size) {
+      toast(t("project.exportSkipped", { count: selectedFiles.size - ready.length }));
+    }
+    openExportDialog({ projectId, fileIds: ready.map((fileRow) => fileRow.id) });
+  };
+
+  el("bulk-delete").onclick = async () => {
+    const rows = selectedRows();
+    if (!rows.length) return;
+    const ok = await confirmDelete({
+      message: rows.length === 1
+        ? t("project.deleteFileConfirm", { name: rows[0].filename })
+        : t("project.deleteFilesConfirm", { count: rows.length }),
+    });
+    if (!ok) return;
+    let deleted = 0;
+    for (const fileRow of rows) {
+      try {
+        await api.deleteFile(fileRow.id);
+        files.delete(fileRow.id);
+        deleted += 1;
+      } catch (error) {
+        toast(`${fileRow.filename}: ${error.message}`);
+      }
+    }
+    renderRows(files);
+    if (deleted) toast(t("project.filesDeleted", { count: deleted }));
+  };
+
+  function selectedRows() {
+    return [...selectedFiles].map((id) => files.get(id)).filter(Boolean);
+  }
+
   // automatic pipeline: transcription → cleanup (→ translation) without clicks
   el("auto-process").checked = Boolean(project.auto_process);
   fillLanguageSelect(el("auto-language"), {
@@ -384,12 +481,43 @@ export async function render(view, _status, params) {
     const tbody = el("file-rows");
     if (!tbody) return;
     el("no-files").hidden = fileMap.size > 0;
+    for (const id of [...selectedFiles]) {
+      if (!fileMap.has(id)) selectedFiles.delete(id); // deleted elsewhere
+    }
     tbody.replaceChildren(...[...fileMap.values()].map((fileRow) => buildRow(fileRow)));
+    refreshFileSelection();
+  }
+
+  // The bar only exists while something is selected — an empty one would just
+  // take a line away from the table.
+  function refreshFileSelection() {
+    const bar = el("file-bulk");
+    if (!bar) return;
+    bar.hidden = selectedFiles.size === 0;
+    el("file-bulk-count").textContent = t("project.selected", { count: selectedFiles.size });
+    const all = el("file-select-all");
+    all.checked = files.size > 0 && selectedFiles.size === files.size;
+    all.indeterminate = selectedFiles.size > 0 && selectedFiles.size < files.size;
   }
 
   function buildRow(fileRow) {
     const tr = document.createElement("tr");
     tr.dataset.fileId = fileRow.id;
+
+    const selectCell = document.createElement("td");
+    selectCell.className = "col-select";
+    const select = document.createElement("input");
+    select.type = "checkbox";
+    select.className = "row-select";
+    select.checked = selectedFiles.has(fileRow.id);
+    select.title = t("project.selectFile");
+    select.setAttribute("aria-label", t("project.selectFile"));
+    select.onchange = () => {
+      if (select.checked) selectedFiles.add(fileRow.id);
+      else selectedFiles.delete(fileRow.id);
+      refreshFileSelection();
+    };
+    selectCell.appendChild(select);
 
     const nameCell = document.createElement("td");
     nameCell.textContent = fileRow.filename;
@@ -472,12 +600,20 @@ export async function render(view, _status, params) {
       );
     }
     actionCell.append(iconButton("delete", t("common.delete"), async () => {
-      await api.deleteFile(fileRow.id).catch((e) => toast(e.message));
-      files.delete(fileRow.id);
-      renderRows(files);
+      const ok = await confirmDelete({
+        message: t("project.deleteFileConfirm", { name: fileRow.filename }),
+      });
+      if (!ok) return;
+      try {
+        await api.deleteFile(fileRow.id);
+        files.delete(fileRow.id);
+        renderRows(files);
+      } catch (error) {
+        toast(error.message);
+      }
     }));
 
-    tr.append(nameCell, languageCell, durationCell, statusCell, actionCell);
+    tr.append(selectCell, nameCell, languageCell, durationCell, statusCell, actionCell);
     return tr;
   }
 
@@ -633,9 +769,25 @@ export async function render(view, _status, params) {
     if (!card || !list) return;
     const exports = await api.listExports(projectId).catch(() => []);
     card.hidden = exports.length === 0;
+    const names = new Set(exports.map((entry) => entry.name));
+    for (const name of [...selectedExports]) {
+      if (!names.has(name)) selectedExports.delete(name); // deleted meanwhile
+    }
     list.replaceChildren(...exports.map((entry) => {
       const row = document.createElement("div");
       row.className = "model-row";
+      const select = document.createElement("input");
+      select.type = "checkbox";
+      select.className = "row-select";
+      select.checked = selectedExports.has(entry.name);
+      select.title = t("export.selectFile");
+      select.setAttribute("aria-label", t("export.selectFile"));
+      select.onchange = () => {
+        if (select.checked) selectedExports.add(entry.name);
+        else selectedExports.delete(entry.name);
+        refreshExportSelection();
+      };
+      row.append(select);
       row.append(Object.assign(document.createElement("span"), {
         className: "model-name", textContent: entry.name,
       }));
@@ -651,13 +803,67 @@ export async function render(view, _status, params) {
       download.innerHTML = iconSvg("download");
       row.append(download);
       row.append(iconButton("delete", t("common.delete"), async () => {
-        await api.deleteExport(projectId, entry.name).catch((e) => toast(e.message));
-        toast(t("export.deleted"));
+        const ok = await confirmDelete({
+          message: t("export.deleteConfirm", { name: entry.name }),
+        });
+        if (!ok) return;
+        try {
+          await api.deleteExport(projectId, entry.name);
+          toast(t("export.deleted"));
+        } catch (error) {
+          toast(error.message);
+        }
         await refreshExports();
       }));
       return row;
     }));
+    refreshExportSelection();
   }
+
+  function refreshExportSelection() {
+    const bar = el("export-bulk");
+    if (!bar) return;
+    bar.hidden = selectedExports.size === 0;
+    el("export-bulk-count").textContent = t("project.selected", { count: selectedExports.size });
+  }
+
+  // Several PDFs leave as one zip: a browser asks about a single download
+  // instead of blocking the second and third one as a popup.
+  el("export-bulk-download").onclick = () => {
+    const names = [...selectedExports];
+    if (!names.length) return;
+    const link = document.createElement("a");
+    link.href = names.length === 1
+      ? api.exportUrl(projectId, names[0])
+      : api.exportsZipUrl(projectId, names);
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
+  el("export-bulk-delete").onclick = async () => {
+    const names = [...selectedExports];
+    if (!names.length) return;
+    const ok = await confirmDelete({
+      message: names.length === 1
+        ? t("export.deleteConfirm", { name: names[0] })
+        : t("export.deleteConfirmCount", { count: names.length }),
+    });
+    if (!ok) return;
+    let deleted = 0;
+    for (const name of names) {
+      try {
+        await api.deleteExport(projectId, name);
+        deleted += 1;
+      } catch (error) {
+        toast(`${name}: ${error.message}`);
+      }
+    }
+    selectedExports.clear();
+    await refreshExports();
+    if (deleted) toast(t("export.deletedCount", { count: deleted }));
+  };
 
 }
 

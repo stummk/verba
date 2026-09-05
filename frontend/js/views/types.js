@@ -2,6 +2,7 @@
 // Mobile shows one pane at a time; the FAB creates a new type.
 
 import { api } from "../api.js";
+import { confirmDelete } from "../confirm.js";
 import { el, html, toast } from "../dom.js";
 import { iconButton } from "../icons.js";
 import { t } from "../i18n.js";
@@ -180,6 +181,10 @@ function renderDetail() {
 
   if (!isNew) {
     el("type-delete-slot").append(iconButton("delete", t("common.delete"), async () => {
+      const ok = await confirmDelete({
+        message: t("types.deleteConfirm", { name: type.name }),
+      });
+      if (!ok) return;
       try {
         await api.deleteType(type.id);
         toast(t("types.deleted"));

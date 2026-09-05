@@ -360,6 +360,9 @@ details.advanced .form-grid { margin-top: .25rem; }
 }
 .project-card:hover { background: var(--md-surface-container-high); }
 
+/* the row must never be cut off: on a window too narrow even for the trimmed
+   columns below, the table scrolls sideways instead of hiding its buttons */
+.table-scroll { overflow-x: auto; }
 .filetable { width: 100%; border-collapse: collapse; font-size: .9rem; }
 .filetable th {
   text-align: left;
@@ -379,10 +382,31 @@ details.advanced .form-grid { margin-top: .25rem; }
 .filetable tr:last-child td { border-bottom: none; }
 .col-actions { text-align: right; white-space: nowrap; }
 .col-actions button { margin-left: .3rem; }
-/* narrow phones: drop the duration column so the file name keeps room */
+/* selection column: only as wide as the checkbox needs */
+.col-select { width: 1.5rem; padding-right: 0; }
+.row-select { width: 1.1rem; height: 1.1rem; accent-color: var(--md-primary); cursor: pointer; }
+/* the bar over a list — appears only while something is selected */
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+  margin-bottom: .6rem;
+  padding: .5rem .75rem;
+  border-radius: var(--shape-sm);
+  background: var(--md-surface-container-high);
+  font-size: .85rem;
+  font-weight: 600;
+}
+/* narrow phones: drop the duration column so the file name keeps room
+   (fourth column — the first one holds the selection checkbox) */
 @media (max-width: 30em) {
-  .filetable th:nth-child(3),
-  .filetable td:nth-child(3) { display: none; }
+  .filetable th:nth-child(4),
+  .filetable td:nth-child(4) { display: none; }
+  /* the row has to fit: tighter cells, and the language picker gives way
+     instead of pushing the action buttons off screen */
+  .filetable th, .filetable td { padding-left: .3rem; padding-right: .3rem; }
+  .file-language { min-width: 4rem; }
   .col-actions button { margin-left: 0; }
 }
 

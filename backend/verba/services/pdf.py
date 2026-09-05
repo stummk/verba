@@ -681,11 +681,12 @@ def handle_export_job(
     """Job handler: export one file or a whole project as PDF.
 
     Payload: {"scope": "file"|"project", "file_id"?, "project_id"?,
-              "language": "", "combine": false}
+              "file_ids"?, "language": "", "combine": false}
 
     `combine` puts the original and every stored translation into one PDF,
     each version separated by a divider line; otherwise one version is
-    exported on its own.
+    exported on its own. `file_ids` narrows a project export to a selection —
+    the result is still one PDF, just not of every file.
     """
     payload = job["payload"]
     scope = payload.get("scope", "file")
@@ -702,6 +703,11 @@ def handle_export_job(
         if project is None:
             raise RuntimeError("Transcript no longer exists")
         files = [f for f in workspace.list_files(project["id"]) if f["status"] == "done"]
+        # a selection keeps the order of the file list — that is the order the
+        # sections had on screen when it was made
+        chosen = {int(fid) for fid in payload.get("file_ids") or []}
+        if chosen:
+            files = [f for f in files if f["id"] in chosen]
         if not files:
             raise RuntimeError("No transcribed files available")
         docs = []
@@ -716,7 +722,13 @@ def handle_export_job(
                     file_row, project, languages_for(file_row["id"]), cancel, report, (lo, hi)
                 )
             )
-        target = exports_dir(project) / export_name(project["slug"], language, combine)
+        # a selection is not the whole transcript and must not overwrite its
+        # PDF: it is named after its first file, plus how many follow
+        stem = project["slug"]
+        if chosen:
+            first = Path(files[0]["rel_path"]).stem
+            stem = f"{first}+{len(files) - 1}" if len(files) > 1 else first
+        target = exports_dir(project) / export_name(stem, language, combine)
     else:
         file_row = workspace.get_file(int(payload["file_id"]))
         if file_row is None:
@@ -758,13 +770,19 @@ def enqueue_file_export(
 
 
 def enqueue_project_export(
-    project_id: int, language: str, session_id: str, combine: bool = False
+    project_id: int,
+    language: str,
+    session_id: str,
+    combine: bool = False,
+    file_ids: list[int] | None = None,
 ) -> dict[str, Any]:
+    """One PDF for the whole transcript, or for the selected files of it."""
     return job_queue.enqueue(
         "export_pdf",
         payload={
             "scope": "project",
             "project_id": project_id,
+            "file_ids": list(file_ids or []),
             "language": language,
             "combine": combine,
         },
