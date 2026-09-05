@@ -523,6 +523,38 @@ details.advanced .form-grid { margin-top: .25rem; }
   flex-wrap: wrap;
 }
 .time-display { font-family: ui-monospace, Consolas, monospace; }
+/* what the waveform says about itself — loading, and what is selected on it —
+   sits directly under it, right-aligned, out of the way of the buttons */
+.wave-status {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+  min-height: 1.25rem;
+}
+.wave-status p { margin: 0; }
+#selection-info { text-align: right; }
+/* the language of the recording rides in the tool row: it decides how the
+   next transcription reads, so it belongs next to the buttons that start one */
+.editor-controls .lang-select {
+  width: auto;
+  max-width: min(14rem, 45vw);
+  margin-bottom: 0;
+}
+/* the text of a transcribed selection — read it, copy it, close it again */
+.range-result {
+  margin-top: .75rem;
+  padding: .6rem .75rem;
+  border-radius: var(--shape-sm);
+  background: var(--md-surface-container);
+}
+.range-result-head { display: flex; align-items: center; gap: .5rem; }
+.range-result-text {
+  margin: .4rem 0 0;
+  max-height: 12rem;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
 .editor-title-row { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
 .editor-title-row h1 { margin: .75rem 0; overflow-wrap: anywhere; }
 .file-switch { width: auto; max-width: 60vw; }

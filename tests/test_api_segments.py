@@ -137,3 +137,23 @@ def test_build_cut_at_file_end_degrades_to_trim():
     cmd = build_edit_command("ffmpeg", Path("in.mp3"), Path("out.mp3"), "cut", 50.0, 60.0, 60.0)
     assert "-filter_complex" not in cmd
     assert cmd[2:4] == ["-to", "50.000"]
+
+
+def test_update_file_language_endpoint(client, file_row):
+    response = client.put(f"/api/files/{file_row['id']}/language", json={"language": "RU"})
+    assert response.status_code == 200
+    assert response.json()["language"] == "ru"  # normalised, so whisper can use it verbatim
+    saved = client.get(f"/api/files/{file_row['id']}/segments").json()
+    assert saved["file"]["language"] == "ru"
+
+
+def test_update_file_language_back_to_automatic(client, file_row):
+    client.put(f"/api/files/{file_row['id']}/language", json={"language": "ru"})
+    response = client.put(f"/api/files/{file_row['id']}/language", json={"language": ""})
+    assert response.status_code == 200
+    assert response.json()["language"] == ""
+
+
+def test_update_file_language_rejects_unknown_code(client, file_row):
+    response = client.put(f"/api/files/{file_row['id']}/language", json={"language": "klingon"})
+    assert response.status_code == 422

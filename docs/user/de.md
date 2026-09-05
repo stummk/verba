@@ -311,8 +311,15 @@ Aufträge laufen und die Zeilen sich aktualisieren.
 - **Erweitert (aufklappbar):** Whisper-Modell und Aufnahmesprache nur für diesen
   Lauf ändern — die gespeicherten Einstellungen bleiben unberührt
 - Fortschritt erscheint live pro Datei; laufende Aufträge sind abbrechbar
-- Tipp: Die Aufnahmesprache fest einzustellen (statt automatischer Erkennung)
-  verbessert das Ergebnis deutlich
+- **Woher die Sprache kommt** — in dieser Reihenfolge, die erste Angabe
+  gewinnt: die Sprache unter *Erweitert* für diesen einen Lauf, dann die Sprache
+  der Datei (aus dem Dateinamen, im Editor änderbar), dann die Sprache aus den
+  Einstellungen. Erst wenn keine davon etwas sagt, erkennt Whisper die Sprache
+  selbst. Eine angegebene Sprache wird von der Erkennung auch **nicht mehr
+  überschrieben**; ohne Angabe trägt die erkannte Sprache sich in die Datei ein.
+- Tipp: Die Aufnahmesprache fest anzugeben (statt automatischer Erkennung)
+  verbessert das Ergebnis deutlich — und verhindert, dass eine falsch erkannte
+  Sprache sich durch Bereinigung und Übersetzung fortsetzt
 
 **Wo der Fortschritt zu sehen ist.** Jeder Schritt meldet, an welcher Datei er
 arbeitet und wie weit er ist:
@@ -333,13 +340,13 @@ arbeitet und wie weit er ist:
   PDF-Export eines ganzen Transkripts, Neuaufbau des Suchindex
   (Einstellungen → Suche), Verschieben der Arbeitsbereiche
   (Einstellungen → Speicherorte).
-- **Im Editor**: eigene Balken für „Abschnitt neu transkribieren" und für die
-  KI-Aufbereitung der offenen Datei.
+- **Im Editor**: eigene Balken für die Transkription der offenen Datei
+  (ganze Datei wie Auswahl) und für ihre KI-Aufbereitung.
 
 **Warteschlange:** Alle Aufträge laufen über eine zentrale Warteschlange, damit
 die Hardware nie überlastet wird — auch wenn mehrere Personen gleichzeitig
-arbeiten. Wartende Dateien zeigen ihre Position an; kleine Aufträge (Abschnitt
-neu transkribieren, Audio-Schnitt) werden bevorzugt eingeschoben, und die
+arbeiten. Wartende Dateien zeigen ihre Position an; kleine Aufträge (Auswahl
+transkribieren, Audio-Schnitt) werden bevorzugt eingeschoben, und die
 Reihenfolge bleibt fair pro Nutzer.
 
 ## KI-Aufbereitung (Bereinigung & Übersetzung) {#ai}
@@ -461,11 +468,41 @@ transkribierten Datei öffnet den Editor — einen
   Markiert wird nur, wofür der Browser ein Wörterbuch hat — fehlt es für eine
   Sprache, muss es in den Browser-Einstellungen ergänzt werden (Chrome/Edge:
   Sprachen → Rechtschreibprüfung).
+- **Sprache der Aufnahme**: Unter den Schaltflächen steht, in welcher Sprache
+  die Datei gesprochen ist. Whisper erkennt die Sprache sonst selbst — und liegt
+  dabei durchaus falsch; danach läuft die ganze Kette in der falschen Sprache:
+  Transkript, Bereinigung, und eine „Übersetzung", die am Ende unter einer
+  Sprache steht, in der sie gar nicht ist. Hier gesetzt, gilt die Sprache für
+  **jede weitere Transkription dieser Datei** — für die ganze Datei wie für eine
+  Auswahl — und wird von der Erkennung nicht mehr überschrieben. „Automatisch
+  erkennen" gibt die Entscheidung wieder an Whisper zurück. Vorbelegt ist die
+  Sprache aus dem Dateinamen (`20260731_ru_de_…` heißt Russisch).
+  Zusammen mit der Rechtschreibprüfung heißt das: Nach dem Umstellen prüft der
+  Browser Segmente und bereinigten Text sofort in der neuen Sprache.
+- **Ganze Datei neu transkribieren** — die Schaltfläche mit dem Kreispfeil,
+  ohne Auswahl bedienbar: Die Datei wird komplett neu erkannt und **alle
+  Segmente werden ersetzt**, samt eigener Änderungen an Text und Sprechern
+  (deshalb die Rückfrage). Das ist der Weg, nachdem die Sprache oder das Modell
+  korrigiert wurde. Bereinigung und Übersetzungen bleiben stehen, bis sie über
+  „Neu erzeugen" neu erstellt werden. Der Fortschritt läuft unter der
+  Wellenform.
 - **Auswahl** durch Ziehen auf der Wellenform, dann:
-  - **Auswahl neu transkribieren** — nur dieser Abschnitt wird neu erkannt und
-    ersetzt exakt die betroffenen Segmente
-  - **Auf Auswahl kürzen / Auswahl entfernen** — Audio-Schnitt per ffmpeg;
-    das Ergebnis entsteht als *neue* Datei im Transkript, das Original bleibt erhalten
+  - **Auswahl transkribieren** — nur dieser Abschnitt wird erkannt, und das
+    Ergebnis ist **reiner Text**: Er erscheint unter den Schaltflächen und geht
+    zugleich in die Zwischenablage. Erlaubt der Browser das Kopieren nicht von
+    allein (er verlangt dafür meist einen Klick), genügt die Schaltfläche
+    *Kopieren* daneben. **Es entstehen dabei keine Segmente** — die vorhandenen
+    bleiben unangetastet. So lässt sich nachhören, was an einer Stelle
+    tatsächlich gesagt wurde, ohne die eigene Korrektur zu überschreiben; für
+    das Ersetzen der Segmente ist „Ganze Datei neu transkribieren" da.
+  - **Auf Auswahl kürzen** — behält nur den ausgewählten Bereich.
+  - **Auswahl entfernen** — schneidet den ausgewählten Bereich heraus und fügt
+    den Rest davor und dahinter wieder zusammen.
+  - Beide schneiden das Audio per ffmpeg und **verändern die geöffnete Datei
+    nicht**: Das Ergebnis entsteht als *neue* Datei im selben Transkript
+    (Namenszusatz `-trim` bzw. `-cut`), noch ohne Transkript, mit dem Status
+    *offen*. Original und Segmente bleiben erhalten; die neue Datei wird eigens
+    transkribiert.
 - Im Bereich **PDF-Header** im Editor lassen sich pro Datei ein Titel, ein Zusatz
   und ein Feld für Ort/Datum bearbeiten. Die Kopfzeile lautet dann
   `Titel (Zusatz)` links und Ort/Datum rechts: der Zusatz steht in Klammern

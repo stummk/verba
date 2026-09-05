@@ -71,30 +71,6 @@ def test_delete_segment_reindexes(file_with_segments):
     assert [s["idx"] for s in remaining] == [0, 1]
 
 
-def test_replace_range_merges_overlapping(file_with_segments):
-    file_id = file_with_segments["id"]
-    # replace [1.5, 4.5] — overlaps "eins" (0-2), "zwei" (2-4) and "drei" (4-6)
-    total = transcripts.replace_range(
-        file_id, 1.5, 4.5, [{"start": 1.5, "end": 4.4, "text": "neu"}]
-    )
-    assert total == 1
-    assert [s["text"] for s in transcripts.list_segments(file_id)] == ["neu"]
-
-
-def test_replace_range_keeps_non_overlapping(file_with_segments):
-    file_id = file_with_segments["id"]
-    # replace exactly the middle segment (2-4)
-    transcripts.replace_range(
-        file_id,
-        2.0,
-        4.0,
-        [{"start": 2.0, "end": 3.0, "text": "neu-a"}, {"start": 3.0, "end": 4.0, "text": "neu-b"}],
-    )
-    texts = [s["text"] for s in transcripts.list_segments(file_id)]
-    assert texts == ["eins", "neu-a", "neu-b", "drei"]
-    assert [s["idx"] for s in transcripts.list_segments(file_id)] == [0, 1, 2, 3]
-
-
 def test_speaker_migration_on_legacy_db():
     with db.get_conn() as conn:
         conn.execute("DROP TABLE segments")

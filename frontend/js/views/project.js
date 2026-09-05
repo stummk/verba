@@ -89,7 +89,7 @@ export async function render(view, _status, params) {
       <div class="step-panel" id="step-panel-2" role="tabpanel" hidden>
         <div class="step-actions">
           <button id="transcribe-all" class="icon-label">
-            ${raw(iconSvg("mic"))} ${t("project.transcribeAll")}
+            ${raw(iconSvg("speechToText"))} ${t("project.transcribeAll")}
           </button>
           <button id="process-all" class="tonal icon-label" ${llmEnabled ? "" : "hidden"}>
             ${raw(iconSvg("sparkle"))} ${t("project.processAll")}
@@ -130,7 +130,7 @@ export async function render(view, _status, params) {
         <span id="file-bulk-count"></span>
         <span class="spacer"></span>
         <button type="button" class="tonal small-btn icon-label" id="bulk-transcribe">
-          ${raw(iconSvg("mic"))} ${t("project.transcribe")}
+          ${raw(iconSvg("speechToText"))} ${t("project.transcribe")}
         </button>
         <button type="button" class="tonal small-btn icon-label" id="bulk-export">
           ${raw(iconSvg("pdf"))} ${t("export.file")}
@@ -597,7 +597,7 @@ export async function render(view, _status, params) {
       }));
     } else {
       actionCell.append(iconButton(
-        fileRow.status === "done" ? "refresh" : "mic",
+        fileRow.status === "done" ? "refresh" : "speechToText",
         fileRow.status === "done" ? t("project.again") : t("project.transcribe"),
         () => api.transcribeFile(fileRow.id, fileOptions(fileRow)).catch((e) => toast(e.message)),
       ));

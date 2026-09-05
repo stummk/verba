@@ -128,6 +128,8 @@ export const api = {
   deleteFile: (fileId) => request("DELETE", `/api/files/${fileId}`),
   updateFileHeader: (fileId, header) =>
     request("PUT", `/api/files/${fileId}/header`, header),
+  updateFileLanguage: (fileId, language) =>
+    request("PUT", `/api/files/${fileId}/language`, { language }),
   browse: (path = "") => request("GET", `/api/files/browse?path=${encodeURIComponent(path)}`),
 
   // models

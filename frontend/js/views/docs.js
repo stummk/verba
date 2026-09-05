@@ -19,7 +19,7 @@ const SECTION_ICONS = {
   transcripts: "folder",
   types: "category",
   import: "upload",
-  transcribe: "mic",
+  transcribe: "speechToText",
   ai: "sparkle",
   editor: "edit",
   whisper: "memory",

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from .. import config
 from ..core.jobs import job_queue
 from ..services import pipeline, transcripts, workspace
+from ..services.languages import LANGUAGE_NAMES
 from ..services.llm import llm_location
 from ..services.media import is_audio_file
 from .deps import file_or_403 as _file_or_404
@@ -264,6 +265,31 @@ class FileHeaderUpdate(BaseModel):
 def update_file_header(file_id: int, body: FileHeaderUpdate, request: Request) -> dict:
     _file_or_404(file_id, request)
     updated = workspace.update_file(file_id, body.model_dump())
+    assert updated is not None
+    return updated
+
+
+class FileLanguageUpdate(BaseModel):
+    """The language of the recording; empty means "let Whisper detect it"."""
+
+    language: str = Field(default="", max_length=10)
+
+
+@router.put("/files/{file_id}/language")
+def update_file_language(file_id: int, body: FileLanguageUpdate, request: Request) -> dict:
+    """Correct the language of a recording — a wrong one derails every step.
+
+    Whisper detects the language from the first seconds and gets it wrong often
+    enough (a Russian recording heard as German); everything after that — the
+    transcription itself, the cleanup, the translation — then works in that
+    wrong language. So the language stays editable, and the next transcription
+    takes it as given instead of detecting again.
+    """
+    _file_or_404(file_id, request)
+    code = body.language.strip().lower()
+    if code and code not in LANGUAGE_NAMES:
+        raise HTTPException(status_code=422, detail=f"Unbekannter Sprachcode: {body.language}")
+    updated = workspace.update_file(file_id, {"language": code})
     assert updated is not None
     return updated
 

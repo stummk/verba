@@ -302,6 +302,20 @@ def unload_model() -> None:
 # ── transcription job handler ─────────────────────────────────────────
 
 
+def language_for(file_row: dict[str, Any], overrides: dict[str, Any] | None = None) -> str:
+    """The language a file is to be transcribed in, "" for automatic detection.
+
+    Three sources, in this order: what the run asks for (the advanced options
+    of a single start), what the file says about itself (the editor's language
+    field, prefilled from a file name like ``20260731_ru_de_…``) and the global
+    setting. Only when none of them names one does Whisper detect it — the
+    detector is the last resort, not the first, because a misdetection silently
+    decides the language of every step that follows.
+    """
+    settings = config.get_settings().whisper
+    return (overrides or {}).get("language") or file_row.get("language") or settings.language or ""
+
+
 def _store_segments(file_id: int, segments: list[dict[str, Any]]) -> None:
     with db.get_conn() as conn:
         conn.execute("DELETE FROM segments WHERE file_id = ?", (file_id,))
@@ -369,13 +383,20 @@ def handle_transcribe_job(
     report(0, f"Transkribiere {file_row['filename']} ...")
 
     overrides = job.get("payload") or {}
+    # What the file says about itself outranks the detector: a name like
+    # "20260731_ru_de_…" states Russian, and a recognition that heard German
+    # would otherwise transcribe — and then translate — the wrong language.
+    declared = language_for(file_row, overrides)
     try:
         segments, info, duration = _with_cpu_fallback(
             lambda: _run_transcription(audio_path, file_row, file_id, cancel, report, overrides),
             report,
         )
         _store_segments(file_id, segments)
-        workspace.set_file_status(file_id, "done", duration=duration, language=info.language or "")
+        # a declared language stays the file's language; detection only fills a gap
+        workspace.set_file_status(
+            file_id, "done", duration=duration, language=declared or info.language or ""
+        )
         transcripts.sync_after_change(file_id)
         _publish_engine_status("ready")
         report(100, f"{file_row['filename']}: fertig ({len(segments)} Segmente)")
@@ -438,7 +459,14 @@ def transcribe_path(
 def handle_transcribe_range_job(
     job: dict[str, Any], cancel: threading.Event, report: Callable[[int, str], None]
 ) -> None:
-    """Transcribe only [start_s, end_s] of a file and merge the result back."""
+    """Transcribe only [start_s, end_s] of a file — as text, not as segments.
+
+    The result is published as a `range.text` event and lands nowhere else: the
+    step is there to read a passage the recognition got wrong, and writing it
+    back over the segments would replace exactly the edited text one wanted to
+    compare it against. The whole file is re-transcribed with the `transcribe`
+    job instead.
+    """
     import tempfile
 
     from . import audio as audio_service
@@ -458,35 +486,37 @@ def handle_transcribe_range_job(
         clip = Path(tmp) / "range.wav"
         audio_service.extract_range(audio_path, start_s, end_s, clip)
 
-        def run() -> list[dict[str, Any]]:
-            settings = config.get_settings().whisper
+        def run() -> list[str]:
             model = get_model(model_override=payload.get("model", ""))
             segments_iter, _info = model.transcribe(
                 str(clip),
-                language=payload.get("language") or settings.language or None,
+                language=language_for(file_row, payload) or None,
                 beam_size=5,
             )
-            collected: list[dict[str, Any]] = []
+            collected: list[str] = []
             for segment in segments_iter:
                 if cancel.is_set():
                     raise JobCancelled()
-                collected.append(
-                    {
-                        "start": segment.start + start_s,
-                        "end": min(segment.end + start_s, end_s),
-                        "text": segment.text.strip(),
-                    }
-                )
+                collected.append(segment.text.strip())
                 percent = min(99, int(segment.end * 100 / max(end_s - start_s, 0.01)))
                 report(percent, f"{file_row['filename']}: {_format_ts(segment.end + start_s)}")
             return collected
 
-        new_segments = _with_cpu_fallback(run, report)
+        pieces = _with_cpu_fallback(run, report)
 
-    total = transcripts.replace_range(file_id, start_s, end_s, new_segments)
-    workspace.emit_file_update(file_id)
+    text = " ".join(piece for piece in pieces if piece).strip()
+    hub.publish(
+        "range.text",
+        {"file_id": file_id, "start_s": start_s, "end_s": end_s, "text": text},
+        project_id=file_row["project_id"],
+        file_id=file_id,
+    )
     _publish_engine_status("ready")
-    report(100, f"{file_row['filename']}: Abschnitt neu transkribiert ({total} Segmente gesamt)")
+    span = f"{_format_ts(start_s)}–{_format_ts(end_s)}"
+    if text:
+        report(100, f"{file_row['filename']}: Abschnitt {span} transkribiert")
+    else:
+        report(100, f"{file_row['filename']}: im Abschnitt {span} wurde kein Text erkannt")
 
 
 def _run_transcription(
@@ -497,12 +527,11 @@ def _run_transcription(
     report: Callable[[int, str], None],
     overrides: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], Any, float | None]:
-    settings = config.get_settings().whisper
     overrides = overrides or {}
     model = get_model(model_override=overrides.get("model", ""))
     segments_iter, info = model.transcribe(
         str(audio_path),
-        language=overrides.get("language") or settings.language or None,
+        language=language_for(file_row, overrides) or None,
         beam_size=5,
     )
     duration = info.duration or probe_duration(audio_path)

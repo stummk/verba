@@ -297,8 +297,15 @@ transcript are skipped and the bar says how many) and **Delete**. The selection 
 - **Advanced (expandable):** change the Whisper model and recording language
   for this run only — saved settings stay unchanged
 - Progress appears live per file; running jobs can be cancelled
-- Tip: setting the recording language explicitly (instead of auto-detect)
-  noticeably improves results
+- **Where the language comes from** — in this order, the first one given
+  wins: the language under *Advanced* for this single run, then the language of
+  the file (from the file name, editable in the editor), then the language from
+  the settings. Only when none of them says anything does Whisper detect the
+  language itself. A language that was given is **not overwritten** by detection
+  either; without one, the detected language is written to the file.
+- Tip: stating the recording language explicitly (instead of auto-detect)
+  noticeably improves results — and keeps a misdetected language from carrying
+  on through cleanup and translation
 
 **Where the progress is shown.** Every step reports which file it is working
 on and how far it has got:
@@ -317,12 +324,12 @@ on and how far it has got:
 - **As its own card**: jobs that belong to no single file — the PDF export of
   a whole transcript, rebuilding the search index (Settings → Search), moving
   the workspaces (Settings → Storage).
-- **In the editor**: separate bars for "re-transcribe section" and for the AI
-  processing of the open file.
+- **In the editor**: separate bars for transcribing the open file (the whole
+  file as well as a selection) and for its AI processing.
 
 **Queue:** all jobs run through one central queue so the hardware is never
 oversubscribed — even with several people working at once. Waiting files show
-their queue position; small jobs (re-transcribing a section, audio edits) jump
+their queue position; small jobs (transcribing a selection, audio edits) jump
 ahead, and the order stays fair per user.
 
 ## AI processing (cleanup & translation) {#ai}
@@ -437,11 +444,38 @@ transcript and AI texts:
   choice is remembered in the browser. Only what the browser has a dictionary
   for is marked — if one is missing for a language, it has to be added in the
   browser settings (Chrome/Edge: Languages → Spell check).
+- **Language of the recording**: below the buttons stands the language the file
+  is spoken in. Otherwise Whisper detects it itself — and does get it wrong;
+  from there the whole chain runs in the wrong language: the transcript, the
+  cleanup, and a "translation" that ends up labelled with a language it is not
+  in. Set here, the language applies to **every further transcription of this
+  file** — the whole file as well as a selection — and detection no longer
+  overwrites it. "Detect automatically" hands the decision back to Whisper. It
+  is prefilled from the file name (`20260731_ru_de_…` means Russian).
+  Together with the spell checking that means: after switching, the browser
+  checks segments and cleaned text in the new language right away.
+- **Re-transcribe the whole file** — the button with the circular arrow, usable
+  without a selection: the file is recognised again completely and **every
+  segment is replaced**, including your own edits to text and speakers (hence
+  the confirmation). This is the way out after the language or the model has
+  been corrected. Cleanup and translations stay as they are until they are
+  created again via "Recreate". The progress runs below the waveform.
 - **Selection** by dragging on the waveform, then:
-  - **Re-transcribe selection** — only this section is recognised again and
-    replaces exactly the affected segments
-  - **Trim to selection / Remove selection** — audio cutting via ffmpeg;
-    the result becomes a *new* file in the transcript, the original is kept
+  - **Transcribe selection** — only this section is recognised, and the result
+    is **plain text**: it appears below the buttons and goes to the clipboard at
+    the same time. If the browser does not allow the copy by itself (it usually
+    wants a click for that), the *Copy* button next to it does it. **No segments
+    are created** — the existing ones stay untouched. That way one can listen
+    back to what was really said in a passage without overwriting one's own
+    correction; for replacing the segments there is "Re-transcribe the whole
+    file".
+  - **Trim to selection** — keeps only the selected range.
+  - **Remove selection** — cuts the selected range out and joins what is before
+    and after it back together.
+  - Both cut the audio via ffmpeg and **do not change the open file**: the
+    result becomes a *new* file in the same transcript (name suffix `-trim` or
+    `-cut`), without a transcript yet and with the status *pending*. The
+    original and its segments are kept; the new file is transcribed separately.
 - The editor's **PDF header** section stores a title, an addition and a
   place/date field per file. The header line then reads `Title (addition)` on
   the left and the place/date on the right: the addition goes in parentheses

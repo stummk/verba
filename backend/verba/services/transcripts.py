@@ -82,45 +82,6 @@ def _reindex(file_id: int) -> None:
         )
 
 
-def replace_range(
-    file_id: int, start_s: float, end_s: float, new_segments: list[dict[str, Any]]
-) -> int:
-    """Replace all segments overlapping [start_s, end_s] with new ones.
-
-    new_segments carry absolute times (already offset). Returns the number of
-    segments the file has afterwards.
-    """
-    with db.get_conn() as conn:
-        conn.execute(
-            "DELETE FROM segments WHERE file_id = ? AND end_s > ? AND start_s < ?",
-            (file_id, start_s, end_s),
-        )
-        max_idx = conn.execute(
-            "SELECT COALESCE(MAX(idx), -1) FROM segments WHERE file_id = ?", (file_id,)
-        ).fetchone()[0]
-        conn.executemany(
-            "INSERT INTO segments (file_id, idx, start_s, end_s, text, speaker) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            [
-                (
-                    file_id,
-                    max_idx + 1 + i,
-                    seg["start"],
-                    seg["end"],
-                    seg["text"],
-                    seg.get("speaker", ""),
-                )
-                for i, seg in enumerate(new_segments)
-            ],
-        )
-    _reindex(file_id)
-    sync_after_change(file_id)
-    with db.get_conn() as conn:
-        return conn.execute(
-            "SELECT COUNT(*) FROM segments WHERE file_id = ?", (file_id,)
-        ).fetchone()[0]
-
-
 def write_transcript_json(file_id: int) -> None:
     """Rewrite the portable JSON copy in <workspace>/transcripts/."""
     file_row = workspace.get_file(file_id)

@@ -1,15 +1,18 @@
 // Transcript editor: waveform timeline (wavesurfer), text↔audio sync,
-// segment editing with autosave + undo, range re-transcription, audio cutting.
+// segment editing with autosave + undo, the language of the recording,
+// transcribing the whole file or just a selection, audio cutting.
 
 import WaveSurfer from "/vendor/wavesurfer.esm.js";
 import RegionsPlugin from "/vendor/wavesurfer.regions.esm.js";
 import { api } from "../api.js";
-import { confirmDelete } from "../confirm.js";
+import { confirmAction, confirmDelete } from "../confirm.js";
 import { el, formatDuration, html, toast } from "../dom.js";
 import { closeExportDialog, openExportDialog } from "../export-dialog.js";
 import { iconButton, iconSvg, setIcon } from "../icons.js";
 import { currentLanguage, t } from "../i18n.js";
-import { languageLabel, languageName, sortedLanguages } from "../languages.js";
+import {
+  fillLanguageSelect, languageLabel, languageName, sortedLanguages,
+} from "../languages.js";
 import { on } from "../ws.js";
 
 const AUTOSAVE_DELAY = 700;
@@ -74,13 +77,24 @@ export async function render(view, _status, params) {
 
     <div class="card timeline-card">
       <div id="waveform" class="waveform"></div>
-      <p class="muted small" id="wave-loading">${t("editor.loading")}</p>
+      <!-- what the waveform itself has to say — the loading state and what is
+           selected on it — stands directly under it, not among the buttons -->
+      <div class="wave-status">
+        <p class="muted small" id="wave-loading">${t("editor.loading")}</p>
+        <span class="spacer"></span>
+        <span id="selection-info" class="muted small">${t("editor.noSelection")}</span>
+      </div>
       <div class="editor-controls">
         <button id="play-toggle" class="icon-btn filled" disabled
                 title="${t("editor.play")}" aria-label="${t("editor.play")}"></button>
         <span id="time-display" class="muted small time-display">0:00 / ${formatDuration(file.duration)}</span>
         <span class="spacer"></span>
-        <span id="selection-info" class="muted small">${t("editor.noSelection")}</span>
+        <select id="file-language" class="lang-select"
+                aria-label="${t("editor.audioLanguage")}"
+                title="${t("editor.audioLanguageHint")}"></select>
+        <button id="file-transcribe" class="icon-btn"
+                title="${t("editor.retranscribeFile")}"
+                aria-label="${t("editor.retranscribeFile")}"></button>
         <button id="range-transcribe" class="icon-btn" disabled
                 title="${t("editor.retranscribe")}" aria-label="${t("editor.retranscribe")}"></button>
         <button id="audio-trim" class="icon-btn" disabled
@@ -92,6 +106,17 @@ export async function render(view, _status, params) {
       </div>
       <div class="progressbar small-bar" id="range-progress" hidden><div></div></div>
       <p class="muted small job-message" id="range-message"></p>
+      <div class="range-result" id="range-result" hidden>
+        <div class="range-result-head">
+          <span class="muted small" id="range-result-span"></span>
+          <span class="spacer"></span>
+          <button type="button" class="icon-btn" id="range-copy"
+                  title="${t("editor.rangeCopy")}" aria-label="${t("editor.rangeCopy")}"></button>
+          <button type="button" class="icon-btn" id="range-result-close"
+                  title="${t("common.close")}" aria-label="${t("common.close")}"></button>
+        </div>
+        <p class="range-result-text" id="range-result-text"></p>
+      </div>
     </div>
 
     <div class="card workspace-card">
@@ -137,13 +162,21 @@ export async function render(view, _status, params) {
   // dictionary for; a language the browser does not know simply stays
   // unchecked. Speaker names are exempt: they are names, and every one of
   // them would be underlined.
-  const sourceLanguage = file.language || settings?.whisper?.language || currentLanguage();
+  let sourceLanguage = file.language || settings?.whisper?.language || currentLanguage();
   let spellcheckOn = localStorage.getItem(SPELLCHECK_KEY) !== "off";
 
   function bindSpellcheck(field, language) {
     field.lang = language || "";
     field.dataset.spell = "1";
     field.spellcheck = spellcheckOn;
+  }
+
+  // Segments and the cleaned text are in the language of the recording — they
+  // are marked as such, so correcting that language re-points their dictionary
+  // right away instead of only on the next visit.
+  function bindSourceSpellcheck(field) {
+    bindSpellcheck(field, sourceLanguage);
+    field.dataset.spellSource = "1";
   }
 
   function applySpellcheck() {
@@ -157,10 +190,13 @@ export async function render(view, _status, params) {
   el("play-toggle").innerHTML = iconSvg("play");
   el("undo-button").innerHTML = iconSvg("undo");
   el("spellcheck-toggle").innerHTML = iconSvg("spellcheck");
-  el("range-transcribe").innerHTML = iconSvg("mic");
+  el("file-transcribe").innerHTML = iconSvg("refresh");
+  el("range-transcribe").innerHTML = iconSvg("speechToText");
   el("audio-trim").innerHTML = iconSvg("crop");
   el("audio-cut").innerHTML = iconSvg("cut");
   el("clear-selection").innerHTML = iconSvg("close");
+  el("range-copy").innerHTML = iconSvg("copy");
+  el("range-result-close").innerHTML = iconSvg("close");
   el("editor-export").innerHTML = iconSvg("pdf");
   el("editor-export").onclick = () => openExportDialog({ fileId });
   el("spellcheck-toggle").onclick = () => {
@@ -169,6 +205,36 @@ export async function render(view, _status, params) {
     applySpellcheck();
   };
   applySpellcheck();
+
+  // ── the language of the recording ───────────────────────────────────
+  //
+  // Whisper detects it from the first seconds and does get it wrong; from
+  // there on the whole chain works in the wrong language — the transcription,
+  // the cleanup, and a translation that is then labelled with a language it is
+  // not in. So the language is stated here, and the next transcription takes
+  // it as given instead of detecting again.
+  const languageSelect = el("file-language");
+  fillLanguageSelect(languageSelect, {
+    placeholder: t("editor.audioLanguageAuto"),
+    selected: file.language ?? "",
+  });
+  languageSelect.onchange = async () => {
+    const chosen = languageSelect.value;
+    try {
+      const updated = await api.updateFileLanguage(fileId, chosen);
+      Object.assign(file, updated);
+      sourceLanguage = file.language || settings?.whisper?.language || currentLanguage();
+      for (const field of view.querySelectorAll("[data-spell-source]")) {
+        field.lang = sourceLanguage;
+      }
+      toast(chosen
+        ? t("editor.audioLanguageSaved", { lang: languageName(chosen) })
+        : t("editor.audioLanguageCleared"));
+    } catch (error) {
+      languageSelect.value = file.language ?? "";
+      toast(error.message);
+    }
+  };
 
   // ── switch between the files of the same transcript ────────────────
   // the open file is listed and selected, so the dropdown says where one is
@@ -274,6 +340,31 @@ export async function render(view, _status, params) {
   el("play-toggle").onclick = () => wavesurfer.playPause();
   el("clear-selection").onclick = clearSelection;
 
+  // Two transcriptions that must not be confused with one another:
+  //
+  //   the whole file — throws the segments away and recognises them again,
+  //                    which is the way out of a wrong language or model;
+  //   the selection  — hands back the text of that passage and nothing else.
+  //                    It writes no segments: one listens to a passage to
+  //                    check what was recognised there, and a result written
+  //                    back would overwrite exactly the edit one was checking.
+  el("file-transcribe").onclick = async () => {
+    if (segments.length) {
+      const ok = await confirmAction({
+        title: t("editor.retranscribeFileTitle"),
+        message: t("editor.retranscribeFileConfirm"),
+        confirmLabel: t("editor.retranscribeFileStart"),
+      });
+      if (!ok) return;
+    }
+    try {
+      await api.transcribeFile(fileId);
+      toast(t("editor.fileTranscribeStarted"));
+    } catch (error) {
+      toast(error.message);
+    }
+  };
+
   el("range-transcribe").onclick = async () => {
     if (!selection) return;
     try {
@@ -285,6 +376,46 @@ export async function render(view, _status, params) {
   };
   el("audio-trim").onclick = () => runAudioEdit("trim");
   el("audio-cut").onclick = () => runAudioEdit("cut");
+
+  // ── the text of a transcribed selection ─────────────────────────────
+  //
+  // It goes to the clipboard by itself, because that is what it is for — but
+  // a browser only allows that while the page has the focus, and the result
+  // arrives long after the click that asked for it. So the text is shown as
+  // well, with a copy button that runs inside a click and always works.
+  let rangeText = "";
+
+  async function copyRangeText({ silent = false } = {}) {
+    if (!rangeText) return false;
+    try {
+      await navigator.clipboard.writeText(rangeText);
+      if (!silent) toast(t("editor.rangeCopied"));
+      return true;
+    } catch {
+      if (!silent) toast(t("editor.rangeCopyFailed"));
+      return false;
+    }
+  }
+
+  function showRangeText({ start_s, end_s, text }) {
+    rangeText = text ?? "";
+    el("range-result").hidden = false;
+    el("range-result-span").textContent = t("editor.rangeResult", {
+      start: formatDuration(start_s), end: formatDuration(end_s),
+    });
+    el("range-result-text").textContent = rangeText || t("editor.rangeEmpty");
+    el("range-result-text").lang = sourceLanguage;
+    el("range-copy").disabled = !rangeText;
+    copyRangeText({ silent: true }).then((copied) => {
+      if (copied) toast(t("editor.rangeCopied"));
+    });
+  }
+
+  el("range-copy").onclick = () => copyRangeText();
+  el("range-result-close").onclick = () => {
+    rangeText = "";
+    el("range-result").hidden = true;
+  };
 
   async function runAudioEdit(op) {
     if (!selection) return;
@@ -337,7 +468,7 @@ export async function render(view, _status, params) {
     text.className = "seg-text";
     text.rows = 1;
     text.value = segment.text;
-    bindSpellcheck(text, sourceLanguage);
+    bindSourceSpellcheck(text);
     bindAutosave(text, segment.id, "text");
     queueMicrotask(() => autoGrow(text));
     text.addEventListener("input", () => autoGrow(text));
@@ -569,7 +700,8 @@ export async function render(view, _status, params) {
     const area = document.createElement("textarea");
     area.className = "dtext";
     area.value = text.content;
-    bindSpellcheck(area, kind === "translation" ? language : sourceLanguage);
+    if (kind === "translation") bindSpellcheck(area, language);
+    else bindSourceSpellcheck(area);
     bindTextAutosave(area, kind, language);
     return [head, area];
   }
@@ -722,6 +854,15 @@ export async function render(view, _status, params) {
         renderSegments();
       }
     }),
+    on("range.text", (payload) => {
+      if (payload.file_id === fileId) showRangeText(payload);
+    }),
+    on("file.update", (row) => {
+      // the language may have been corrected elsewhere (project view, a new run)
+      if (row.id !== fileId) return;
+      Object.assign(file, row);
+      if (el("file-language")) el("file-language").value = file.language ?? "";
+    }),
     on("texts.changed", async ({ file_id }) => {
       if (file_id !== fileId) return;
       const fresh = await api.getTexts(fileId).catch(() => null);
@@ -733,7 +874,8 @@ export async function render(view, _status, params) {
     }),
     on("job.update", (job) => {
       if (job.file_id !== fileId) return;
-      if (job.kind === "transcribe_range") {
+      // both transcriptions report in the same line under the waveform
+      if (job.kind === "transcribe_range" || job.kind === "transcribe") {
         showJobState("range-progress", "range-message", job);
       }
       if (job.kind === "llm_process") {

@@ -259,7 +259,9 @@ def get_file(file_id: int) -> dict[str, Any] | None:
     return db.row_to_dict(row)
 
 
-UPDATABLE_FILE_FIELDS = ("header_left", "header_middle", "header_right")
+# language is what the file says about itself — the file name scheme fills it
+# in, the editor corrects it, and transcription reads it instead of guessing.
+UPDATABLE_FILE_FIELDS = ("header_left", "header_middle", "header_right", "language")
 
 
 def update_file(file_id: int, changes: dict[str, Any]) -> dict[str, Any] | None:
