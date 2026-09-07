@@ -94,9 +94,34 @@ def _parse_filename(stem: str) -> dict[str, str]:
             rest = match["rest"]
         except ValueError:
             pass  # e.g. "12345678_" that is not a real date
-    title = re.sub(r"[_]+", " ", rest).strip(" -_")
-    result["title"] = title
+    result["title"] = plain_title(rest)
     return result
+
+
+def plain_title(stem: str) -> str:
+    """The file name itself as a title: underscores as spaces, nothing else."""
+    return re.sub(r"[_]+", " ", stem).strip(" -_")
+
+
+def filename_title(stem: str) -> str:
+    """The title the file name states — what the import stored from it."""
+    return _parse_filename(stem)["title"]
+
+
+def name_states_a_title(stem: str) -> bool:
+    """Whether the file name says something about the recording beyond being
+    its name — a title in the scheme's title slot, or behind a leading date.
+
+    That is authored information. Something read out of the recording itself
+    may fill a missing title in, never replace one
+    (`workspace.apply_suggested_title`).
+
+    A name that follows the scheme without filling its title slot states
+    nothing — `20260304.m4a`, `2026-03-04_de_en.m4a` are dates and languages,
+    and a title parsed out of them is empty, not authored.
+    """
+    title = filename_title(stem)
+    return bool(title) and title != plain_title(stem)
 
 
 def _read_tags(path: Path) -> dict[str, str]:

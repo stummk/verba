@@ -12,7 +12,12 @@ choice (`verbatim`, on by default):
   type's output prompt (strict JSON output), which is what a type needs that
   turns its material into something else: minutes with decisions and to-dos.
   Without an LLM, or from an answer that cannot be parsed, the deterministic
-  path takes over, so the export always works.
+  path takes over, so the export always works. A text too long for one call
+  is structured chunk by chunk, and each chunk answers with the whole
+  document's furniture — so the overview the pipeline already read
+  (`overview.py`) travels along as orientation, and `_merge_document_blocks`
+  joins the answers into one document: one list per title, and no restated
+  heading at the seam.
 
 Stage 2 (render): a deterministic fpdf2 renderer lays the blocks out
 according to the transcript type's template. Folder exports append each
@@ -25,7 +30,6 @@ with its translations.
 
 from __future__ import annotations
 
-import json
 import logging
 import platform
 import re
@@ -34,9 +38,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from ..core.jobs import JobCancelled, job_queue
-from . import llm, pipeline, transcripts, workspace
+from ..core.jobs import JobCancelled, job_queue, report_step
+from . import llm, overview, pipeline, transcripts, workspace
 from .metadata import format_display_date
+from .project_types import is_verbatim
 
 logger = logging.getLogger(__name__)
 
@@ -127,32 +132,9 @@ def _base_text(file_id: int, structure: str, language: str) -> str:
     return text
 
 
-def _json_arrays(raw: str) -> list[list[Any]]:
-    """Every JSON array in an LLM answer, in order.
-
-    A local model rarely answers with exactly one array: it wraps it in prose
-    or a Markdown fence, or emits one array per paragraph. Decoding from each
-    `[` and skipping what does not parse takes all of those, where taking the
-    span from the first `[` to the last `]` took none of them.
-    """
-    decoder = json.JSONDecoder()
-    arrays: list[list[Any]] = []
-    index = 0
-    while (start := raw.find("[", index)) >= 0:
-        try:
-            data, end = decoder.raw_decode(raw, start)
-        except ValueError:
-            index = start + 1
-            continue
-        index = end
-        if isinstance(data, list):
-            arrays.append(data)
-    return arrays
-
-
 def _parse_blocks(raw: str) -> list[dict[str, Any]] | None:
     """Extract and validate the JSON blocks from an LLM answer."""
-    raw_items = [item for array in _json_arrays(raw) for item in array]
+    raw_items = [item for array in llm.json_arrays(raw) for item in array]
     if not raw_items:
         return None
     blocks: list[dict[str, Any]] = []
@@ -201,8 +183,6 @@ def blocks_text(blocks: list[dict[str, Any]]) -> str:
     return " ".join(part for part in parts if part)
 
 
-_WORD_RE = re.compile(r"\w{4,}")
-
 # A model that ignores its input answers *about* the task instead of doing it
 # ("No speech text was provided — please paste the full text of the speech ...").
 # Such an answer parses as valid blocks and would be printed as if it were the
@@ -210,21 +190,21 @@ _WORD_RE = re.compile(r"\w{4,}")
 # comes from the transcript. Asking it that way round — how much of the answer
 # is covered by the material, not how much of the material survived — leaves a
 # type that legitimately condenses (meeting minutes) untouched: a summary is
-# written from the transcript's own words.
+# written from the transcript's own words. (The other direction is
+# `pipeline._keeps_the_text`, which guards a type that may not condense; both
+# weigh words the same way, see `llm.word_set`.)
 MIN_SOURCED_SHARE = 0.5
-MIN_WORDS_TO_JUDGE = 20  # too little material to tell a refusal from a layout
 
 
 def _keeps_the_material(blocks: list[dict[str, Any]], source: str) -> bool:
     """Whether structured blocks were built from `source` at all."""
-    source_words = set(_WORD_RE.findall(source.lower()))
-    if len(source_words) < MIN_WORDS_TO_JUDGE:
+    source_words = llm.word_set(source)
+    if len(source_words) < llm.MIN_WORDS_TO_JUDGE:
         return True
-    answer_words = set(_WORD_RE.findall(blocks_text(blocks).lower()))
+    answer_words = llm.word_set(blocks_text(blocks))
     if not answer_words:
         return False
-    sourced = answer_words & source_words
-    return len(sourced) >= MIN_SOURCED_SHARE * len(answer_words)
+    return len(answer_words & source_words) >= MIN_SOURCED_SHARE * len(answer_words)
 
 
 #: A paragraph break is a blank line and only a blank line — a line the text
@@ -274,6 +254,51 @@ def output_system_prompt(output_prompt: str, type_prompt: str) -> str:
     return system_prompt
 
 
+def _norm(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def _merge_document_blocks(answers: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Make one document out of the answers to several chunks.
+
+    A text too long for one call is structured chunk by chunk, and each chunk
+    is asked for the same document — so "Beschlüsse" and "To-dos" come back
+    once per chunk, and a later chunk opens by restating the document's own
+    heading. The document has each of those once:
+
+    - a list is merged into the one that opened it, keeping its position and
+      dropping items it already holds. A list title names the document's
+      furniture, so this holds wherever the list appears.
+    - a heading is only dropped where a later answer *opens* with one that has
+      already been used. A heading that recurs inside an answer is the type's
+      own doing (a prompt may ask for one per question) and stands.
+    """
+    merged: list[dict[str, Any]] = []
+    lists: dict[str, dict[str, Any]] = {}
+    headings: set[str] = set()
+    for index, answer in enumerate(answers):
+        opening = bool(index)  # the first answer opens the document itself
+        for block in answer:
+            key = _norm(str(block.get("title") or block.get("text") or ""))
+            if block["kind"] == "list" and key:
+                target = lists.get(key)
+                if target is not None:
+                    known = {_norm(item) for item in target["items"]}
+                    target["items"].extend(
+                        item for item in block["items"] if _norm(item) not in known
+                    )
+                    continue
+                lists[key] = block
+            elif block["kind"] == "heading" and key:
+                if opening and key in headings:
+                    continue
+                headings.add(key)
+            else:
+                opening = False  # past the furniture, into this answer's content
+            merged.append(block)
+    return merged
+
+
 def _structure_llm(
     text: str,
     output_prompt: str,
@@ -281,16 +306,16 @@ def _structure_llm(
     cancel: threading.Event,
     report: Callable[[int, str], None],
     progress_range: tuple[int, int],
+    context: str = "",
 ) -> list[dict[str, Any]] | None:
-    system_prompt = output_system_prompt(output_prompt, type_prompt)
+    system_prompt = output_system_prompt(output_prompt, type_prompt) + context
     chunks = pipeline._chunk_text(text)
-    blocks: list[dict[str, Any]] = []
+    answers: list[list[dict[str, Any]]] = []
     limit = pipeline.SizeLimit()
-    lo, hi = progress_range
     for i, chunk in enumerate(chunks):
         if cancel.is_set():
             raise JobCancelled()
-        report(lo + (hi - lo) * i // max(1, len(chunks)), f"Structuring {i + 1}/{len(chunks)}")
+        report_step(report, progress_range, i, len(chunks), "Strukturierung")
         # every answer is parsed on its own: a chunk that had to be split
         # comes back as several JSON arrays, never as one
         chunk_blocks: list[dict[str, Any]] = []
@@ -308,19 +333,11 @@ def _structure_llm(
                 len(blocks_text(chunk_blocks)),
             )
             return None
-        blocks.extend(chunk_blocks)
-    return blocks or None
-
-
-def is_verbatim(project: dict[str, Any]) -> bool:
-    """Whether the export has to reproduce the text word for word.
-
-    On for every type that does not deliberately turn its material into
-    something else, and the answer for a project row that predates the field —
-    reproducing the text is what the default promises.
-    """
-    value = project.get("type_verbatim")
-    return True if value is None else bool(value)
+        answers.append(chunk_blocks)
+    if len(answers) == 1:
+        # what one call structured on its own is the model's choice and stands
+        return answers[0] or None
+    return _merge_document_blocks(answers) or None
 
 
 def build_document(
@@ -343,6 +360,11 @@ def build_document(
     # reword the cleanup or a translation, invent a heading the text does not
     # carry, or leave a sentence out
     if has_type and not is_verbatim(project) and llm.llm_location() != "none":
+        # Only what the pipeline has already read: the export must not start
+        # condensing a two-hour recording of its own accord. Where it is
+        # there, it keeps the structuring of a long text on one line of
+        # thought instead of a heading per chunk.
+        whole = overview.load(file_row["id"], project.get("type_prompt") or "")
         blocks = _structure_llm(
             text,
             project.get("type_output_prompt") or "",
@@ -350,6 +372,7 @@ def build_document(
             cancel,
             report,
             progress_range,
+            (whole or overview.Overview()).as_context(),
         )
     if blocks is None:
         blocks = _structure_rule_based(text, structure)

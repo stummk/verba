@@ -16,6 +16,7 @@ exactly where EmptyAnswer and TruncatedAnswer come from.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
@@ -119,6 +120,60 @@ def strip_reasoning(text: str) -> str:
         text = _THINK_HEAD_RE.sub("", text)
     text = _THINK_TAIL_RE.sub("", text)  # opener without a closer: nothing usable follows
     return text.strip()
+
+
+# ── reading and judging what came back ────────────────────────────────
+#
+# Every caller that asks for structured output or has to check an answer
+# against its material faces the same two problems, so they are answered
+# once here instead of per caller.
+
+
+def _json_values(raw: str, opener: str, kind: type) -> list[Any]:
+    """Every JSON value of `kind` in an answer, in order.
+
+    A local model rarely answers with exactly one value: it wraps it in prose
+    or a Markdown fence, or emits one per paragraph. Decoding from each
+    opening bracket and skipping what does not parse takes all of those,
+    where taking the span from the first bracket to the last took none.
+    """
+    decoder = json.JSONDecoder()
+    found: list[Any] = []
+    index = 0
+    while (start := raw.find(opener, index)) >= 0:
+        try:
+            data, end = decoder.raw_decode(raw, start)
+        except ValueError:
+            index = start + 1
+            continue
+        index = end
+        if isinstance(data, kind):
+            found.append(data)
+    return found
+
+
+def json_arrays(raw: str) -> list[list[Any]]:
+    """Every JSON array an answer carries, in order."""
+    return _json_values(raw, "[", list)
+
+
+def json_object(raw: str) -> dict[str, Any] | None:
+    """The first JSON object an answer carries, or None."""
+    objects = _json_values(raw, "{", dict)
+    return objects[0] if objects else None
+
+
+# What counts as a word when an answer is weighed against its material, and
+# how much material it takes to judge at all. One decision, so that the two
+# checks built on it (`pdf._keeps_the_material`, `pipeline._keeps_the_text`)
+# cannot drift apart: short filler words are exactly what an answer may drop.
+_WORD_RE = re.compile(r"\w{4,}")
+MIN_WORDS_TO_JUDGE = 20
+
+
+def word_set(text: str) -> set[str]:
+    """The distinct words of a text, for comparing an answer to its material."""
+    return set(_WORD_RE.findall(text.lower()))
 
 
 def _message_content(message: dict[str, Any]) -> str:

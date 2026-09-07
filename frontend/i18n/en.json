@@ -245,7 +245,7 @@
   "types.keepSections": "Do not split sections across pages",
   "types.keepSectionsHint": "In a compilation export a file's section starts on a new page when it no longer fits on the current one, translations included. Sections that do fit stay where they are.",
   "types.verbatim": "Reproduce the text unchanged",
-  "types.verbatimHint": "The PDF export structures the cleaned text and the translations by itself, without an AI step: every sentence reaches the PDF unchanged and in its original order, and no heading appears that the text does not carry. Without this option the AI may restructure the text according to the output prompt — which only a type needs that turns its material into something else, such as minutes with decisions and to-dos.",
+  "types.verbatimHint": "The PDF export structures the cleaned text and the translations by itself, without an AI step: every sentence reaches the PDF unchanged and in its original order, and no heading appears that the text does not carry. Without this option the AI may restructure the text according to the output prompt — which only a type needs that turns its material into something else, such as minutes with decisions and to-dos. It also decides the AI step: a verbatim type is cleaned up section by section, a type without this option gets its cleanup prompt once for the whole recording — one title and one to-do list instead of one per section.",
   "types.structureParagraphs": "Paragraphs (running text)",
   "types.structureStanzas": "Stanzas (line breaks preserved)",
   "types.structureDialogue": "Dialogue (turns with speaker)",

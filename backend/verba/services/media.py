@@ -26,6 +26,21 @@ def is_audio_file(path: Path) -> bool:
     return path.suffix.lower() in AUDIO_EXTENSIONS
 
 
+def format_clock(seconds: float) -> str:
+    """A position in a recording as the user reads it: `m:ss`, `h:mm:ss`.
+
+    Lives here because several places name the same moment — a transcript
+    line, a job's progress, the label of a section — and they must not
+    disagree. (Not `public_api.format_timestamp`: that one is the SRT/VTT
+    shape with zero-padded hours and milliseconds.)
+    """
+    minutes, secs = divmod(int(seconds), 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
+
+
 def probe_duration(path: Path) -> float | None:
     """Duration in seconds, or None if it cannot be determined."""
     try:

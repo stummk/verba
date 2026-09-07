@@ -374,12 +374,13 @@ def _transcript_rows(file_id: int) -> list[dict[str, Any]]:
     for chunk in chunking.chunk_segments(
         segments, max_chars=CHUNK_MAX_CHARS, overlap=CHUNK_OVERLAP_SEGMENTS
     ):
-        own = chunk.segments[chunk.own_start :]
+        own = chunk.own_segments
         speakers = sorted({s["speaker"].strip() for s in own if s.get("speaker", "").strip()})
+        start_s, end_s = chunk.time_range
         rows.append(
             {
-                "start_s": own[0]["start_s"],
-                "end_s": own[-1]["end_s"],
+                "start_s": start_s,
+                "end_s": end_s,
                 "text": chunk.own_text,
                 "speakers": ", ".join(speakers),
                 "source": SOURCE_TRANSCRIPT,

@@ -60,6 +60,34 @@ def broadcast_job(job: dict[str, Any]) -> None:
     hub.publish("job.update", job, project_id=job.get("project_id"), file_id=job.get("file_id"))
 
 
+# ── progress arithmetic ───────────────────────────────────────────────
+#
+# A handler reports one percentage for the whole job, so every step works
+# inside a slice of it and hands its own slices to what it calls. Doing that
+# by hand in each handler is how a step ends up jumping backwards.
+
+Progress = tuple[int, int]
+
+
+def split_range(progress_range: Progress, percent: int) -> tuple[Progress, Progress]:
+    """Cut a range in two: the first `percent` of it, and the rest."""
+    lo, hi = progress_range
+    middle = lo + (hi - lo) * percent // 100
+    return (lo, middle), (middle, hi)
+
+
+def report_step(
+    report: Callable[[int, str], None],
+    progress_range: Progress,
+    index: int,
+    total: int,
+    label: str,
+) -> None:
+    """Report piece `index` of `total` inside a range: "Bereinigung 2/5"."""
+    lo, hi = progress_range
+    report(lo + (hi - lo) * index // max(1, total), f"{label} {index + 1}/{total}")
+
+
 def lane_for_kind(kind: str) -> str:
     return "llm" if kind in LLM_KINDS else "main"
 

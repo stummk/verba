@@ -199,6 +199,24 @@ CREATE TABLE IF NOT EXISTS api_keys (
     last_used_at TEXT
 );
 
+-- What one recording is about, as a whole. An internal cache for the LLM
+-- pipeline (services/overview.py): the section digests plus the title, the
+-- summary and the terms formed over all of them. Deliberately not a
+-- `derived_texts` kind — those are user-facing (editor tabs, workspace
+-- copies, search index), this one is only the material a document-level
+-- step is written from. `context_key` binds it to the transcript type's
+-- prompt it was condensed under, so a changed type rebuilds it.
+CREATE TABLE IF NOT EXISTS file_overviews (
+    file_id     INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+    title       TEXT NOT NULL DEFAULT '',
+    summary     TEXT NOT NULL DEFAULT '',
+    topics      TEXT NOT NULL DEFAULT '',   -- JSON array
+    terms       TEXT NOT NULL DEFAULT '',   -- JSON array
+    digests     TEXT NOT NULL DEFAULT '',   -- JSON array, one per section
+    context_key TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_chunks_file ON chunks(file_id);
 CREATE INDEX IF NOT EXISTS idx_files_project ON files(project_id);
 CREATE INDEX IF NOT EXISTS idx_segments_file ON segments(file_id);

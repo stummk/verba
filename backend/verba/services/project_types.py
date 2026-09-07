@@ -155,6 +155,22 @@ LEGACY_KEYS = {
 }
 
 
+def is_verbatim(project: dict[str, Any]) -> bool:
+    """Whether a project's transcript type reproduces its material word for word.
+
+    Read from a project row (`type_verbatim`, joined by `workspace`). On for
+    every type that does not deliberately turn its material into something
+    else, for a project without a type at all, and for a row that predates
+    the field — reproducing the text is what the default promises. It decides
+    two things: whether the PDF export lets the LLM structure the text
+    (`pdf.build_document`), and whether the aufbereitung writes one document
+    over the whole recording instead of cleaning up chunk by chunk
+    (`pipeline.cleanup_segments`).
+    """
+    value = project.get("type_verbatim")
+    return True if value is None else bool(value)
+
+
 def default_output_prompt() -> str:
     """The output-format prompt used when a type defines none of its own."""
     from .pdf import DEFAULT_OUTPUT_PROMPT  # local: pdf owns the block contract

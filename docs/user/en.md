@@ -234,6 +234,14 @@ needs that — **Meeting Protocol**, for instance, which forms a summary with
 decisions and to-dos out of the conversation. If an export is caught dropping
 or rewording sentences, switch the option on.
 
+The option also decides **how the AI step handles long recordings**: a type
+that reproduces its text unchanged is cleaned up section by section — every
+sentence has to come back. A type without the option gets its cleanup prompt
+exactly **once for the whole recording**, so that minutes come out with one
+title, one list of decisions and one to-do list instead of one set per
+section. How Verba keeps the whole recording in view for that is described
+under "AI processing".
+
 Next to it sits **Do not split sections across pages**. When a whole
 transcript is exported, one file otherwise follows the next on the same page,
 and a section breaks wherever the page happens to end. With this option a
@@ -421,8 +429,42 @@ the action card gains **AI processing (all)**:
 - Results appear as tabs in the AI dialog and in the editor, and are also
   written as Markdown files into the workspace under `transcripts/`
 
+**The whole text in view.** Before a step runs, Verba reads the recording once
+for an overview: every section is condensed into a short digest (topic, names
+and spellings, decisions, tasks, verbatim quotations), and from those digests
+comes a picture of the **whole** recording — title, summary, sequence of
+topics. Where there are more digests than fit into one request, neighbouring
+ones are condensed further until everything fits; no request ever runs past
+the model's context window. That overview serves two purposes:
+
+- For **cleanup and translation** it is orientation: names, technical terms
+  and spellings stay the same across section boundaries. The text itself is
+  still worked on section by section — every sentence has to come back. The
+  model is shown **only the title and the spellings**, never the summary:
+  nothing in the input of a step that must hand back every sentence should
+  read like a shorter version of the text. If a model condenses a section
+  anyway, Verba notices by how little of the section is left, asks for that
+  same section again without any orientation — and ends the step with a
+  message rather than storing a shortened version
+- For transcript types that turn the material into **something else** (a type
+  with "verbatim" switched off, e.g. "Meeting Protocol"), the type's prompt
+  runs **once over the whole recording** instead of once per section. That
+  yields minutes with one title, one list of decisions and one to-do list —
+  instead of one separate set per section
+
+The overview is built once per file and shared by every step (cleanup,
+translation, PDF export). If the transcript is edited in the editor, Verba
+reads it again for the next step.
+
+**A title from the recording.** The title Verba forms over the whole recording
+is given to files whose name states no title of its own (`meeting.m4a`,
+`REC_0042.wav`) or only a date (`20260304.m4a`) — as the title and as the
+header title for the PDF export. A
+title from the file-name scheme, from an audio tag, or a header line edited by
+hand is left untouched.
+
 **What is running.** The dialog closes on start — progress then shows in the file
-row and names the step (e.g. "AI processing · Cleanup 2/5"). Finished steps are
+row and names the step (e.g. "AI processing · Overview 2/5", then "Cleanup 2/5"). Finished steps are
 marked in the row as **cleaned** and **translated**, so it is visible whether a
 file already went through the AI step. A second click does not queue the same
 step twice; for translations the language counts — a second target language gets

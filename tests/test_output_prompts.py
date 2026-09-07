@@ -98,6 +98,75 @@ def test_export_uses_the_type_output_prompt(data_env, tmp_path, monkeypatch):
     assert pdf.DEFAULT_OUTPUT_PROMPT not in sent[0]
 
 
+# ── one document out of the answers to several chunks ─────────────────
+
+
+def test_repeated_lists_and_restated_headings_are_merged():
+    """A text too long for one call is structured chunk by chunk, and each
+    chunk answers with the whole document's furniture."""
+    answers = [
+        [
+            {"kind": "heading", "text": "Protokoll"},
+            {"kind": "paragraph", "text": "Erster Teil."},
+            {"kind": "list", "title": "Beschlüsse", "items": ["A", "B"]},
+        ],
+        [
+            {"kind": "heading", "text": "protokoll "},  # restated, other spelling
+            {"kind": "paragraph", "text": "Zweiter Teil."},
+            {"kind": "list", "title": "Beschlüsse", "items": ["B", "C"]},
+        ],
+    ]
+
+    merged = pdf._merge_document_blocks(answers)
+
+    assert [b["kind"] for b in merged] == ["heading", "paragraph", "list", "paragraph"]
+    assert merged[2]["items"] == ["A", "B", "C"]  # merged where the list opened
+    assert [b["text"] for b in merged if b["kind"] == "paragraph"] == [
+        "Erster Teil.",
+        "Zweiter Teil.",
+    ]
+
+
+def test_a_heading_a_type_asks_for_repeatedly_is_kept():
+    """Only a *restated* document heading goes: one that recurs inside an
+    answer is the output prompt's own doing (one per question, say)."""
+    answers = [
+        [
+            {"kind": "heading", "text": "Frage"},
+            {"kind": "paragraph", "text": "Was war der Anlass?"},
+            {"kind": "heading", "text": "Frage"},
+            {"kind": "paragraph", "text": "Und danach?"},
+        ],
+        [
+            {"kind": "heading", "text": "Frage"},  # opens the answer: dropped
+            {"kind": "paragraph", "text": "Wer war dabei?"},
+            {"kind": "heading", "text": "Frage"},  # inside it: kept
+            {"kind": "paragraph", "text": "Wann?"},
+        ],
+    ]
+
+    merged = pdf._merge_document_blocks(answers)
+
+    assert sum(1 for b in merged if b["kind"] == "heading") == 3
+    assert sum(1 for b in merged if b["kind"] == "paragraph") == 4
+
+
+def test_a_long_text_still_yields_one_set_of_lists(monkeypatch):
+    text = "\n\n".join(f"Absatz {i} " + "wort " * 300 for i in range(8))  # several chunks
+    answer = (
+        '[{"kind": "heading", "text": "Protokoll"}, '
+        '{"kind": "paragraph", "text": "wort wort"}, '
+        '{"kind": "list", "title": "To-dos", "items": ["etwas tun"]}]'
+    )
+    monkeypatch.setattr("verba.services.llm.chat", lambda messages, **kwargs: answer)
+
+    blocks = pdf._structure_llm(text, "Instruction.", "", NO_CANCEL, no_report, (0, 100))
+
+    assert sum(1 for b in blocks if b["kind"] == "heading") == 1
+    assert sum(1 for b in blocks if b["kind"] == "list") == 1
+    assert sum(1 for b in blocks if b["kind"] == "paragraph") > 1  # the text itself stays
+
+
 # ── storage: defaults, pre-fill, restore ──────────────────────────────
 
 

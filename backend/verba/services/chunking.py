@@ -25,8 +25,34 @@ class Chunk:
         return " ".join(s["text"].strip() for s in self.segments[: self.own_start])
 
     @property
+    def own_segments(self) -> list[dict[str, Any]]:
+        """The segments this chunk answers for — without the overlap."""
+        return self.segments[self.own_start :]
+
+    @property
     def own_text(self) -> str:
-        return "\n".join(s["text"].strip() for s in self.segments[self.own_start :])
+        return "\n".join(s["text"].strip() for s in self.own_segments)
+
+    @property
+    def time_range(self) -> tuple[float, float]:
+        """Start and end of the chunk's own segments, in seconds.
+
+        Transcription results carry `start`/`end`, stored segments `start_s`/
+        `end_s` — a chunk has to answer for both, so a missing key counts as
+        zero instead of raising.
+        """
+        own = self.own_segments
+        if not own:
+            return 0.0, 0.0
+        return _seconds(own[0], "start"), _seconds(own[-1], "end")
+
+
+def _seconds(segment: dict[str, Any], edge: str) -> float:
+    for key in (f"{edge}_s", edge):
+        value = segment.get(key)
+        if isinstance(value, (int, float)):
+            return float(value)
+    return 0.0
 
 
 def chunk_segments(

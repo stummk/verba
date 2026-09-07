@@ -27,7 +27,7 @@ from .. import config, db
 from ..core.jobs import JobCancelled
 from ..events import hub
 from . import hardware, transcripts, workspace
-from .media import probe_duration
+from .media import format_clock, probe_duration
 
 logger = logging.getLogger(__name__)
 
@@ -448,7 +448,7 @@ def transcribe_path(
             )
             if duration:
                 percent = min(99, int(segment.end * 100 / duration))
-                report(percent, f"{audio_path.name}: {_format_ts(segment.end)}")
+                report(percent, f"{audio_path.name}: {format_clock(segment.end)}")
         return collected, info.language or "", duration
 
     segments, detected_language, duration = _with_cpu_fallback(run, report)
@@ -481,7 +481,7 @@ def handle_transcribe_range_job(
     if not audio_path.exists():
         raise RuntimeError(f"Audio file is missing: {audio_path}")
 
-    report(0, f"{file_row['filename']}: extrahiere {_format_ts(start_s)}–{_format_ts(end_s)}")
+    report(0, f"{file_row['filename']}: extrahiere {format_clock(start_s)}–{format_clock(end_s)}")
     with tempfile.TemporaryDirectory() as tmp:
         clip = Path(tmp) / "range.wav"
         audio_service.extract_range(audio_path, start_s, end_s, clip)
@@ -499,7 +499,7 @@ def handle_transcribe_range_job(
                     raise JobCancelled()
                 collected.append(segment.text.strip())
                 percent = min(99, int(segment.end * 100 / max(end_s - start_s, 0.01)))
-                report(percent, f"{file_row['filename']}: {_format_ts(segment.end + start_s)}")
+                report(percent, f"{file_row['filename']}: {format_clock(segment.end + start_s)}")
             return collected
 
         pieces = _with_cpu_fallback(run, report)
@@ -512,7 +512,7 @@ def handle_transcribe_range_job(
         file_id=file_id,
     )
     _publish_engine_status("ready")
-    span = f"{_format_ts(start_s)}–{_format_ts(end_s)}"
+    span = f"{format_clock(start_s)}–{format_clock(end_s)}"
     if text:
         report(100, f"{file_row['filename']}: Abschnitt {span} transkribiert")
     else:
@@ -546,17 +546,9 @@ def _run_transcription(
         segments.append({"start": segment.start, "end": segment.end, "text": segment.text.strip()})
         if duration:
             percent = min(99, int(segment.end * 100 / duration))
-            report(percent, f"{file_row['filename']}: {_format_ts(segment.end)}")
+            report(percent, f"{file_row['filename']}: {format_clock(segment.end)}")
     return segments, info, duration
 
 
 def _publish_engine_status_running(filename: str) -> None:
     _publish_engine_status("running", f"Transkribiere {filename}")
-
-
-def _format_ts(seconds: float) -> str:
-    minutes, secs = divmod(int(seconds), 60)
-    hours, minutes = divmod(minutes, 60)
-    if hours:
-        return f"{hours}:{minutes:02d}:{secs:02d}"
-    return f"{minutes}:{secs:02d}"

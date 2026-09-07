@@ -47,6 +47,17 @@ def fake_chat(recorded: list):
     return chat
 
 
+def system_prompt(calls: list, prefix: str) -> str:
+    """The system message of the step's own call.
+
+    Before a step runs, the pipeline reads what the whole recording is about
+    (`overview.py`), so the step's call is not necessarily the first one.
+    """
+    return next(
+        messages[0]["content"] for messages in calls if messages[0]["content"].startswith(prefix)
+    )
+
+
 def run_job(file_id: int, payload_extra: dict) -> None:
     job = {"payload": {"file_id": file_id, **payload_extra}}
     pipeline.handle_llm_process_job(job, threading.Event(), lambda p, m="": None)
@@ -81,7 +92,7 @@ def test_type_prompt_flows_into_system_message(file_with_segments, monkeypatch):
     monkeypatch.setattr(pipeline.llm, "chat", fake_chat(calls))
     run_job(file_with_segments["id"], {"steps": ["cleanup"]})
 
-    system_message = calls[0][0]["content"]
+    system_message = system_prompt(calls, "You clean up")
     assert "Refrain" in system_message  # the Lied type prompt was appended
 
 
@@ -97,8 +108,7 @@ def test_type_prompt_reaches_the_translation_too(file_with_segments, monkeypatch
     monkeypatch.setattr(pipeline.llm, "chat", fake_chat(calls))
     run_job(file_with_segments["id"], {"steps": ["translate"], "target_language": "en"})
 
-    system_message = calls[0][0]["content"]
-    assert system_message.startswith("You translate")
+    system_message = system_prompt(calls, "You translate")
     assert "Refrain" in system_message
 
 
@@ -108,7 +118,7 @@ def test_translation_prompt_asks_for_the_register_of_the_original(file_with_segm
     monkeypatch.setattr(pipeline.llm, "chat", fake_chat(calls))
     run_job(file_with_segments["id"], {"steps": ["translate"], "target_language": "en"})
 
-    system_message = calls[0][0]["content"]
+    system_message = system_prompt(calls, "You translate")
     assert "register" in system_message
     assert "biblical" in system_message
     assert "everyday paraphrase" in system_message

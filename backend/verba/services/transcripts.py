@@ -119,4 +119,10 @@ def write_transcript_json(file_id: int) -> None:
 
 def sync_after_change(file_id: int) -> None:
     write_transcript_json(file_id)
+    # What the recording is about was read from these segments; an edited
+    # transcript has to be read again before the next document-level step
+    # builds on it (imported late: overview belongs to the LLM pipeline).
+    from . import overview
+
+    overview.invalidate(file_id)
     hub.publish("segments.changed", {"file_id": file_id}, file_id=file_id)

@@ -243,6 +243,14 @@ Das braucht nur ein Typ, der aus seinem Material etwas anderes macht — das
 und To-dos formt. Wer den Export dabei erwischt, dass er Sätze weglässt oder
 umschreibt, schaltet die Option ein.
 
+Die Option entscheidet außerdem, **wie die KI-Aufbereitung mit langen
+Aufnahmen umgeht**: Ein Typ, der den Text unverändert übernimmt, wird Abschnitt
+für Abschnitt bereinigt — es soll ja jeder Satz zurückkommen. Ein Typ ohne
+diese Option bekommt seinen Bereinigungsprompt genau **einmal für die ganze
+Aufnahme**, damit ein Protokoll mit einem Titel, einer Beschlussliste und einer
+To-do-Liste entsteht und nicht je Abschnitt ein eigenes. Wie Verba dafür die
+ganze Aufnahme im Blick behält, steht im Abschnitt „KI-Aufbereitung".
+
 Dazu kommt **Abschnitte nicht über Seiten trennen**. Beim Export eines ganzen
 Transkripts folgt sonst eine Datei der anderen auf derselben Seite, und ein
 Abschnitt wird dort umgebrochen, wo die Seite zu Ende ist. Mit dieser Option
@@ -439,9 +447,45 @@ transkribierten Dateien im Drei-Punkte-Menü der Karte der Eintrag
 - Ergebnisse erscheinen als Reiter im KI-Dialog und im Editor und werden
   zusätzlich als Markdown-Dateien im Workspace unter `transcripts/` abgelegt
 
+**Der ganze Text im Blick.** Bevor ein Schritt läuft, liest Verba die Aufnahme
+einmal im Überblick: jeder Abschnitt wird zu einer kurzen Fassung verdichtet
+(Thema, Namen und Schreibweisen, Beschlüsse, Aufgaben, wörtliche Zitate), und
+aus diesen Fassungen entsteht ein Bild der **gesamten** Aufnahme — Titel,
+Zusammenfassung, Themenfolge. Sind es mehr Fassungen, als in eine Anfrage
+passen, werden benachbarte weiter verdichtet, bis alles hineinpasst; keine
+Anfrage läuft dabei über das Kontextfenster des Modells. Dieser Überblick hat
+zwei Aufgaben:
+
+- Beim **Bereinigen und Übersetzen** dient er als Orientierung: Namen,
+  Fachbegriffe und Schreibweisen bleiben über Abschnittsgrenzen hinweg gleich.
+  Der Text selbst wird weiter Abschnitt für Abschnitt bearbeitet — es soll ja
+  jeder Satz zurückkommen. Dem Modell werden dabei **nur Titel und
+  Schreibweisen** gezeigt, nicht die Zusammenfassung: Im Eingang eines
+  Schritts, der jeden Satz zurückgeben muss, soll nichts stehen, was wie eine
+  Kurzfassung des Textes aussieht. Fasst ein Modell einen Abschnitt trotzdem
+  zusammen, erkennt Verba das daran, wie wenig vom Abschnitt übrig ist, fragt
+  denselben Abschnitt noch einmal ganz ohne Orientierung — und bricht den
+  Schritt mit einer Meldung ab, statt eine gekürzte Fassung zu speichern
+- Bei Transkripttypen, die aus dem Material **etwas anderes machen** (Typ mit
+  abgeschaltetem „Wörtlich", z. B. „Protokoll"), läuft der Prompt des Typs
+  **einmal über die ganze Aufnahme** statt einmal pro Abschnitt. So entsteht
+  ein Protokoll mit einem Titel, einer Beschlussliste und einer To-do-Liste —
+  und nicht je Abschnitt ein eigenes Protokoll mit eigenem Titel
+
+Der Überblick wird je Datei einmal gebildet und von allen Schritten
+mitbenutzt (Bereinigung, Übersetzung, PDF-Export). Wird das Transkript im
+Editor geändert, liest Verba beim nächsten Schritt neu.
+
+**Titel aus der Aufnahme.** Den Titel, den Verba dabei über die ganze Aufnahme
+bildet, bekommen Dateien, deren Name selbst keinen Titel nennt
+(`besprechung.m4a`, `REC_0042.wav`) oder nur ein Datum (`20260304.m4a`) —
+als Titel und als Kopfzeilen-Titel für
+den PDF-Export. Ein Titel aus dem Dateinamen-Schema, aus einem Audio-Tag oder
+eine von Hand geänderte Kopfzeile bleibt unangetastet.
+
 **Was gerade läuft.** Der Dialog schließt sich beim Start — der Fortschritt steht
 danach in der Dateizeile und nennt den Schritt (z. B. „KI-Aufbereitung ·
-Bereinigung 2/5"). Abgeschlossene Schritte markiert die Zeile mit **bereinigt**
+Überblick 2/5", danach „Bereinigung 2/5"). Abgeschlossene Schritte markiert die Zeile mit **bereinigt**
 bzw. **übersetzt**; daran ist zu sehen, ob eine Datei die Aufbereitung schon
 hinter sich hat. Ein zweiter Klick stellt denselben Schritt nicht doppelt in die
 Warteschlange; bei Übersetzungen zählt dabei die Sprache — eine zweite

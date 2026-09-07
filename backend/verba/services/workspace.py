@@ -24,7 +24,12 @@ from ..core.jobs import JobCancelled
 from ..events import hub
 from . import maintenance
 from .media import is_audio_file, probe_duration
-from .metadata import extract_metadata, format_display_date
+from .metadata import (
+    extract_metadata,
+    format_display_date,
+    name_states_a_title,
+    plain_title,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -261,7 +266,10 @@ def get_file(file_id: int) -> dict[str, Any] | None:
 
 # language is what the file says about itself — the file name scheme fills it
 # in, the editor corrects it, and transcription reads it instead of guessing.
-UPDATABLE_FILE_FIELDS = ("header_left", "header_middle", "header_right", "language")
+# `title` is import metadata, written by the import and by
+# `apply_suggested_title`; no API route offers it (every one of them passes a
+# pydantic model of its own), so it is here to be written, not to be exposed.
+UPDATABLE_FILE_FIELDS = ("header_left", "header_middle", "header_right", "language", "title")
 
 
 def update_file(file_id: int, changes: dict[str, Any]) -> dict[str, Any] | None:
@@ -278,6 +286,41 @@ def update_file(file_id: int, changes: dict[str, Any]) -> dict[str, Any] | None:
             return None
     emit_file_update(file_id)
     return get_file(file_id)
+
+
+def apply_suggested_title(file_id: int, title: str) -> bool:
+    """Give the file a title read out of the recording — where it has none.
+
+    A title the file states itself is never replaced: neither one from an
+    audio tag nor one the file name puts in the scheme's title slot — the
+    naming scheme exists so that a title can be stated. What is left is the
+    ordinary case of a name that is only a name (`besprechung.m4a`,
+    `REC_0042.wav`) or only a date (`20260304.m4a`), and there the title the
+    LLM formed over the whole transcript is better than the file name.
+
+    The header line — what the PDF prints — follows the title only while it
+    still holds exactly what the import put there beside it. Anything else is
+    the user's own line and stands.
+    """
+    title = " ".join(title.split())
+    if not title:
+        return False
+    file_row = get_file(file_id)
+    if file_row is None:
+        return False
+    stem = Path(file_row["rel_path"]).stem
+    if name_states_a_title(stem):
+        return False
+    from_import = {"", plain_title(stem), stem}  # everything the import could have stored
+    if file_row["title"] not in from_import:  # an audio tag named the recording
+        return False
+
+    fields: dict[str, Any] = {"title": title}
+    # the import wrote the title into both fields at once, so only a header
+    # that still equals the title it was written with is untouched
+    if (file_row["header_left"] or "") == (file_row["title"] or stem):
+        fields["header_left"] = title
+    return update_file(file_id, fields) is not None
 
 
 def file_path(file_row: dict[str, Any]) -> Path:

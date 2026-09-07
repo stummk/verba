@@ -5,21 +5,36 @@ Results are stored per file in the derived_texts table and mirrored into the
 workspace (transcripts/<stem>.<kind>.md) for user transparency.
 
 Chunking follows segment boundaries with a small overlap so local models with
-limited context windows never see a segment cut in half.
+limited context windows never see a segment cut in half. What a chunk cannot
+know is the recording it belongs to, and that matters in two different ways
+(`overview.py` supplies both from one bounded reading of the whole text):
+
+- A step that reproduces its material — cleanup, translation — stays
+  chunk-local, because every sentence has to come back. It only takes the
+  overview as orientation, so names, terms and spellings stay the same across
+  chunk boundaries.
+- A transcript type that turns its material into something else
+  (`project_types.verbatim` off: minutes, a summary) must not run per chunk at
+  all — the same instruction would produce one document per chunk, four
+  titles for a file that was split into four. Its instruction runs once, over
+  the digests of the whole recording.
 """
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from .. import db
-from ..core.jobs import JobCancelled, job_queue
+from ..core.jobs import JobCancelled, job_queue, report_step, split_range
 from ..events import hub
-from . import chunking, llm, transcripts, workspace
+from . import chunking, llm, overview, project_types, transcripts, workspace
 from .languages import language_name
+
+logger = logging.getLogger(__name__)
 
 CLEANUP_SYSTEM_PROMPT = (
     "You clean up automatic transcriptions. Correct spelling, punctuation, and obvious "
@@ -382,6 +397,38 @@ def _refuse_empty(result: str, step: str) -> None:
         raise RuntimeError(f"{step} ohne Ergebnis — das LLM hat keinen Text geliefert")
 
 
+# ── the promise of a verbatim type ───────────────────────────────────
+#
+# A song, a poem, a speech, a roleplay: the cleanup corrects spelling and
+# drops filler words, and that is all it may do. Whether it did is not left to
+# the prompt alone — a model that summarizes a section instead of cleaning it
+# gives itself away by how little of the section is left in its answer.
+# Measured on the distinct words of four letters or more (short filler words
+# are exactly what may disappear), a real cleanup keeps nearly all of them,
+# where a summary keeps a fraction. Half is a wide margin either way.
+MIN_KEPT_SHARE = 0.5
+
+SUMMARIZED_MESSAGE = (
+    "Das Modell hat Abschnitt {index}/{total} zusammengefasst statt ihn zu bereinigen — "
+    "bei diesem Transkripttyp muss der Text vollständig zurückkommen. Bitte ein anderes "
+    "Modell verwenden oder „Text unverändert übernehmen“ prüfen"
+)
+
+
+def _keeps_the_text(source: str, answer: str) -> bool:
+    """Whether an answer still carries the section it was given."""
+    source_words = llm.word_set(source)
+    if len(source_words) < llm.MIN_WORDS_TO_JUDGE:
+        return True
+    return len(source_words & llm.word_set(answer)) >= MIN_KEPT_SHARE * len(source_words)
+
+
+# How much of a step's progress the reading of the whole transcript may take.
+# The digests are short answers over the same text the step itself works on,
+# so they are the cheaper half by a wide margin.
+OVERVIEW_PROGRESS_SHARE = 30
+
+
 def cleanup_segments(
     segments: list[dict[str, Any]],
     type_prompt: str,
@@ -389,28 +436,93 @@ def cleanup_segments(
     cancel: threading.Event,
     report: Callable[[int, str], None],
     progress_range: tuple[int, int] = (0, 100),
+    *,
+    verbatim: bool = True,
+    glossary: str = "",
+    limit: SizeLimit | None = None,
 ) -> str:
-    """LLM cleanup of raw segments — also used by the public API."""
-    system_prompt = CLEANUP_SYSTEM_PROMPT
-    if type_prompt:
-        system_prompt += TYPE_CONTEXT_HEADING + type_prompt
+    """LLM cleanup of raw segments, chunk by chunk — also used by the public API.
 
+    Every sentence comes back: the text is worked on in chunks and nothing
+    here condenses. `glossary` is what the whole recording is called and how
+    it spells its names (`overview.Overview.as_glossary`), which is all a step
+    that has to reproduce its material may be shown; the caller decides
+    whether that reading is worth its calls. `verbatim` says whether the type
+    promises to reproduce, and only governs the guard below.
+    """
     chunks = chunking.chunk_segments(segments)
+    bare_prompt = CLEANUP_SYSTEM_PROMPT
+    if type_prompt:
+        bare_prompt += TYPE_CONTEXT_HEADING + type_prompt
+    # only the recording's name and its spellings, never the summary: this
+    # step has to hand back every sentence of its section
+    system_prompt = bare_prompt + glossary
+
     parts: list[str] = []
-    limit = SizeLimit()  # what this model can answer is learned once per run
-    lo, hi = progress_range
+    limit = limit if limit is not None else SizeLimit()
     for i, chunk in enumerate(chunks):
         if cancel.is_set():
             raise JobCancelled()
-        report(
-            lo + (hi - lo) * i // max(1, len(chunks)),
-            f"Bereinigung {i + 1}/{len(chunks)}",
+        report_step(report, progress_range, i, len(chunks), "Bereinigung")
+        pieces = chat_pieces(
+            system_prompt, chunk.own_text, model_override, chunk.context_text, limit
         )
-        parts.extend(
-            chat_pieces(system_prompt, chunk.own_text, model_override, chunk.context_text, limit)
-        )
+        if verbatim and not _keeps_the_text(chunk.own_text, "\n".join(pieces)):
+            # Asked again without the orientation, which is the likeliest
+            # reason a model shortened its section towards the whole — so only
+            # where there was one. A type that condenses on purpose is never
+            # judged this way.
+            if glossary:
+                logger.warning(
+                    "cleanup answer for chunk %d/%d kept too little of it — asking again "
+                    "without the overview",
+                    i + 1,
+                    len(chunks),
+                )
+                pieces = chat_pieces(
+                    bare_prompt, chunk.own_text, model_override, chunk.context_text, limit
+                )
+            if not glossary or not _keeps_the_text(chunk.own_text, "\n".join(pieces)):
+                raise RuntimeError(SUMMARIZED_MESSAGE.format(index=i + 1, total=len(chunks)))
+        parts.extend(pieces)
 
     return "\n\n".join(parts)
+
+
+def whole_text_overview(
+    file_id: int,
+    type_prompt: str,
+    model_override: str,
+    cancel: threading.Event,
+    report: Callable[[int, str], None],
+    progress_range: tuple[int, int],
+    limit: SizeLimit | None = None,
+    segments: list[dict[str, Any]] | None = None,
+) -> overview.Overview:
+    """The file's overview, and the title it found for the recording.
+
+    The single place a step asks for the whole recording: read once per file
+    and kept, so the steps of one job — and a translation started later —
+    share it. The title is offered to the file right here: everything else
+    about the recording is stated once, and so is its name.
+
+    The transcript is only fetched when there is nothing to reuse — a caller
+    that has it already hands it over, one that does not (a translation from
+    a stored cleanup) never reads it for a cache hit.
+    """
+    whole = overview.ensure(
+        file_id,
+        lambda: transcripts.list_segments(file_id) if segments is None else segments,
+        type_prompt,
+        model_override,
+        cancel,
+        report,
+        progress_range,
+        limit,
+    )
+    if whole.title:
+        workspace.apply_suggested_title(file_id, whole.title)
+    return whole
 
 
 def run_cleanup(
@@ -420,17 +532,47 @@ def run_cleanup(
     cancel: threading.Event,
     report: Callable[[int, str], None],
     progress_range: tuple[int, int] = (0, 100),
-) -> str:
+    verbatim: bool = True,
+    whole: overview.Overview | None = None,
+) -> tuple[str, overview.Overview]:
+    """The cleanup step for one file, and the reading it was done with.
+
+    Which way it runs is decided here, where the transcript type is known: a
+    type that reproduces its material is cleaned chunk by chunk, a type that
+    writes something of its own has its instruction run once over the whole
+    recording.
+    """
     segments = transcripts.list_segments(file_id)
     if not segments:
         raise RuntimeError("No segments — transcribe the file first")
     if not segments_text(segments):
         raise RuntimeError(NO_TEXT_MESSAGE)
 
-    result = cleanup_segments(segments, type_prompt, model_override, cancel, report, progress_range)
+    limit = SizeLimit()  # what this model can answer is learned once per step
+    reading, working = split_range(progress_range, OVERVIEW_PROGRESS_SHARE)
+    if whole is None:
+        whole = whole_text_overview(
+            file_id, type_prompt, model_override, cancel, report, reading, limit, segments
+        )
+    if not verbatim and whole.digests:
+        result = overview.reduce_document(
+            whole.digests, type_prompt, model_override, cancel, report, working, limit
+        )
+    else:
+        result = cleanup_segments(
+            segments,
+            type_prompt,
+            model_override,
+            cancel,
+            report,
+            working,
+            verbatim=verbatim,
+            glossary=whole.as_glossary(),
+            limit=limit,
+        )
     _refuse_empty(result, "Bereinigung")
     save_text(file_id, "cleanup", result, model=model_override)
-    return result
+    return result, whole
 
 
 def run_translation(
@@ -442,24 +584,25 @@ def run_translation(
     cancel: threading.Event,
     report: Callable[[int, str], None],
     progress_range: tuple[int, int] = (0, 100),
+    glossary: str = "",
 ) -> str:
     system_prompt = TRANSLATE_SYSTEM_PROMPT.format(language=language_name(target_language))
     # what the type says about the transcript decides the wording just as much
     # as it does for the cleanup — that is where "this is a sermon" is written
     if type_prompt:
         system_prompt += TYPE_CONTEXT_HEADING + type_prompt
+    # the terms of the whole recording work as a glossary here: without them
+    # the same name arrives transliterated three different ways across chunks.
+    # The summary stays out — a translation has to be complete, too.
+    system_prompt += glossary
 
     chunks = _chunk_text(source_text)
     parts: list[str] = []
     limit = SizeLimit()
-    lo, hi = progress_range
     for i, chunk in enumerate(chunks):
         if cancel.is_set():
             raise JobCancelled()
-        report(
-            lo + (hi - lo) * i // max(1, len(chunks)),
-            f"Übersetzung {i + 1}/{len(chunks)}",
-        )
+        report_step(report, progress_range, i, len(chunks), "Übersetzung")
         parts.extend(chat_pieces(system_prompt, chunk, model_override, limit=limit))
 
     result = "\n\n".join(parts)
@@ -486,15 +629,23 @@ def handle_llm_process_job(
         raise RuntimeError(f"File {file_id} not found")
     project = workspace.get_project(file_row["project_id"])
     type_prompt = (project or {}).get("type_prompt") or ""
+    # whether this type reproduces its material or writes something of its
+    # own decides how the cleanup runs; a project without a type reproduces
+    verbatim = project_types.is_verbatim(project or {})
 
     total_steps = len(steps)
     cleaned: str | None = None
+    # the reading of the recording is shared by the steps of this job, so a
+    # translation behind a cleanup neither reads nor condenses it again
+    whole: overview.Overview | None = None
 
     for step_index, step in enumerate(steps):
         lo = 100 * step_index // total_steps
         hi = 100 * (step_index + 1) // total_steps
         if step == "cleanup":
-            cleaned = run_cleanup(file_id, type_prompt, model_override, cancel, report, (lo, hi))
+            cleaned, whole = run_cleanup(
+                file_id, type_prompt, model_override, cancel, report, (lo, hi), verbatim, whole
+            )
         elif step == "translate":
             target = payload.get("target_language") or DEFAULT_TARGET_LANGUAGE
             source = cleaned
@@ -505,8 +656,21 @@ def handle_llm_process_job(
                 source = segments_text(transcripts.list_segments(file_id))
             if not source.strip():
                 raise RuntimeError(NO_TEXT_MESSAGE)
+            reading, working = split_range((lo, hi), OVERVIEW_PROGRESS_SHARE)
+            if whole is None:
+                whole = whole_text_overview(
+                    file_id, type_prompt, model_override, cancel, report, reading
+                )
             run_translation(
-                file_id, source, target, type_prompt, model_override, cancel, report, (lo, hi)
+                file_id,
+                source,
+                target,
+                type_prompt,
+                model_override,
+                cancel,
+                report,
+                working,
+                whole.as_glossary(),
             )
         else:
             raise RuntimeError(f"Unknown pipeline step: {step}")

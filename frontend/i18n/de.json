@@ -245,7 +245,7 @@
   "types.keepSections": "Abschnitte nicht über Seiten trennen",
   "types.keepSectionsHint": "Beim Sammel-Export beginnt der Abschnitt einer Datei auf einer neuen Seite, wenn er samt Übersetzungen nicht mehr ganz auf die aktuelle passt. Abschnitte, die passen, bleiben stehen, wo sie sind.",
   "types.verbatim": "Text unverändert übernehmen",
-  "types.verbatimHint": "Der PDF-Export gliedert den bereinigten Text und die Übersetzungen selbst, ohne KI-Schritt: jeder Satz landet unverändert und in seiner Reihenfolge im PDF, und es entstehen keine Überschriften, die der Text nicht enthält. Ohne diese Option darf die KI den Text nach dem Ausgabe-Prompt umbauen — das braucht nur ein Typ, der etwas anderes daraus macht, etwa ein Protokoll mit Beschlüssen und To-dos.",
+  "types.verbatimHint": "Der PDF-Export gliedert den bereinigten Text und die Übersetzungen selbst, ohne KI-Schritt: jeder Satz landet unverändert und in seiner Reihenfolge im PDF, und es entstehen keine Überschriften, die der Text nicht enthält. Ohne diese Option darf die KI den Text nach dem Ausgabe-Prompt umbauen — das braucht nur ein Typ, der etwas anderes daraus macht, etwa ein Protokoll mit Beschlüssen und To-dos. Sie entscheidet außerdem die KI-Aufbereitung: Ein wörtlicher Typ wird Abschnitt für Abschnitt bereinigt, ein Typ ohne diese Option bekommt seinen Bereinigungsprompt einmal für die ganze Aufnahme — ein Titel und eine To-do-Liste statt einer je Abschnitt.",
   "types.structureParagraphs": "Absätze (Fließtext)",
   "types.structureStanzas": "Strophen (Zeilen bleiben erhalten)",
   "types.structureDialogue": "Dialog (Beiträge mit Sprecher)",

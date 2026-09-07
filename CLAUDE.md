@@ -93,9 +93,32 @@ python -m ruff format --check backend/ tests/ run.py
     are loaded in place, `recommended` entries drive the hardware suggestion),
     pipeline (cleanup/translation,
     derived_texts, auto-chaining after transcription via the project's
-    auto_process switch), chunking (segment boundaries + overlap), metadata (tags/file name),
+    auto_process switch; `run_cleanup` is where the fork lives, because that
+    is where the type is known: a type that reproduces its material goes
+    chunk-local through `cleanup_segments` (which never condenses and never
+    reads the whole recording itself) with the overview's title and spellings
+    as a glossary — never the summary —, a type with `verbatim` off has its
+    prompt run once over the whole recording via `overview.reduce_document`,
+    so one title and one list of decisions instead of one per chunk. For a
+    verbatim type the promise does not rest on the prompt:
+    `_keeps_the_text()` measures how much of a section survived its answer,
+    asks again without the glossary where there was one, and then fails the
+    step rather than storing a summary),
+    overview (the whole recording in one bounded text: a digest per chunk
+    (map), neighbouring digests condensed until they fit one call (fold),
+    then a single call for what the document has only once (reduce) — the
+    title/summary/terms the chunk-local steps orient themselves by, or the
+    finished document of a non-verbatim type. No call is ever given more than
+    a chunk's worth, cached per file in `file_overviews` and dropped when the
+    segments change; `ensure()` keeps the digests but describes them again
+    when that one call had failed, so a bad answer costs no title for good.
+    The title is offered to the file (`workspace.apply_suggested_title`),
+    which takes it only where neither the name scheme nor a tag stated one),
+    chunking (segment boundaries + overlap), metadata (tags/file name),
     project_types (7 default types with cleanup prompt, output-format
-    prompt, layout and `verbatim`; seeding + per-field backfill via meta table),
+    prompt, layout and `verbatim` — `is_verbatim()` lives here because both
+    the export and the pipeline branch on it; seeding + per-field backfill
+    via meta table),
     pdf (two-stage
     PDF export: deterministic or LLM structuring → deterministic
     fpdf2 renderer; the type's layout (paragraphs/stanzas/dialogue/script)
