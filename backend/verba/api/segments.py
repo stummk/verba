@@ -22,6 +22,26 @@ def _segment_or_404(segment_id: int, request: Request) -> dict:
     return segment
 
 
+class SegmentCreate(BaseModel):
+    start_s: float = Field(ge=0)
+    end_s: float = Field(ge=0)
+    text: str = ""
+    speaker: str = ""
+
+
+@router.post("/files/{file_id}/segments")
+def create_segment(file_id: int, body: SegmentCreate, request: Request) -> dict:
+    """Add one segment to a transcript — usually empty, for a missed passage."""
+    _file_or_404(file_id, request)
+    if body.end_s <= body.start_s:
+        raise HTTPException(status_code=422, detail="Ende muss nach dem Anfang liegen")
+    segment = transcripts.create_segment(
+        file_id, body.start_s, body.end_s, text=body.text, speaker=body.speaker
+    )
+    vectorstore.maybe_enqueue_index(file_id)
+    return segment
+
+
 class SegmentUpdate(BaseModel):
     text: str | None = None
     speaker: str | None = None

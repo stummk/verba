@@ -15,6 +15,10 @@ import { languageName } from "../languages.js";
 import { on } from "../ws.js";
 
 const AUTOSAVE_DELAY = 700;
+// everything that acts on the selected passage — enabled and disabled together
+const SELECTION_BUTTONS = [
+  "range-transcribe", "range-add-segment", "audio-trim", "audio-cut", "clear-selection",
+];
 const SPELLCHECK_KEY = "verba.spellcheck";
 
 let wavesurfer = null;
@@ -100,6 +104,8 @@ export async function render(view, _status, params) {
                 aria-label="${t("editor.retranscribeFile")}"></button>
         <button id="range-transcribe" class="icon-btn" disabled
                 title="${t("editor.retranscribe")}" aria-label="${t("editor.retranscribe")}"></button>
+        <button id="range-add-segment" class="icon-btn" disabled
+                title="${t("editor.addSegment")}" aria-label="${t("editor.addSegment")}"></button>
         <button id="audio-trim" class="icon-btn" disabled
                 title="${t("editor.trim")}" aria-label="${t("editor.trim")}"></button>
         <button id="audio-cut" class="icon-btn" disabled
@@ -115,6 +121,9 @@ export async function render(view, _status, params) {
           <span class="spacer"></span>
           <button type="button" class="icon-btn" id="range-copy"
                   title="${t("editor.rangeCopy")}" aria-label="${t("editor.rangeCopy")}"></button>
+          <button type="button" class="icon-btn" id="range-result-segment"
+                  title="${t("editor.rangeAsSegment")}"
+                  aria-label="${t("editor.rangeAsSegment")}"></button>
           <button type="button" class="icon-btn" id="range-result-close"
                   title="${t("common.close")}" aria-label="${t("common.close")}"></button>
         </div>
@@ -203,7 +212,9 @@ export async function render(view, _status, params) {
   el("audio-trim").innerHTML = iconSvg("crop");
   el("audio-cut").innerHTML = iconSvg("cut");
   el("clear-selection").innerHTML = iconSvg("close");
+  el("range-add-segment").innerHTML = iconSvg("add");
   el("range-copy").innerHTML = iconSvg("copy");
+  el("range-result-segment").innerHTML = iconSvg("add");
   el("range-result-close").innerHTML = iconSvg("close");
   el("editor-export").innerHTML = iconSvg("pdf");
   // The editor has no export list to pick the finished PDF from, so it hands
@@ -347,7 +358,7 @@ export async function render(view, _status, params) {
     el("selection-info").textContent = t("editor.selection", {
       start: formatDuration(start), end: formatDuration(end),
     });
-    for (const id of ["range-transcribe", "audio-trim", "audio-cut", "clear-selection"]) {
+    for (const id of SELECTION_BUTTONS) {
       el(id).disabled = false;
     }
   }
@@ -356,7 +367,7 @@ export async function render(view, _status, params) {
     selection = null;
     regions.clearRegions();
     el("selection-info").textContent = t("editor.noSelection");
-    for (const id of ["range-transcribe", "audio-trim", "audio-cut", "clear-selection"]) {
+    for (const id of SELECTION_BUTTONS) {
       el(id).disabled = true;
     }
   }
@@ -398,6 +409,14 @@ export async function render(view, _status, params) {
       toast(error.message);
     }
   };
+  // A passage the recognition left out: the selection becomes a row one can
+  // type into. It carries no text — that is the point — so it is added
+  // straight away and the cursor lands in its field.
+  el("range-add-segment").onclick = async () => {
+    if (!selection) return;
+    await addSegment(selection.start, selection.end, "");
+  };
+
   el("audio-trim").onclick = () => runAudioEdit("trim");
   el("audio-cut").onclick = () => runAudioEdit("cut");
 
@@ -408,6 +427,7 @@ export async function render(view, _status, params) {
   // arrives long after the click that asked for it. So the text is shown as
   // well, with a copy button that runs inside a click and always works.
   let rangeText = "";
+  let rangeSpan = null;   // the passage that text was recognised in
 
   async function copyRangeText({ silent = false } = {}) {
     if (!rangeText) return false;
@@ -423,6 +443,7 @@ export async function render(view, _status, params) {
 
   function showRangeText({ start_s, end_s, text }) {
     rangeText = text ?? "";
+    rangeSpan = { start: start_s, end: end_s };
     el("range-result").hidden = false;
     el("range-result-span").textContent = t("editor.rangeResult", {
       start: formatDuration(start_s), end: formatDuration(end_s),
@@ -430,14 +451,24 @@ export async function render(view, _status, params) {
     el("range-result-text").textContent = rangeText || t("editor.rangeEmpty");
     el("range-result-text").lang = sourceLanguage;
     el("range-copy").disabled = !rangeText;
+    el("range-result-segment").disabled = !rangeText;
     copyRangeText({ silent: true }).then((copied) => {
       if (copied) toast(t("editor.rangeCopied"));
     });
   }
 
+  // The recognised text of a selection is meant to be checked, not written
+  // back (see above) — but once it turns out to be the missing passage, it
+  // should not have to be typed again either.
+  el("range-result-segment").onclick = async () => {
+    if (!rangeSpan) return;
+    await addSegment(rangeSpan.start, rangeSpan.end, rangeText);
+  };
+
   el("range-copy").onclick = () => copyRangeText();
   el("range-result-close").onclick = () => {
     rangeText = "";
+    rangeSpan = null;
     el("range-result").hidden = true;
   };
 
@@ -457,12 +488,44 @@ export async function render(view, _status, params) {
   const timers = new Map();   // segment id -> debounce timer
   const undoStack = [];       // {id, field, before}
 
+  // A row that has just been added is the one the user wants to type in — it
+  // is remembered by id rather than focused on the spot, because the same
+  // change also arrives as an event and renders the list a second time.
+  let focusSegmentId = null;
+
   renderSegments();
 
   function renderSegments() {
     const list = el("segment-list");
     el("no-segments").hidden = segments.length > 0;
     list.replaceChildren(...segments.map((segment) => buildRow(segment)));
+    if (focusSegmentId === null) return;
+    const row = list.querySelector(`.seg-row[data-id="${focusSegmentId}"]`);
+    if (!row) return;
+    row.scrollIntoView({ block: "center" });
+    row.querySelector(".seg-text")?.focus();
+  }
+
+  // The one way a segment comes into being from the editor: for the selected
+  // passage, empty or with the text a re-transcription handed back.
+  async function addSegment(start, end, text) {
+    try {
+      const created = await api.createSegment(fileId, {
+        start_s: start, end_s: end, text: text ?? "",
+      });
+      focusSegmentId = created.id;
+      showSegmentsPanel();
+      const fresh = await api.getSegments(fileId);
+      segments = fresh.segments;
+      renderSegments();
+      toast(t("editor.segmentAdded"));
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      // only now: the event about this very change may have rendered the list
+      // in between, and whichever render comes last has to find the row again
+      focusSegmentId = null;
+    }
   }
 
   function buildRow(segment) {
@@ -628,6 +691,15 @@ export async function render(view, _status, params) {
     });
     applyPanels();
     renderDerivedPanels();
+  }
+
+  // On a narrow screen only one panel is open at a time — a new segment row
+  // is of no use behind the cleaned text.
+  function showSegmentsPanel() {
+    if (activePanels.has("segments")) return;
+    if (!desktopQuery.matches) activePanels.clear();
+    activePanels.add("segments");
+    applyPanels();
   }
 
   function applyPanels() {
@@ -876,10 +948,11 @@ export async function render(view, _status, params) {
     on("segments.changed", async ({ file_id }) => {
       if (file_id !== fileId) return;
       const fresh = await api.getSegments(fileId).catch(() => null);
-      if (fresh) {
-        segments = fresh.segments;
-        renderSegments();
-      }
+      if (!fresh) return;
+      segments = fresh.segments;
+      // don't re-render under the user's cursor — their own edit caused this
+      const editing = document.activeElement?.closest?.(".seg-row");
+      if (!editing) renderSegments();
     }),
     on("range.text", (payload) => {
       if (payload.file_id === fileId) showRangeText(payload);

@@ -572,7 +572,13 @@ transcript and AI texts:
     are created** — the existing ones stay untouched. That way one can listen
     back to what was really said in a passage without overwriting one's own
     correction; for replacing the segments there is "Re-transcribe the whole
-    file".
+    file". Should the recognised text be worth keeping after all, **Add the
+    text as a segment** — the plus button next to *Copy* — files it as a new
+    segment for exactly that section.
+  - **Add an empty segment for the selection** — the plus button: a segment
+    without text is created for the selected section, ready to type into. It is
+    meant for a passage the recognition skipped. The segment takes its place in
+    the list by its start time, not at the end of it.
   - **Trim to selection** — keeps only the selected range.
   - **Remove selection** — cuts the selected range out and joins what is before
     and after it back together.

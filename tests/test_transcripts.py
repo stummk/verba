@@ -71,6 +71,28 @@ def test_delete_segment_reindexes(file_with_segments):
     assert [s["idx"] for s in remaining] == [0, 1]
 
 
+def test_create_segment_writes_workspace_json(file_with_segments):
+    created = transcripts.create_segment(file_with_segments["id"], 3.0, 3.5, "eingefuegt", "Anna")
+    assert created["text"] == "eingefuegt"
+    assert created["speaker"] == "Anna"
+    listed = transcripts.list_segments(file_with_segments["id"])
+    assert [s["text"] for s in listed] == ["eins", "zwei", "eingefuegt", "drei"]
+    assert [s["idx"] for s in listed] == [0, 1, 2, 3]
+
+    data = _transcript_json(file_with_segments)
+    assert [s["text"] for s in data["segments"]] == ["eins", "zwei", "eingefuegt", "drei"]
+
+
+def test_create_segment_on_empty_transcript(tmp_path):
+    source = tmp_path / "b.mp3"
+    source.write_bytes(b"x")
+    project = workspace.create_project("Leer")
+    [file_row] = workspace.import_paths(project, [str(source)])
+    created = transcripts.create_segment(file_row["id"], 1.0, 2.0)
+    assert created["idx"] == 0
+    assert created["text"] == ""
+
+
 def test_speaker_migration_on_legacy_db():
     with db.get_conn() as conn:
         conn.execute("DROP TABLE segments")

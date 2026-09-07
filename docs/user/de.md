@@ -603,6 +603,14 @@ transkribierten Datei öffnet den Editor — einen
     bleiben unangetastet. So lässt sich nachhören, was an einer Stelle
     tatsächlich gesagt wurde, ohne die eigene Korrektur zu überschreiben; für
     das Ersetzen der Segmente ist „Ganze Datei neu transkribieren" da.
+    Soll der erkannte Text dann doch stehen bleiben, legt **Text als Segment
+    übernehmen** — die Schaltfläche mit dem Plus neben *Kopieren* — ihn als
+    neues Segment für genau diesen Abschnitt an.
+  - **Leeres Segment für die Auswahl anlegen** — die Schaltfläche mit dem Plus:
+    Für den ausgewählten Abschnitt entsteht ein Segment ohne Text, in das
+    sofort geschrieben werden kann. Gedacht für eine Stelle, die die Erkennung
+    übersprungen hat. Das Segment reiht sich nach seiner Anfangszeit an der
+    richtigen Stelle in die Liste ein, nicht an deren Ende.
   - **Auf Auswahl kürzen** — behält nur den ausgewählten Bereich.
   - **Auswahl entfernen** — schneidet den ausgewählten Bereich heraus und fügt
     den Rest davor und dahinter wieder zusammen.

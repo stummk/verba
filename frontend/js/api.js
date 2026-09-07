@@ -187,6 +187,7 @@ export const api = {
   transcribeProject: (projectId, force = false, options = {}) =>
     request("POST", `/api/projects/${projectId}/transcribe?force=${force}`, options),
   getSegments: (fileId) => request("GET", `/api/files/${fileId}/segments`),
+  createSegment: (fileId, segment) => request("POST", `/api/files/${fileId}/segments`, segment),
   updateSegment: (segmentId, changes) => request("PUT", `/api/segments/${segmentId}`, changes),
   deleteSegment: (segmentId) => request("DELETE", `/api/segments/${segmentId}`),
   transcribeRange: (fileId, startS, endS, options = {}) =>

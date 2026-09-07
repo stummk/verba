@@ -67,6 +67,44 @@ def test_update_file_header_rejects_too_long_value(client, file_row):
     assert response.status_code == 422
 
 
+def test_create_segment_endpoint(client, file_row):
+    response = client.post(
+        f"/api/files/{file_row['id']}/segments",
+        json={"start_s": 4.0, "end_s": 6.0, "text": "", "speaker": ""},
+    )
+    assert response.status_code == 200
+    assert response.json()["text"] == ""
+    listed = client.get(f"/api/files/{file_row['id']}/segments").json()["segments"]
+    assert [s["start_s"] for s in listed] == [0.0, 4.0]
+
+
+def test_create_segment_sorts_into_the_transcript(client, file_row):
+    # a passage before the existing segment takes its place, not the end
+    client.post(
+        f"/api/files/{file_row['id']}/segments",
+        json={"start_s": 5.0, "end_s": 6.0, "text": "spaet"},
+    )
+    client.post(
+        f"/api/files/{file_row['id']}/segments",
+        json={"start_s": 3.0, "end_s": 4.0, "text": "mitte"},
+    )
+    listed = client.get(f"/api/files/{file_row['id']}/segments").json()["segments"]
+    assert [s["text"] for s in listed] == ["hallo", "mitte", "spaet"]
+    assert [s["idx"] for s in listed] == [0, 1, 2]
+
+
+def test_create_segment_rejects_invalid_span(client, file_row):
+    response = client.post(
+        f"/api/files/{file_row['id']}/segments", json={"start_s": 3.0, "end_s": 3.0}
+    )
+    assert response.status_code == 422
+
+
+def test_create_segment_on_foreign_file_404(client):
+    response = client.post("/api/files/99999/segments", json={"start_s": 0, "end_s": 1})
+    assert response.status_code == 404
+
+
 def test_update_missing_segment_404(client, file_row):
     assert client.put("/api/segments/99999", json={"text": "x"}).status_code == 404
 

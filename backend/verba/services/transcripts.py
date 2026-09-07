@@ -35,6 +35,37 @@ def get_segment(segment_id: int) -> dict[str, Any] | None:
     return db.row_to_dict(row)
 
 
+def create_segment(
+    file_id: int,
+    start_s: float,
+    end_s: float,
+    text: str = "",
+    speaker: str = "",
+) -> dict[str, Any]:
+    """Insert one segment and sort it into the transcript by its start time.
+
+    The editor uses this for a passage the recognition missed: a selection on
+    the waveform becomes a row one can type into, and the text of a
+    re-transcribed selection can be kept instead of only copied. The new row
+    is appended behind the highest idx — UNIQUE(file_id, idx) tolerates no
+    gap-free insert in place — and `_reindex` then puts it where its start
+    time belongs.
+    """
+    with db.get_conn() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(MAX(idx), -1) AS last FROM segments WHERE file_id = ?", (file_id,)
+        ).fetchone()
+        cursor = conn.execute(
+            "INSERT INTO segments (file_id, idx, start_s, end_s, text, speaker) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (file_id, row["last"] + 1, start_s, end_s, text, speaker),
+        )
+        segment_id = int(cursor.lastrowid)
+    _reindex(file_id)
+    sync_after_change(file_id)
+    return get_segment(segment_id)
+
+
 def update_segment(segment_id: int, changes: dict[str, Any]) -> dict[str, Any] | None:
     """Update text/speaker/start_s/end_s of one segment; returns the new row."""
     allowed = {k: v for k, v in changes.items() if k in ("text", "speaker", "start_s", "end_s")}
