@@ -18,10 +18,13 @@ bulk import cannot starve everyone else.
 
 Handlers are registered per job kind:
 
-    def handle(job: dict, cancel: threading.Event, report: Callable[[int, str], None]) -> None
+    def handle(job: dict, cancel: threading.Event, report: Callable[[int, str], None]) -> str | None
 
 A handler that raises JobCancelled (or returns after `cancel` is set) marks
-the job as cancelled; any other exception marks it as failed.
+the job as cancelled; any other exception marks it as failed. What it returns
+is stored as the job's `result` and broadcast with it, so the client that
+started the job learns what came out of it — the name of an exported PDF, for
+instance, which nobody else can reconstruct.
 """
 
 from __future__ import annotations
@@ -37,7 +40,7 @@ from ..events import hub
 
 logger = logging.getLogger(__name__)
 
-Handler = Callable[[dict[str, Any], threading.Event, Callable[[int, str], None]], None]
+Handler = Callable[[dict[str, Any], threading.Event, Callable[[int, str], None]], str | None]
 
 # export_pdf may call the LLM for structuring, so it shares the llm lane
 # (phased batching with a local model, parallel with a remote one).
@@ -317,8 +320,12 @@ class JobQueue:
 
         try:
             self._prepare_resources(job)
-            handler(job, cancel, report)
-            self._finish(job_id, "cancelled" if cancel.is_set() else "done")
+            result = handler(job, cancel, report)
+            self._finish(
+                job_id,
+                "cancelled" if cancel.is_set() else "done",
+                result=result or "",
+            )
         except JobCancelled:
             self._finish(job_id, "cancelled")
         except Exception as exc:
@@ -338,12 +345,13 @@ class JobQueue:
         else:
             llamacpp.stop_server()  # transcription batch begins: LLM releases memory
 
-    def _finish(self, job_id: int, status: str, error: str = "") -> None:
+    def _finish(self, job_id: int, status: str, error: str = "", result: str = "") -> None:
         with db.get_conn() as conn:
             conn.execute(
-                "UPDATE jobs SET status = ?, error = ?, finished_at = datetime('now'), "
+                "UPDATE jobs SET status = ?, error = ?, result = ?, "
+                "finished_at = datetime('now'), "
                 "progress = CASE WHEN ? = 'done' THEN 100 ELSE progress END WHERE id = ?",
-                (status, error, status, job_id),
+                (status, error, result, status, job_id),
             )
         self._publish(job_id)
 

@@ -41,6 +41,40 @@ def test_job_runs_and_completes():
         queue.stop()
 
 
+def test_handler_result_is_stored_on_the_job():
+    """What a handler returns travels with the job — the PDF export names its
+    file that way, and the client that started it downloads exactly that one."""
+    queue = make_queue()
+
+    def handler(job, cancel, report):
+        return "a.en.pdf"
+
+    queue.register("produces", handler)
+    queue.start()
+    try:
+        job = queue.enqueue("produces")
+        assert wait_for(lambda: queue.get(job["id"])["status"] == "done")
+        assert queue.get(job["id"])["result"] == "a.en.pdf"
+    finally:
+        queue.stop()
+
+
+def test_job_without_result_stays_empty():
+    queue = make_queue()
+
+    def handler(job, cancel, report):
+        pass
+
+    queue.register("quiet", handler)
+    queue.start()
+    try:
+        job = queue.enqueue("quiet")
+        assert wait_for(lambda: queue.get(job["id"])["status"] == "done")
+        assert queue.get(job["id"])["result"] == ""
+    finally:
+        queue.stop()
+
+
 def test_job_failure_is_recorded():
     queue = make_queue()
 

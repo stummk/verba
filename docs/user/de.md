@@ -468,7 +468,10 @@ transkribierten Datei öffnet den Editor — einen
 - **Datei wechseln und exportieren ohne Umweg**: Oben listet eine Auswahlliste
   alle Dateien desselben Transkripts und zeigt die geöffnete als ausgewählt an —
   ein Griff genügt, um zu einer anderen zu wechseln; daneben startet das
-  PDF-Symbol den **Export** direkt aus dem Editor.
+  PDF-Symbol den **Export** direkt aus dem Editor. Ist das PDF fertig, lädt der
+  Browser es sofort herunter — im Editor gibt es keine Liste der Exporte, aus
+  der man es sonst holen müsste. Es liegt trotzdem wie immer im Ordner
+  `exports/` und in der Karte **Exporte (PDF)** des Transkripts.
 - **Text und Sprecher** direkt in den Segmentzeilen bearbeiten — Änderungen werden
   automatisch gespeichert („Gespeichert"-Anzeige), **Rückgängig** hebt die letzten
   Änderungen schrittweise auf

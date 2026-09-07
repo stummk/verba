@@ -131,6 +131,10 @@ CREATE TABLE IF NOT EXISTS jobs (
     progress    INTEGER NOT NULL DEFAULT 0,
     message     TEXT NOT NULL DEFAULT '',
     error       TEXT NOT NULL DEFAULT '',
+    -- What the job produced, for the client that started it: the export job
+    -- puts its PDF file name here so the UI can offer the finished file
+    -- without guessing its name.
+    result      TEXT NOT NULL DEFAULT '',
     session_id  TEXT NOT NULL DEFAULT '',
     priority    INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
@@ -314,6 +318,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # not part of _SCHEMA: that script runs before this migration, so on a
     # database written without the column the index would fail to create
     conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_owner ON projects(owner_id)")
+    add_missing("jobs", "result", "result TEXT NOT NULL DEFAULT ''")
     add_missing("jobs", "session_id", "session_id TEXT NOT NULL DEFAULT ''")
     add_missing("jobs", "priority", "priority INTEGER NOT NULL DEFAULT 0")
     # An index written before these columns existed knows only the transcript

@@ -713,8 +713,13 @@ def _file_documents(
 
 def handle_export_job(
     job: dict[str, Any], cancel: threading.Event, report: Callable[[int, str], None]
-) -> None:
+) -> str:
     """Job handler: export one file or a whole project as PDF.
+
+    Returns the file name of the finished PDF: the client that asked for the
+    export cannot work out which of the names in the folder is its own —
+    a selection is named after its first file, a combined export after none
+    of its languages.
 
     Payload: {"scope": "file"|"project", "file_id"?, "project_id"?,
               "file_ids"?, "language": "", "combine": false}
@@ -786,6 +791,7 @@ def handle_export_job(
         keep_sections=bool(project.get("type_keep_sections")),
     )
     report(100, f"Export fertig: {target.name}")
+    return target.name
 
 
 def enqueue_file_export(

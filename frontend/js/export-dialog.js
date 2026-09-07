@@ -31,8 +31,14 @@ export function closeExportDialog() {
  * of files or for a whole project. A selection of several files ends up in one
  * PDF, each file a section of it, exactly like the export of the whole
  * transcript; it just leaves the files out that were not selected.
+ *
+ * `onStarted` receives the enqueued job, so the caller can follow that one
+ * export and nothing else — the editor downloads the PDF as soon as it is
+ * finished, and only the export it started itself.
  */
-export function openExportDialog({ fileId = null, fileIds = null, projectId = null } = {}) {
+export function openExportDialog({
+  fileId = null, fileIds = null, projectId = null, onStarted = null,
+} = {}) {
   const host = modalHost();
   const selection = fileIds ?? (fileId ? [fileId] : []);
   const intro = selection.length > 1
@@ -74,13 +80,15 @@ export function openExportDialog({ fileId = null, fileIds = null, projectId = nu
     const choice = el("export-language").value;
     const options = choice === COMBINED ? { combine: true } : { language: choice };
     try {
+      let job;
       if (selection.length === 1) {
-        await api.exportFile(selection[0], options);
+        job = await api.exportFile(selection[0], options);
       } else {
         // no selection: the whole transcript; a selection: the same job, told
         // which files belong in the one PDF it renders
-        await api.exportProject(projectId, { ...options, file_ids: selection });
+        job = await api.exportProject(projectId, { ...options, file_ids: selection });
       }
+      onStarted?.(job);
       toast(t("export.started"));
       closeExportDialog();
     } catch (error) {

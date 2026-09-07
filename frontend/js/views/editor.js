@@ -204,7 +204,15 @@ export async function render(view, _status, params) {
   el("range-copy").innerHTML = iconSvg("copy");
   el("range-result-close").innerHTML = iconSvg("close");
   el("editor-export").innerHTML = iconSvg("pdf");
-  el("editor-export").onclick = () => openExportDialog({ fileId });
+  // The editor has no export list to pick the finished PDF from, so it hands
+  // it straight to the browser: the export it started itself, recognised by
+  // its job id, and named by the job — only the handler knows which of the
+  // files in the folder it wrote.
+  let exportJobId = null;
+  el("editor-export").onclick = () => openExportDialog({
+    fileId,
+    onStarted: (job) => { exportJobId = job?.id ?? null; },
+  });
   el("spellcheck-toggle").onclick = () => {
     spellcheckOn = !spellcheckOn;
     localStorage.setItem(SPELLCHECK_KEY, spellcheckOn ? "on" : "off");
@@ -898,10 +906,36 @@ export async function render(view, _status, params) {
         // the run is over: the panels get their start buttons back, enabled
         if (job.status === "failed" || job.status === "cancelled") renderDerivedPanels();
       }
+      if (job.kind === "export_pdf" && job.id === exportJobId) {
+        if (job.status === "done" && job.result) {
+          exportJobId = null;
+          toast(t("export.done"));
+          downloadExport(file.project_id, job.result);
+        } else if (job.status === "failed" || job.status === "cancelled") {
+          exportJobId = null;
+          // nothing on screen holds an export's state here — a failure has to
+          // say so itself, or the download the user is waiting for just never
+          // arrives
+          if (job.error) toast(job.error);
+        }
+      }
     }),
   ];
 
   setupPanels();
+}
+
+// The finished PDF, straight into the browser's downloads. A named download
+// with `rel="noopener"`, like the transcript view does it, so the file arrives
+// without a tab of its own opening for it.
+function downloadExport(projectId, name) {
+  const link = document.createElement("a");
+  link.href = api.exportUrl(projectId, name);
+  link.download = name;
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }
 
 // A finished job clears the line; a failed one leaves its reason standing.

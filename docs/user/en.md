@@ -445,7 +445,9 @@ transcript and AI texts:
 - **Switch files and export without a detour**: a picker at the top lists every
   file of the same transcript and shows the open one as selected — one pick
   moves to another; next to it the PDF icon starts the **export** straight from
-  the editor.
+  the editor. Once the PDF is finished the browser downloads it right away —
+  the editor has no list of exports to pick it from. It still lands in the
+  `exports/` folder and in the transcript's **Exports (PDF)** card as always.
 - **Text and speaker** are edited directly in the segment rows — changes are
   saved automatically ("Saved" indicator), **Undo** reverts recent changes
   step by step

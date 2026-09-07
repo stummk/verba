@@ -8,6 +8,7 @@ centred "---" line.
 from __future__ import annotations
 
 import threading
+import time
 
 import pytest
 
@@ -48,7 +49,7 @@ def make_project(tmp_path, files: dict[str, dict[str, str]]):
 
 
 def run_export(payload):
-    pdf.handle_export_job({"payload": payload}, NO_CANCEL, no_report)
+    return pdf.handle_export_job({"payload": payload}, NO_CANCEL, no_report)
 
 
 def rendered(monkeypatch) -> list:
@@ -213,7 +214,57 @@ def test_the_pdf_is_actually_written(data_env, tmp_path):
     assert target.is_file() and target.stat().st_size > 0
 
 
+def test_the_job_names_the_pdf_it_wrote(data_env, tmp_path):
+    """The name is the job's answer, not something the client can derive: a
+    combined export carries none of its languages, and a selection is named
+    after its first file. Without it the editor could not offer the download.
+    """
+    project = make_project(
+        tmp_path, {"a.mp3": {"": "Deutsch", "en": "English"}, "b.mp3": {"": "Zweite"}}
+    )
+    files = workspace.list_files(project["id"])
+
+    assert run_export({"scope": "file", "file_id": files[0]["id"], "language": "en"}) == "a.en.pdf"
+    assert run_export({"scope": "file", "file_id": files[0]["id"], "combine": True}) == "a.all.pdf"
+    selection = run_export(
+        {"scope": "project", "project_id": project["id"], "file_ids": [f["id"] for f in files]}
+    )
+    assert selection == "a+1.pdf"
+    assert (pdf.exports_dir(project) / selection).is_file()
+
+
 # ── API ───────────────────────────────────────────────────────────────
+
+
+def test_the_editor_can_download_what_the_job_produced(client, tmp_path):
+    """The path the editor walks: start the export, wait for the job the API
+    handed back, and fetch the PDF under the name that job reports."""
+    settings = config.get_settings()
+    settings.general.workspaces_dir = str(tmp_path / "workspaces")
+    config.save_settings(settings)
+    project_types.seed_builtin_types()
+    project = make_project(tmp_path, {"a.mp3": {"": "Deutsch", "en": "English"}})
+    file_row = workspace.list_files(project["id"])[0]
+
+    job = client.post(f"/api/files/{file_row['id']}/export", json={"language": "en"}).json()
+
+    deadline = time.monotonic() + 30
+    finished = None
+    while time.monotonic() < deadline:
+        rows = client.get("/api/jobs").json()
+        current = next((row for row in rows if row["id"] == job["id"]), None)
+        if current and current["status"] not in ("queued", "running"):
+            finished = current
+            break
+        time.sleep(0.05)
+
+    assert finished is not None, "export job did not finish"
+    assert finished["status"] == "done", finished["error"]
+    assert finished["result"] == "a.en.pdf"
+
+    response = client.get(f"/api/projects/{project['id']}/exports/{finished['result']}")
+    assert response.status_code == 200
+    assert response.content.startswith(b"%PDF")
 
 
 def test_api_accepts_the_combine_flag(client, tmp_path, monkeypatch):
