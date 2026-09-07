@@ -8,6 +8,7 @@ import { closeExportDialog, openExportDialog } from "../export-dialog.js";
 import { iconButton, iconSvg } from "../icons.js";
 import { t } from "../i18n.js";
 import { jobCardHost, jobLine, jobStepLabel } from "../jobs.js";
+import { languageChip, setChipLanguage } from "../language-chip.js";
 import { fillLanguageSelect } from "../languages.js";
 import { on } from "../ws.js";
 
@@ -562,15 +563,24 @@ export async function render(view, _status, params) {
     const durationCell = document.createElement("td");
     durationCell.textContent = formatDuration(fileRow.duration);
 
+    // The language of the row as a chip: the flag reads at a glance down the
+    // column, the tooltip names the language, and the picker behind it is
+    // filterable — a select of a hundred entries per row was neither.
     const languageCell = document.createElement("td");
-    const languageSelect = document.createElement("select");
-    languageSelect.className = "file-language";
-    fillLanguageSelect(languageSelect, {
-      placeholder: t("project.advAuto"),
-      selected: fileLanguages.get(fileRow.id) ?? fileRow.language ?? "",
+    const chipOptions = {
+      hint: t("project.advLanguage"),
+      autoTitle: t("project.advAuto"),
+    };
+    const languageCellChip = languageChip({
+      ...chipOptions,
+      code: fileLanguages.get(fileRow.id) ?? fileRow.language ?? "",
+      dialogTitle: t("project.advLanguage"),
+      onPick: (code) => {
+        fileLanguages.set(fileRow.id, code);
+        setChipLanguage(languageCellChip, code, chipOptions);
+      },
     });
-    languageSelect.onchange = () => fileLanguages.set(fileRow.id, languageSelect.value);
-    languageCell.appendChild(languageSelect);
+    languageCell.appendChild(languageCellChip);
 
     const statusCell = document.createElement("td");
     const badge = document.createElement("span");

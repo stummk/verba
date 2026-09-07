@@ -10,9 +10,8 @@ import { el, formatDuration, html, toast } from "../dom.js";
 import { closeExportDialog, openExportDialog } from "../export-dialog.js";
 import { iconButton, iconSvg, setIcon } from "../icons.js";
 import { currentLanguage, t } from "../i18n.js";
-import {
-  fillLanguageSelect, languageLabel, languageName, sortedLanguages,
-} from "../languages.js";
+import { languageChip, setChipLanguage } from "../language-chip.js";
+import { languageName } from "../languages.js";
 import { on } from "../ws.js";
 
 const AUTOSAVE_DELAY = 700;
@@ -95,9 +94,7 @@ export async function render(view, _status, params) {
                 title="${t("editor.play")}" aria-label="${t("editor.play")}"></button>
         <span id="time-display" class="muted small time-display">0:00 / ${formatDuration(file.duration)}</span>
         <span class="spacer"></span>
-        <select id="file-language" class="lang-select"
-                aria-label="${t("editor.audioLanguage")}"
-                title="${t("editor.audioLanguageHint")}"></select>
+        <span id="file-language-host"></span>
         <button id="file-transcribe" class="icon-btn"
                 title="${t("editor.retranscribeFile")}"
                 aria-label="${t("editor.retranscribeFile")}"></button>
@@ -134,6 +131,11 @@ export async function render(view, _status, params) {
         </div>
         <span class="spacer"></span>
         <span id="save-state" class="muted small"></span>
+        <!-- the language of the translation and the way to delete it belong to
+             the panel, but sit here with the other tools: the panel itself is
+             then nothing but the text, and on a narrow screen the chip does not
+             eat a line of its own above it -->
+        <span id="translation-tools" class="translation-tools" hidden></span>
         <button id="spellcheck-toggle" class="icon-btn"
                 title="${t("editor.spellcheck")}" aria-label="${t("editor.spellcheck")}"></button>
         <button id="undo-button" class="icon-btn" disabled
@@ -227,28 +229,33 @@ export async function render(view, _status, params) {
   // the cleanup, and a translation that is then labelled with a language it is
   // not in. So the language is stated here, and the next transcription takes
   // it as given instead of detecting again.
-  const languageSelect = el("file-language");
-  fillLanguageSelect(languageSelect, {
-    placeholder: t("editor.audioLanguageAuto"),
-    selected: file.language ?? "",
-  });
-  languageSelect.onchange = async () => {
-    const chosen = languageSelect.value;
-    try {
-      const updated = await api.updateFileLanguage(fileId, chosen);
-      Object.assign(file, updated);
-      sourceLanguage = file.language || settings?.whisper?.language || currentLanguage();
-      for (const field of view.querySelectorAll("[data-spell-source]")) {
-        field.lang = sourceLanguage;
-      }
-      toast(chosen
-        ? t("editor.audioLanguageSaved", { lang: languageName(chosen) })
-        : t("editor.audioLanguageCleared"));
-    } catch (error) {
-      languageSelect.value = file.language ?? "";
-      toast(error.message);
-    }
+  const audioChipOptions = {
+    autoTitle: t("editor.audioLanguageAuto"),
+    hint: t("editor.audioLanguageHint"),
   };
+  const audioLanguageChip = languageChip({
+    ...audioChipOptions,
+    code: file.language ?? "",
+    dialogTitle: t("editor.audioLanguage"),
+    onPick: async (chosen) => {
+      try {
+        const updated = await api.updateFileLanguage(fileId, chosen);
+        Object.assign(file, updated);
+        setChipLanguage(audioLanguageChip, file.language ?? "", audioChipOptions);
+        sourceLanguage = file.language || settings?.whisper?.language || currentLanguage();
+        for (const field of view.querySelectorAll("[data-spell-source]")) {
+          field.lang = sourceLanguage;
+        }
+        toast(chosen
+          ? t("editor.audioLanguageSaved", { lang: languageName(chosen) })
+          : t("editor.audioLanguageCleared"));
+      } catch (error) {
+        // the chip keeps showing what the file still says
+        toast(error.message);
+      }
+    },
+  });
+  el("file-language-host").append(audioLanguageChip);
 
   // ── switch between the files of the same transcript ────────────────
   // the open file is listed and selected, so the dropdown says where one is
@@ -630,6 +637,7 @@ export async function render(view, _status, params) {
     for (const tab of el("panel-tabs").querySelectorAll("button")) {
       tab.classList.toggle("active", activePanels.has(tab.dataset.panel));
     }
+    el("translation-tools").hidden = !activePanels.has("translation");
     bindScrollSync();
   }
 
@@ -754,28 +762,31 @@ export async function render(view, _status, params) {
 
   function renderTranslationPanel() {
     const host = el("translation-panel");
-    if (!host) return;
-    const select = document.createElement("select");
-    select.className = "lang-select";
-    // two groups, so a glance answers "which language is already translated?"
+    const tools = el("translation-tools");
+    if (!host || !tools) return;
+    // The chip says which translation is open — flag, code, and the language
+    // in its tooltip. Its picker splits the list in two, so a glance there
+    // still answers "which language is already translated?".
     const existing = [...new Set(
       derivedTexts
         .filter((x) => x.kind === "translation" && x.content.trim())
         .map((x) => x.language)
     )];
-    const done = document.createElement("optgroup");
-    done.label = t("editor.langTranslated");
-    for (const code of existing) {
-      done.append(new Option(languageLabel(code), code));
-    }
-    const open = document.createElement("optgroup");
-    open.label = t("editor.langOpen");
-    for (const { code } of sortedLanguages()) {
-      if (!existing.includes(code)) open.append(new Option(languageLabel(code), code));
-    }
-    if (existing.length) select.append(done);
-    select.append(open);
-    select.value = translationLanguage;
+    const languageOptions = {
+      dialogTitle: t("ai.tabTranslation"),
+      auto: false,
+      groups: [{ label: t("editor.langTranslated"), codes: existing }],
+      restLabel: t("editor.langOpen"),
+    };
+    const chip = languageChip({
+      ...languageOptions,
+      code: translationLanguage,
+      onPick: (code) => {
+        translationLanguage = code;
+        setChipLanguage(chip, code, languageOptions);
+        fillBody();
+      },
+    });
     // A translation is the one derived text that piles up: one per language,
     // and a wrong or unwanted one would otherwise stay in the file and in the
     // export list forever — clearing the textarea leaves an empty shell behind.
@@ -801,11 +812,8 @@ export async function render(view, _status, params) {
         toast(error.message);
       }
     };
-    const head = document.createElement("div");
-    head.className = "lang-row";
-    head.append(select, remove);
     const body = document.createElement("div");
-    const fillBody = () => {
+    function fillBody() {
       const text = derivedText("translation", translationLanguage);
       remove.hidden = !text;
       body.replaceChildren(
@@ -813,14 +821,10 @@ export async function render(view, _status, params) {
           ? buildTextEditor(text, "translation", translationLanguage)
           : [buildCreateAction("translation", translationLanguage)])
       );
-    };
-    // switching the language only swaps the body — the select stays put
-    select.onchange = () => {
-      translationLanguage = select.value;
-      fillBody();
-    };
+    }
     fillBody();
-    host.replaceChildren(head, body);
+    tools.replaceChildren(chip, remove);
+    host.replaceChildren(body);
   }
 
   function buildCreateAction(kind, language) {

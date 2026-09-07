@@ -410,7 +410,8 @@ details.advanced .form-grid { margin-top: .25rem; }
   vertical-align: top;
   overflow-wrap: anywhere;
 }
-.file-language { min-width: 9rem; }
+/* the language column holds a chip, which is as wide as its flag and code */
+.filetable td .lang-chip { white-space: nowrap; }
 .filetable tr:last-child td { border-bottom: none; }
 .col-actions { text-align: right; white-space: nowrap; }
 .col-actions button { margin-left: .3rem; }
@@ -435,10 +436,9 @@ details.advanced .form-grid { margin-top: .25rem; }
 @media (max-width: 30em) {
   .filetable th:nth-child(4),
   .filetable td:nth-child(4) { display: none; }
-  /* the row has to fit: tighter cells, and the language picker gives way
-     instead of pushing the action buttons off screen */
+  /* the row has to fit: tighter cells — the language chip is small enough to
+     stay, where the select before it pushed the action buttons off screen */
   .filetable th, .filetable td { padding-left: .3rem; padding-right: .3rem; }
-  .file-language { min-width: 4rem; }
   .col-actions button { margin-left: 0; }
 }
 
@@ -563,11 +563,7 @@ details.advanced .form-grid { margin-top: .25rem; }
 #selection-info { text-align: right; }
 /* the language of the recording rides in the tool row: it decides how the
    next transcription reads, so it belongs next to the buttons that start one */
-.editor-controls .lang-select {
-  width: auto;
-  max-width: min(14rem, 45vw);
-  margin-bottom: 0;
-}
+.editor-controls .lang-chip { flex: 0 0 auto; }
 /* the text of a transcribed selection — read it, copy it, close it again */
 .range-result {
   margin-top: .75rem;
@@ -591,7 +587,10 @@ details.advanced .form-grid { margin-top: .25rem; }
 @media (min-width: 48em) {
   .timeline-card { position: sticky; top: var(--top-bar-h); z-index: 4; }
 }
-.editor-head { display: flex; align-items: center; gap: .6rem; }
+.editor-head { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+/* the translation's language and its delete button ride with the other
+   tools of the workspace, so they stay together at the end of the row */
+.translation-tools { display: inline-flex; align-items: center; gap: .25rem; }
 .file-header-editor h2 { font-size: 1rem; margin: 0; }
 .header-fields { margin-top: .25rem; }
 
@@ -1051,14 +1050,79 @@ dialog textarea {
   gap: .6rem;
   padding: 1rem 0;
 }
-.lang-row {
-  display: flex;
-  align-items: center;
-  gap: .4rem;
-  margin-bottom: .6rem;
+
+/* ── language chips ──────────────────────────────────────────────────
+   A language is shown as a chip carrying its flag; the tooltip names it and a
+   click opens the picker. Compact enough for a table cell and for the tool row
+   under the waveform, where a hundred-entry <select> never belonged. */
+.lang-chip {
+  font-weight: 500;
+  font-size: .8rem;
+  padding: .2rem .55rem;
+  gap: .35rem;
+  border: .0625rem solid var(--md-outline-variant);
+  background: var(--md-surface-container);
+  color: var(--md-on-surface);
+  max-width: 100%;
 }
-.lang-row .lang-select { flex: 1; margin-bottom: 0; }
-.lang-select { margin-bottom: .6rem; }
+.lang-chip:hover { box-shadow: none; background: var(--md-surface-container-high); }
+.lang-chip.active {
+  border-color: transparent;
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+.lang-chip.auto { font-style: italic; color: var(--md-on-surface-variant); }
+.lang-chip-flag {
+  font-size: 1.05rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+}
+/* the globe stands in for a flag, so it takes the flag's box, not the text's */
+.lang-chip-globe svg { width: 1em; height: 1em; }
+/* where the system draws no flags: the country letters in a flag-shaped box */
+.lang-chip-region {
+  font-size: .6rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  padding: .05rem .2rem;
+  border-radius: .15rem;
+  background: var(--md-primary);
+  color: var(--md-on-primary);
+}
+.lang-chip.active .lang-chip-region { background: var(--md-on-secondary-container); color: var(--md-secondary-container); }
+.lang-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* the picker: a filter and a scrolling list, so a language is typed for
+   instead of scrolled to */
+.lang-dialog { width: min(92vw, 24rem); }
+.lang-dialog h2 { margin-top: 0; }
+#lang-filter { margin-bottom: .6rem; }
+.lang-list {
+  max-height: min(24rem, 55vh);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: .1rem;
+}
+.lang-section { margin: .6rem 0 .2rem; font-weight: 600; }
+.lang-section:first-child { margin-top: 0; }
+.lang-option {
+  justify-content: flex-start;
+  gap: .55rem;
+  padding: .45rem .6rem;
+  border-radius: var(--shape-sm);
+  background: transparent;
+  color: var(--md-on-surface);
+  font-weight: 450;
+  font-size: .9rem;
+  text-align: left;
+}
+.lang-option:hover { background: var(--md-surface-container); box-shadow: none; filter: none; }
+.lang-option.selected { background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
+.lang-option-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lang-option-code { flex: 0 0 auto; }
+.lang-option-auto { font-style: italic; }
 .auto-line {
   display: flex;
   align-items: center;

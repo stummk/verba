@@ -330,6 +330,14 @@ Aufträge laufen und die Zeilen sich aktualisieren.
   Einstellungen. Erst wenn keine davon etwas sagt, erkennt Whisper die Sprache
   selbst. Eine angegebene Sprache wird von der Erkennung auch **nicht mehr
   überschrieben**; ohne Angabe trägt die erkannte Sprache sich in die Datei ein.
+- **Die Sprache steht als Chip** — mit der Fahne ihres Landes, dem Kürzel und
+  dem vollen Namen im Tooltip; steht keine Sprache fest, heißt der Chip „auto".
+  Ein Klick öffnet die Sprachauswahl mit einem Filterfeld: tippen genügt, die
+  Eingabetaste nimmt den ersten Treffer. So steht die Sprache in der Spalte
+  *Sprache* der Dateiliste, unter der Wellenform im Editor und in der
+  Werkzeugzeile des Arbeitsbereichs für die Übersetzung. Zeichnet das Betriebssystem keine Fahnen — Windows tut es nicht —,
+  steht das Länderkürzel im Fahnenkasten; eine Sprache ohne ein einzelnes Land
+  (Katalanisch, Baskisch, Latein …) bekommt eine Weltkugel.
 - Tipp: Die Aufnahmesprache fest anzugeben (statt automatischer Erkennung)
   verbessert das Ergebnis deutlich — und verhindert, dass eine falsch erkannte
   Sprache sich durch Bereinigung und Übersetzung fortsetzt
@@ -456,10 +464,13 @@ transkribierten Datei öffnet den Editor — einen
   existiert er schon, erzeugt **„Neu erzeugen"** ihn neu und ersetzt ihn.
   Fortschritt und Fehler stehen unter den Bereichen — schlägt der Schritt fehl,
   bleibt der Grund stehen, statt dass scheinbar nichts passiert.
-- In der Sprachauswahl der Übersetzung sind die Sprachen in **„Bereits
-  übersetzt"** und **„Noch nicht übersetzt"** gruppiert; das Umschalten zeigt
-  sofort die jeweilige Fassung.
-- **Übersetzung löschen**: Neben der Sprachauswahl entfernt das Papierkorb-Symbol
+- Der Sprach-Chip der Übersetzung steht oben in der Werkzeugzeile des
+  Arbeitsbereichs — neben der Rechtschreibprüfung, zusammen mit dem
+  Papierkorb — und erscheint nur, solange die Übersetzung geöffnet ist. Er
+  öffnet eine Auswahl, in der die Sprachen in **„Bereits übersetzt"** und
+  **„Noch nicht übersetzt"** gruppiert sind; das Umschalten zeigt sofort die
+  jeweilige Fassung.
+- **Übersetzung löschen**: Neben dem Sprach-Chip entfernt das Papierkorb-Symbol
   die angezeigte Übersetzung nach einer Rückfrage endgültig — samt ihrer Datei im
   Arbeitsordner. Die Sprache steht danach wieder unter „Noch nicht übersetzt",
   das PDF bietet sie nicht mehr an, und die Markierung *übersetzt* verschwindet
@@ -484,8 +495,8 @@ transkribierten Datei öffnet den Editor — einen
   Markiert wird nur, wofür der Browser ein Wörterbuch hat — fehlt es für eine
   Sprache, muss es in den Browser-Einstellungen ergänzt werden (Chrome/Edge:
   Sprachen → Rechtschreibprüfung).
-- **Sprache der Aufnahme**: Unter den Schaltflächen steht, in welcher Sprache
-  die Datei gesprochen ist. Whisper erkennt die Sprache sonst selbst — und liegt
+- **Sprache der Aufnahme**: Unter der Wellenform steht als Chip, in welcher
+  Sprache die Datei gesprochen ist. Whisper erkennt die Sprache sonst selbst — und liegt
   dabei durchaus falsch; danach läuft die ganze Kette in der falschen Sprache:
   Transkript, Bereinigung, und eine „Übersetzung", die am Ende unter einer
   Sprache steht, in der sie gar nicht ist. Hier gesetzt, gilt die Sprache für

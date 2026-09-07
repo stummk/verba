@@ -316,6 +316,14 @@ transcript are skipped and the bar says how many) and **Delete**. The selection 
   the settings. Only when none of them says anything does Whisper detect the
   language itself. A language that was given is **not overwritten** by detection
   either; without one, the detected language is written to the file.
+- **A language is shown as a chip** — with its country's flag, the ISO code and
+  the full name in the tooltip; where no language is set the chip reads "auto".
+  A click opens the language picker with a filter field: typing narrows it and
+  Enter takes the first match. That is how the language appears in the *Language*
+  column of the file list, below the waveform in the editor and in the tool row
+  of the workspace for the translation. Where the operating system draws no flags — Windows does not —
+  the country letters stand in the flag's box; a language without a single
+  country behind it (Catalan, Basque, Latin, …) gets a globe.
 - Tip: stating the recording language explicitly (instead of auto-detect)
   noticeably improves results — and keeps a misdetected language from carrying
   on through cleanup and translation
@@ -433,10 +441,12 @@ transcript and AI texts:
   **"Regenerate"** builds it again and replaces it. Progress and errors appear
   below the areas — when a step fails its reason stays put instead of nothing
   seeming to happen.
-- In the translation language picker the languages are grouped into **"Already
-  translated"** and **"Not translated yet"**; switching shows the matching
-  version right away.
-- **Deleting a translation**: next to the language picker the bin icon removes
+- The translation's language chip sits at the top in the tool row of the
+  workspace — next to the spell checker, together with the bin — and only
+  appears while the translation is open. It opens a picker in which the
+  languages are grouped into **"Already translated"** and **"Not translated
+  yet"**; switching shows the matching version right away.
+- **Deleting a translation**: next to the language chip the bin icon removes
   the shown translation for good after a confirmation — including its file in
   the workspace. The language moves back under "Not translated yet", the PDF
   export no longer offers it, and the *translated* mark disappears from the file
@@ -459,8 +469,8 @@ transcript and AI texts:
   choice is remembered in the browser. Only what the browser has a dictionary
   for is marked — if one is missing for a language, it has to be added in the
   browser settings (Chrome/Edge: Languages → Spell check).
-- **Language of the recording**: below the buttons stands the language the file
-  is spoken in. Otherwise Whisper detects it itself — and does get it wrong;
+- **Language of the recording**: below the waveform a chip states the language
+  the file is spoken in. Otherwise Whisper detects it itself — and does get it wrong;
   from there the whole chain runs in the wrong language: the transcript, the
   cleanup, and a "translation" that ends up labelled with a language it is not
   in. Set here, the language applies to **every further transcription of this
