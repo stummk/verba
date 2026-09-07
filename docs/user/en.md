@@ -403,7 +403,7 @@ without thrashing each other.
 ## Editor & timeline {#editor}
 
 Actions appear as icons with tooltips (hovering shows the description). The
-document icon ("Open in editor") on a transcribed file opens the editor — a
+pencil icon ("Open in editor") on a transcribed file opens the editor — a
 **workspace** for audio,
 transcript and AI texts:
 

@@ -610,7 +610,7 @@ export async function render(view, _status, params) {
           iconButton("sparkle", t("ai.title"), () => openAiDialog({ fileId: fileRow.id }))
         );
       }
-      actionCell.append(iconButton("article", t("project.openEditor"), () => {
+      actionCell.append(iconButton("editNote", t("project.openEditor"), () => {
         location.hash = `#/editor/${fileRow.id}`;
       }));
       actionCell.append(

@@ -35,6 +35,14 @@ const PATHS = {
     "M12.45 16h2.09L9.43 3H7.57L2.46 16h2.09l1.12-3h5.64l1.14 3zm-6.02-5L8.5 5.48 10.57 11H6.43zm15.16.59l-8.09 8.09L9.83 16l-1.41 1.41 5.09 5.09L23 13l-1.41-1.41z",
   article:
     "M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z",
+  // the transcript editor: lines of text with a pencil on them. A bare
+  // document (article) only says "text", a bare pencil only says "rename" —
+  // this one says both: text one may change.
+  editNote:
+    "M3 6h11v2H3zM3 10h11v2H3zM3 14h7v2H3z"
+    + "M11.6 19.87V22.04h2.18L20.19 15.63l-2.18-2.18L11.6 19.87z"
+    + "M21.87 13.94c.23-.23.23-.59 0-.82l-1.36-1.36a.58.58 0 0 0-.82 0"
+    + "l-1.06 1.06 2.18 2.18 1.06-1.06z",
   sparkle:
     "M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z",
   cut:

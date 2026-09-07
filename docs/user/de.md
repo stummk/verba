@@ -423,7 +423,7 @@ und LLM den Speicher, ohne sich gegenseitig auszubremsen.
 ## Editor & Timeline {#editor}
 
 Aktionen erscheinen als Symbole mit Tooltip (Maus darüber halten zeigt die
-Beschreibung). Das Dokument-Symbol („Im Editor öffnen") bei einer fertig
+Beschreibung). Das Stift-Symbol („Im Editor öffnen") bei einer fertig
 transkribierten Datei öffnet den Editor — einen
 **Arbeitsbereich** für Audio, Transkript und KI-Texte:
 

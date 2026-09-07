@@ -21,7 +21,7 @@ const SECTION_ICONS = {
   import: "upload",
   transcribe: "speechToText",
   ai: "sparkle",
-  editor: "edit",
+  editor: "editNote",
   whisper: "memory",
   llm: "cloud",
   pdf: "pdf",
