@@ -312,6 +312,34 @@ input:focus, select:focus {
 .inline-form { display: flex; gap: .6rem; }
 .inline-form input { flex: 1; }
 
+/* collapsible card section — several can be open at the same time; the heading
+   is a flex row, so a section can keep live status next to its title */
+.collapse-card { padding: 0; margin-bottom: .5rem; }
+.collapse-card > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .95rem 1.15rem;
+  font-size: .98rem;
+  font-weight: 600;
+  border-radius: var(--shape-md);
+  -webkit-tap-highlight-color: transparent;
+}
+.collapse-card > summary::-webkit-details-marker { display: none; }
+.collapse-card > summary::after {
+  content: "\203A";
+  margin-left: auto;
+  font-size: 1.2rem;
+  color: var(--md-on-surface-variant);
+  transition: transform .15s;
+}
+.collapse-card[open] > summary::after { transform: rotate(90deg); }
+.collapse-card[open] > summary { border-bottom: .0625rem solid var(--md-outline-variant); }
+.collapse-card > summary:hover { background: var(--md-surface-container); }
+.collapse-card > .collapse-body { padding: .35rem 1.15rem 1.05rem; }
+
 /* expandable advanced panel */
 details.advanced { margin-top: .75rem; border-radius: var(--shape-sm); }
 details.advanced > summary {
@@ -654,31 +682,9 @@ details.advanced .form-grid { margin-top: .25rem; }
   color: var(--md-primary);
 }
 
-/* collapsible sections — several can be open at the same time */
-.docs-section { padding: 0; margin-bottom: .5rem; scroll-margin-top: calc(var(--top-bar-h) + .5rem); }
-.docs-section > summary {
-  cursor: pointer;
-  list-style: none;
-  display: flex;
-  align-items: center;
-  gap: .6rem;
-  padding: .95rem 1.15rem;
-  font-size: .98rem;
-  font-weight: 600;
-  border-radius: var(--shape-md);
-}
-.docs-section > summary::-webkit-details-marker { display: none; }
-.docs-section > summary::after {
-  content: "\203A";
-  margin-left: auto;
-  font-size: 1.2rem;
-  color: var(--md-on-surface-variant);
-  transition: transform .15s;
-}
-.docs-section[open] > summary::after { transform: rotate(90deg); }
-.docs-section[open] > summary { border-bottom: .0625rem solid var(--md-outline-variant); }
-.docs-section > summary:hover { background: var(--md-surface-container); }
-.docs-section > .docs-content { padding: .35rem 1.15rem 1.05rem; }
+/* the guide keeps its own scroll anchor; the collapsible chrome itself is
+   shared with the transcript sections (`.collapse-card`) */
+.docs-section { scroll-margin-top: calc(var(--top-bar-h) + .5rem); }
 .docs-section > .docs-content > :first-child { margin-top: .5rem; }
 .docs-content ul, .docs-content ol { padding-left: 1.4rem; }
 .docs-content li { margin: .25rem 0; }
@@ -1291,6 +1297,50 @@ dialog textarea {
 .job-card { margin-bottom: .6rem; }
 .job-card-head { display: flex; align-items: center; gap: .5rem; margin-bottom: .4rem; }
 .job-card .job-message { margin-top: .35rem; }
+
+/* the same job in the heading of its section: the status, the percentage with
+   the ring and the stop button, all in front of the collapse marker */
+.job-line {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  min-width: 0;
+  font-weight: 400;
+}
+/* the heading has to stay one line — a long message ends in an ellipsis */
+.job-line-text {
+  display: flex;
+  align-items: baseline;
+  gap: .4rem;
+  min-width: 0;
+  overflow: hidden;
+}
+.job-line-text > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.job-line-percent { white-space: nowrap; }
+/* a phone heading has room for the percentage, the ring and the stop button —
+   which step is running is in the status line of the top bar anyway */
+@media (max-width: 30em) {
+  .job-line-text { display: none; }
+}
+/* progress as a ring: a conic arc, masked hollow */
+.job-spinner {
+  --progress: 0;
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: var(--shape-full);
+  background: conic-gradient(
+    var(--md-primary) calc(var(--progress) * 1%),
+    var(--md-surface-container-high) 0
+  );
+  -webkit-mask: radial-gradient(farthest-side, #0000 calc(100% - .21rem), #000 calc(100% - .2rem));
+  mask: radial-gradient(farthest-side, #0000 calc(100% - .21rem), #000 calc(100% - .2rem));
+}
+/* a queued job has no percentage yet — the arc turns instead of growing */
+.job-spinner.waiting { animation: view-spin 1s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .job-spinner.waiting { animation: none; }
+}
 
 /* ── sign-in and user management ──────────────────────────────────── */
 .login-screen {

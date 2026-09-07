@@ -471,7 +471,7 @@ transkribierten Datei öffnet den Editor — einen
   PDF-Symbol den **Export** direkt aus dem Editor. Ist das PDF fertig, lädt der
   Browser es sofort herunter — im Editor gibt es keine Liste der Exporte, aus
   der man es sonst holen müsste. Es liegt trotzdem wie immer im Ordner
-  `exports/` und in der Karte **Exporte (PDF)** des Transkripts.
+  `exports/` und im Abschnitt **Exporte (PDF)** des Transkripts.
 - **Text und Sprecher** direkt in den Segmentzeilen bearbeiten — Änderungen werden
   automatisch gespeichert („Gespeichert"-Anzeige), **Rückgängig** hebt die letzten
   Änderungen schrittweise auf
@@ -767,13 +767,18 @@ erzeugen, das nur die Kopfzeile enthält.
 
 **PDF-Export (alle)** erzeugt ein Sammel-PDF: Jede Datei folgt als eigener
 Abschnitt, nur durch Abstand getrennt — ohne Inhaltsverzeichnis und ohne
-zusätzliche Titel. Fertige PDFs erscheinen in der Karte **Exporte (PDF)** zum
+zusätzliche Titel. Fertige PDFs erscheinen im Abschnitt **Exporte (PDF)** zum
 Herunterladen oder Löschen; im Workspace liegen sie unter `exports/`.
+Ein laufender Export steht in der Kopfzeile desselben Abschnitts — der
+aktuelle Schritt als Text, daneben der Fortschritt in Prozent mit einem
+Ring und der Stopp-Knopf, alles vor dem Klapp-Pfeil. So bleibt der Lauf
+sichtbar, ob der Abschnitt offen ist oder nicht; er lässt sich wie der
+Abschnitt **Dateien** darunter über die Kopfzeile zu- und aufklappen.
 Ein PDF aus einer Auswahl heißt nach seiner ersten Datei mit der Zahl der
 weiteren dahinter (`eins+2.pdf`) und überschreibt damit weder den Export des
 ganzen Transkripts noch den einer einzelnen Datei.
 
-Auch in dieser Karte trägt jede Zeile ein Kästchen. Mehrere ausgewählte PDFs
+Auch in diesem Abschnitt trägt jede Zeile ein Kästchen. Mehrere ausgewählte PDFs
 lassen sich zusammen **löschen** oder in einem Zug **herunterladen** — mehr als
 eines kommt als ZIP-Datei, damit der Browser nur einmal nachfragt.
 

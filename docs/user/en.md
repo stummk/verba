@@ -447,7 +447,7 @@ transcript and AI texts:
   moves to another; next to it the PDF icon starts the **export** straight from
   the editor. Once the PDF is finished the browser downloads it right away —
   the editor has no list of exports to pick it from. It still lands in the
-  `exports/` folder and in the transcript's **Exports (PDF)** card as always.
+  `exports/` folder and in the transcript's **Exports (PDF)** section as always.
 - **Text and speaker** are edited directly in the segment rows — changes are
   saved automatically ("Saved" indicator), **Undo** reverts recent changes
   step by step
@@ -732,13 +732,18 @@ the header line.
 
 **PDF export (all)** creates one collective PDF: each file follows as its own
 section separated by spacing only — no table of contents and no extra titles.
-Finished PDFs appear in the **Exports (PDF)** card for download or deletion;
+Finished PDFs appear in the **Exports (PDF)** section for download or deletion;
 in the workspace they live under `exports/`.
+A running export sits in that section's heading — the current step as text,
+next to it the progress in percent with a ring and the stop button, all in
+front of the collapse marker. The run therefore stays visible whether the
+section is open or not; like the **Files** section below it, it collapses
+and expands from its heading.
 A PDF made from a selection is named after its first file with the number of
 further ones behind it (`one+2.pdf`), so it overwrites neither the export of
 the whole transcript nor that of a single file.
 
-Every row in that card carries a checkbox too. Several selected PDFs can be
+Every row in that section carries a checkbox too. Several selected PDFs can be
 **deleted** together or **downloaded** in one go — more than one arrives as a
 zip file, so the browser only asks once.
 

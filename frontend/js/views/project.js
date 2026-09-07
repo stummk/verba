@@ -7,7 +7,7 @@ import { el, esc, formatDuration, html, raw, toast } from "../dom.js";
 import { closeExportDialog, openExportDialog } from "../export-dialog.js";
 import { iconButton, iconSvg } from "../icons.js";
 import { t } from "../i18n.js";
-import { jobCardHost, jobStepLabel } from "../jobs.js";
+import { jobCardHost, jobLine, jobStepLabel } from "../jobs.js";
 import { fillLanguageSelect } from "../languages.js";
 import { on } from "../ws.js";
 
@@ -124,51 +124,60 @@ export async function render(view, _status, params) {
       </div>
     </div>
     <div id="upload-progress" hidden></div>
-    <div id="project-jobs" hidden></div>
-    <div class="card">
-      <div class="bulk-bar" id="file-bulk" hidden>
-        <span id="file-bulk-count"></span>
+    <details class="card collapse-card" id="exports-card" open>
+      <summary>
+        <span>${t("export.exports")}</span>
         <span class="spacer"></span>
-        <button type="button" class="tonal small-btn icon-label" id="bulk-transcribe">
-          ${raw(iconSvg("speechToText"))} ${t("project.transcribe")}
-        </button>
-        <button type="button" class="tonal small-btn icon-label" id="bulk-export">
-          ${raw(iconSvg("pdf"))} ${t("export.file")}
-        </button>
-        <button type="button" class="danger small-btn icon-label" id="bulk-delete">
-          ${raw(iconSvg("delete"))} ${t("common.delete")}
-        </button>
+        <span id="project-jobs" hidden></span>
+      </summary>
+      <div class="collapse-body">
+        <div class="bulk-bar" id="export-bulk" hidden>
+          <span id="export-bulk-count"></span>
+          <span class="spacer"></span>
+          <button type="button" class="tonal small-btn icon-label" id="export-bulk-download">
+            ${raw(iconSvg("download"))} ${t("export.download")}
+          </button>
+          <button type="button" class="danger small-btn icon-label" id="export-bulk-delete">
+            ${raw(iconSvg("delete"))} ${t("common.delete")}
+          </button>
+        </div>
+        <div id="export-list"></div>
+        <p class="muted small" id="no-exports" hidden>${t("export.none")}</p>
       </div>
-      <div class="table-scroll">
-      <table class="filetable">
-        <thead><tr>
-          <th class="col-select">
-            <input type="checkbox" id="file-select-all"
-                   title="${t("project.selectAll")}" aria-label="${t("project.selectAll")}">
-          </th>
-          <th>${t("project.colFile")}</th><th>${t("project.colLanguage")}</th>
-          <th>${t("project.colDuration")}</th>
-          <th>${t("project.colStatus")}</th><th class="col-actions"></th>
-        </tr></thead>
-        <tbody id="file-rows"></tbody>
-      </table>
+    </details>
+    <details class="card collapse-card" id="files-card" open>
+      <summary><span>${t("project.files")}</span></summary>
+      <div class="collapse-body">
+        <div class="bulk-bar" id="file-bulk" hidden>
+          <span id="file-bulk-count"></span>
+          <span class="spacer"></span>
+          <button type="button" class="tonal small-btn icon-label" id="bulk-transcribe">
+            ${raw(iconSvg("speechToText"))} ${t("project.transcribe")}
+          </button>
+          <button type="button" class="tonal small-btn icon-label" id="bulk-export">
+            ${raw(iconSvg("pdf"))} ${t("export.file")}
+          </button>
+          <button type="button" class="danger small-btn icon-label" id="bulk-delete">
+            ${raw(iconSvg("delete"))} ${t("common.delete")}
+          </button>
+        </div>
+        <div class="table-scroll">
+        <table class="filetable">
+          <thead><tr>
+            <th class="col-select">
+              <input type="checkbox" id="file-select-all"
+                     title="${t("project.selectAll")}" aria-label="${t("project.selectAll")}">
+            </th>
+            <th>${t("project.colFile")}</th><th>${t("project.colLanguage")}</th>
+            <th>${t("project.colDuration")}</th>
+            <th>${t("project.colStatus")}</th><th class="col-actions"></th>
+          </tr></thead>
+          <tbody id="file-rows"></tbody>
+        </table>
+        </div>
+        <p class="muted small" id="no-files" hidden>${t("project.noFiles")}</p>
       </div>
-      <p class="muted small" id="no-files" hidden>${t("project.noFiles")}</p>
-    </div>
-    <div class="card" id="exports-card" hidden>
-      <h2>${t("export.exports")}</h2>
-      <div class="bulk-bar" id="export-bulk" hidden>
-        <span id="export-bulk-count"></span>
-        <span class="spacer"></span>
-        <button type="button" class="tonal small-btn icon-label" id="export-bulk-download">
-          ${raw(iconSvg("download"))} ${t("export.download")}
-        </button>
-        <button type="button" class="danger small-btn icon-label" id="export-bulk-delete">
-          ${raw(iconSvg("delete"))} ${t("common.delete")}
-        </button>
-      </div>
-      <div id="export-list"></div>
-    </div>
+    </details>
     <div id="browser-modal"></div>
   `);
 
@@ -418,9 +427,11 @@ export async function render(view, _status, params) {
 
   unsubscribers.forEach((off) => off());
   // jobs of the whole transcript (PDF export of all files) have no file row to
-  // live in — they get their own card instead of only a line in the top bar
+  // live in — they run in the heading of the export section, which stays
+  // readable whether the section is open or closed
   const projectJobs = jobCardHost(el("project-jobs"), {
     filter: (job) => job.project_id === projectId && job.file_id == null,
+    item: jobLine,
     onCancel: (job) => api.cancelJob(job.id).catch((error) => toast(error.message)),
   });
   const jobEventsSeen = new Set(); // file_ids updated live while the snapshot loads
@@ -743,11 +754,10 @@ export async function render(view, _status, params) {
   // ── PDF export (template pipeline; per file or whole project) ────────
 
   async function refreshExports() {
-    const card = el("exports-card");
     const list = el("export-list");
-    if (!card || !list) return;
+    if (!list) return;
     const exports = await api.listExports(projectId).catch(() => []);
-    card.hidden = exports.length === 0;
+    el("no-exports").hidden = exports.length > 0;
     const names = new Set(exports.map((entry) => entry.name));
     for (const name of [...selectedExports]) {
       if (!names.has(name)) selectedExports.delete(name); // deleted meanwhile

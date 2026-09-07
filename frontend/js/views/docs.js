@@ -68,14 +68,14 @@ export async function render(view) {
   const host = el("docs-sections");
   const entries = sections.map(({ title, slug, body }) => {
     const details = document.createElement("details");
-    details.className = "card docs-section";
+    details.className = "card collapse-card docs-section";
     const summary = document.createElement("summary");
     const icon = document.createElement("span");
     icon.className = "docs-section-icon";
     icon.innerHTML = iconSvg(SECTION_ICONS[slug] ?? "article");
     summary.append(icon, Object.assign(document.createElement("span"), { textContent: title }));
     const content = document.createElement("div");
-    content.className = "docs-content";
+    content.className = "collapse-body docs-content";
     content.innerHTML = marked.parse(body);
     details.append(summary, content);
     host.append(details);
