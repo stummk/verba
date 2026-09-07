@@ -10,7 +10,9 @@ import { t } from "../i18n.js";
 let fabHandler = null;
 let types = [];
 let selected = null; // a type object, "new", or null
-let defaults = { output_prompt: "", structure: "paragraphs", structures: ["paragraphs"] };
+let defaults = {
+  output_prompt: "", structure: "paragraphs", structures: ["paragraphs"], verbatim: true,
+};
 // both prompts of the type being edited, so switching the dropdown keeps
 // unsaved edits of the other one
 let draft = {
@@ -18,6 +20,7 @@ let draft = {
   output_prompt: "",
   structure: "paragraphs",
   keep_sections: false,
+  verbatim: true,
 };
 let promptKind = "system_prompt";
 
@@ -77,6 +80,7 @@ function select(target) {
     output_prompt: isNew ? defaults.output_prompt : (target?.output_prompt ?? ""),
     structure: (isNew ? defaults.structure : target?.structure) || defaults.structure,
     keep_sections: isNew ? false : Boolean(target?.keep_sections),
+    verbatim: isNew ? defaults.verbatim !== false : Boolean(target?.verbatim),
   };
   renderList();
   renderDetail();
@@ -128,6 +132,10 @@ function renderDetail() {
     <select id="type-structure"></select>
     <p class="hint">${t("types.structureHint")}</p>
     <label class="checkline">
+      <input type="checkbox" id="type-verbatim"> ${t("types.verbatim")}
+    </label>
+    <p class="hint">${t("types.verbatimHint")}</p>
+    <label class="checkline">
       <input type="checkbox" id="type-keep-sections"> ${t("types.keepSections")}
     </label>
     <p class="hint">${t("types.keepSectionsHint")}</p>
@@ -162,6 +170,13 @@ function renderDetail() {
   const keepSections = el("type-keep-sections");
   keepSections.checked = draft.keep_sections;
   keepSections.onchange = () => { draft.keep_sections = keepSections.checked; };
+
+  const verbatim = el("type-verbatim");
+  verbatim.checked = draft.verbatim;
+  verbatim.onchange = () => {
+    draft.verbatim = verbatim.checked;
+    showPrompt(); // the output prompt is unused while the text stays verbatim
+  };
 
   const kindSelect = el("type-prompt-kind");
   const textarea = el("type-prompt");
@@ -203,6 +218,7 @@ function renderDetail() {
       output_prompt: draft.output_prompt.trim(),
       structure: draft.structure,
       keep_sections: draft.keep_sections,
+      verbatim: draft.verbatim,
     };
     if (!name) {
       el("type-name").focus();
@@ -241,7 +257,7 @@ function showPrompt() {
   // placeholder instead of leaving the field looking broken
   textarea.placeholder = isOutput ? defaults.output_prompt : "";
   el("type-prompt-hint").textContent = isOutput
-    ? t("types.promptOutputHint")
+    ? (draft.verbatim ? t("types.promptOutputUnused") : t("types.promptOutputHint"))
     : t("types.promptHint");
   el("type-prompt-default").hidden = !isOutput;
 }

@@ -93,7 +93,7 @@ def get_project(project_id: int) -> dict[str, Any] | None:
         row = conn.execute(
             "SELECT p.*, t.key AS type_key, t.name AS type_name, t.system_prompt AS type_prompt, "
             "t.output_prompt AS type_output_prompt, t.structure AS type_structure, "
-            "t.keep_sections AS type_keep_sections, "
+            "t.keep_sections AS type_keep_sections, t.verbatim AS type_verbatim, "
             "u.username AS owner_name "
             "FROM projects p LEFT JOIN project_types t ON t.id = p.type_id "
             "LEFT JOIN users u ON u.id = p.owner_id "

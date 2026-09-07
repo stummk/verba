@@ -180,7 +180,7 @@ def configure_llm():
 
 def test_build_document_uses_llm_blocks(data_env, tmp_path, monkeypatch):
     configure_llm()
-    file_row, project = make_done_file(tmp_path, type_key="speech")
+    file_row, project = make_done_file(tmp_path, type_key="protocol")
     monkeypatch.setattr(
         "verba.services.llm.chat",
         lambda messages, **kw: '[{"kind": "heading", "text": "Speech"}]',
@@ -191,7 +191,7 @@ def test_build_document_uses_llm_blocks(data_env, tmp_path, monkeypatch):
 
 def test_build_document_falls_back_on_bad_llm_answer(data_env, tmp_path, monkeypatch):
     configure_llm()
-    file_row, project = make_done_file(tmp_path, type_key="speech")
+    file_row, project = make_done_file(tmp_path, type_key="protocol")
     monkeypatch.setattr("verba.services.llm.chat", lambda messages, **kw: "kein json")
     doc = pdf.build_document(file_row, project, "", NO_CANCEL, no_report)
     assert doc["blocks"] == [{"kind": "paragraph", "text": "Hallo Welt."}]
@@ -216,7 +216,7 @@ REFUSAL = (
 def test_build_document_falls_back_when_the_llm_ignored_the_text(data_env, tmp_path, monkeypatch):
     """The reported failure: the model answers *about* the task, not with it."""
     configure_llm()
-    file_row, project = make_done_file(tmp_path, type_key="speech")
+    file_row, project = make_done_file(tmp_path, type_key="protocol")
     pipeline.save_text(file_row["id"], "cleanup", LONG_TEXT)
     monkeypatch.setattr("verba.services.llm.chat", lambda messages, **kw: REFUSAL)
 

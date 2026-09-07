@@ -1,9 +1,18 @@
 """PDF export: two-stage template pipeline.
 
 Stage 1 (structure): turn the best available text of a file into a neutral
-block structure — via the configured LLM (strict JSON output) or, without
-one, rule-based from paragraphs/segments. Export therefore always works;
-with an LLM it gets smarter (stanzas, dialogue roles, minutes with to-dos).
+block structure. Which way round that happens is the transcript type's
+choice (`verbatim`, on by default):
+
+- verbatim — the blocks are derived from the text itself, deterministically.
+  What the cleanup and the translations say is what the PDF says: every
+  sentence, in its order, and no heading that the text does not carry. The
+  LLM is not asked at all, so nothing can be rewritten or dropped.
+- not verbatim — the configured LLM structures the text according to the
+  type's output prompt (strict JSON output), which is what a type needs that
+  turns its material into something else: minutes with decisions and to-dos.
+  Without an LLM, or from an answer that cannot be parsed, the deterministic
+  path takes over, so the export always works.
 
 Stage 2 (render): a deterministic fpdf2 renderer lays the blocks out
 according to the transcript type's template. Folder exports append each
@@ -218,9 +227,20 @@ def _keeps_the_material(blocks: list[dict[str, Any]], source: str) -> bool:
     return len(sourced) >= MIN_SOURCED_SHARE * len(answer_words)
 
 
+#: A paragraph break is a blank line and only a blank line — a line the text
+#: merely wrapped stays inside its paragraph and `flow_text()` pulls it
+#: together. Spaces on the empty line still make it one.
+_BLANK_LINE_RE = re.compile(r"\n[^\S\n]*\n")
+
+
 def _structure_rule_based(text: str, structure: str) -> list[dict[str, Any]]:
-    """Deterministic fallback: paragraphs, stanzas or speaker turns from plain text."""
-    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    """Deterministic structuring: paragraphs, stanzas or speaker turns.
+
+    Lossless by construction — every non-empty line of `text` ends up in
+    exactly one block, in its original order, and no block carries a word the
+    text does not. This is what a verbatim type exports with.
+    """
+    paragraphs = [p.strip() for p in _BLANK_LINE_RE.split(text) if p.strip()]
     if structure == "stanzas":
         return [
             {"kind": "stanza", "lines": [line.strip() for line in p.splitlines() if line.strip()]}
@@ -292,6 +312,17 @@ def _structure_llm(
     return blocks or None
 
 
+def is_verbatim(project: dict[str, Any]) -> bool:
+    """Whether the export has to reproduce the text word for word.
+
+    On for every type that does not deliberately turn its material into
+    something else, and the answer for a project row that predates the field —
+    reproducing the text is what the default promises.
+    """
+    value = project.get("type_verbatim")
+    return True if value is None else bool(value)
+
+
 def build_document(
     file_row: dict[str, Any],
     project: dict[str, Any],
@@ -308,7 +339,10 @@ def build_document(
     text = _base_text(file_row["id"], structure, language)
 
     blocks: list[dict[str, Any]] | None = None
-    if has_type and llm.llm_location() != "none":
+    # a verbatim type never reaches the LLM: the export must not be able to
+    # reword the cleanup or a translation, invent a heading the text does not
+    # carry, or leave a sentence out
+    if has_type and not is_verbatim(project) and llm.llm_location() != "none":
         blocks = _structure_llm(
             text,
             project.get("type_output_prompt") or "",

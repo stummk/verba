@@ -230,6 +230,19 @@ gliedert:
 Damit kann auch ein selbst angelegter Typ auf die Sprecher-Segmente
 zugreifen — das war vorher fest an die Standardtypen gebunden.
 
+Dazu kommt **Text unverändert übernehmen**, bei jedem Typ außer dem Protokoll
+eingeschaltet. Damit gliedert der PDF-Export den bereinigten Text und die
+Übersetzungen selbst — ohne KI-Schritt. Jeder Satz landet unverändert und in
+seiner Reihenfolge im PDF, Absätze bleiben, wo der Text sie setzt, und es
+entstehen keine Überschriften, die der Text nicht enthält. Der
+Ausgabeformat-Prompt wird dann nicht verwendet.
+
+Ohne diese Option darf die KI den Text nach dem Ausgabeformat-Prompt umbauen.
+Das braucht nur ein Typ, der aus seinem Material etwas anderes macht — das
+**Protokoll** etwa, das aus dem Gespräch eine Zusammenfassung mit Beschlüssen
+und To-dos formt. Wer den Export dabei erwischt, dass er Sätze weglässt oder
+umschreibt, schaltet die Option ein.
+
 Dazu kommt **Abschnitte nicht über Seiten trennen**. Beim Export eines ganzen
 Transkripts folgt sonst eine Datei der anderen auf derselben Seite, und ein
 Abschnitt wird dort umgebrochen, wo die Seite zu Ende ist. Mit dieser Option
@@ -728,18 +741,23 @@ hinterlegt ist, schlägt der Job mit einem Hinweis fehl statt still das Original
 zu exportieren; im kombinierten Modus werden einfach nur die vorhandenen
 Übersetzungen angehängt.
 
-Der Export läuft zweistufig: Mit konfiguriertem LLM strukturiert die KI den
-Text passend zum Transkripttyp (Strophen, Sprecherrollen, Protokoll mit
-Zusammenfassung und To-dos); ohne LLM entsteht die Struktur regelbasiert —
-der Export funktioniert immer. Das Layout richtet sich nach dem Typ, etwa
+Der Export läuft zweistufig, und wie die erste Stufe arbeitet, entscheidet
+der Transkripttyp mit **Text unverändert übernehmen** (siehe
+„Transkripttypen"). Ist die Option an — bei jedem Standardtyp außer dem
+Protokoll —, gliedert Verba den bereinigten Text und die Übersetzungen
+selbst: Wort für Wort, in der Reihenfolge des Textes, ohne KI. Ist sie aus,
+strukturiert die KI den Text nach dem Ausgabeformat-Prompt des Typs (etwa ein
+Protokoll mit Zusammenfassung und To-dos); ohne LLM entsteht die Struktur auch
+dann regelbasiert — der Export funktioniert immer. Das Layout richtet sich nach dem Typ, etwa
 unsichtbare Trenner und zusätzlicher Leerraum oder ein
 Skriptlayout beim Rollenspiel. Ohne Typ entsteht ein schlichtes Text-PDF.
 
 Fließtext erscheint im **Blocksatz**. Zeilenumbrüche aus dem Transkript werden
 dabei zu Wortabständen zusammengezogen, damit ein Absatz nicht mitten im Satz
-umbricht — nur Strophen behalten ihre Zeilen. Liefert das Sprachmodell eine
-Antwort, die gar nicht aus dem Transkript stammt (etwa die Rückfrage, es sei
-kein Text übergeben worden), wird sie verworfen und regelbasiert exportiert.
+umbricht — nur Strophen behalten ihre Zeilen. Wo ein Typ die KI strukturieren
+lässt, wird eine Antwort verworfen, die gar nicht aus dem Transkript stammt
+(etwa die Rückfrage, es sei kein Text übergeben worden), und regelbasiert
+exportiert.
 Enthält das Transkript überhaupt keinen Text — etwa bei einer Aufnahme ohne
 Sprache —, schlägt der Export mit einem Hinweis fehl, statt ein PDF zu
 erzeugen, das nur die Kopfzeile enthält.

@@ -23,6 +23,9 @@ class TypeRequest(BaseModel):
     structure: Literal[STRUCTURES] = DEFAULT_STRUCTURE
     # a file's section starts on a new page when it would not fit whole
     keep_sections: bool = False
+    # the export reproduces the text word for word instead of letting the LLM
+    # restructure it — on unless the type deliberately transforms its material
+    verbatim: bool = True
 
 
 @router.get("")
@@ -37,6 +40,7 @@ def default_prompts() -> dict:
         "output_prompt": project_types.default_output_prompt(),
         "structure": DEFAULT_STRUCTURE,
         "structures": list(STRUCTURES),
+        "verbatim": True,
     }
 
 
@@ -48,6 +52,7 @@ def create_type(body: TypeRequest, user: dict = AdminUser) -> dict:
         body.output_prompt.strip(),
         body.structure,
         body.keep_sections,
+        body.verbatim,
     )
 
 
@@ -60,6 +65,7 @@ def update_type(type_id: int, body: TypeRequest, user: dict = AdminUser) -> dict
         body.output_prompt.strip(),
         body.structure,
         body.keep_sections,
+        body.verbatim,
     )
     if updated is None:
         raise HTTPException(status_code=404, detail="Transcript type not found")

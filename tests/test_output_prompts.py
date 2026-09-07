@@ -63,7 +63,10 @@ def test_export_uses_the_type_output_prompt(data_env, tmp_path, monkeypatch):
     """End to end: what the type stores is what the structure stage sends."""
     source = tmp_path / "a.mp3"
     source.write_bytes(b"x")
-    type_row = project_types.create_type("Custom", "Cleanup text.", "MY OUTPUT RULES.")
+    # not verbatim: only a type that may restructure reaches the output prompt
+    type_row = project_types.create_type(
+        "Custom", "Cleanup text.", "MY OUTPUT RULES.", verbatim=False
+    )
     project = workspace.create_project("P", type_row["id"])
     [file_row] = workspace.import_paths(project, [str(source)])
     workspace.set_file_status(file_row["id"], "done")

@@ -158,6 +158,16 @@ def test_the_type_form_offers_the_page_break_per_section():
     assert "keep_sections: draft.keep_sections" in source
 
 
+def test_the_type_form_offers_the_verbatim_switch():
+    """Whether the export may restructure the text is a choice of the type."""
+    source = (FRONTEND / "js" / "views" / "types.js").read_text(encoding="utf-8")
+    assert 'id="type-verbatim"' in source
+    assert 't("types.verbatim")' in source and 't("types.verbatimHint")' in source
+    assert "verbatim: draft.verbatim" in source
+    # a verbatim type never reaches the output prompt — the hint has to say so
+    assert 't("types.promptOutputUnused")' in source
+
+
 def test_only_a_linux_server_sees_the_system_package_button():
     """The row lives in the card but stays hidden until the backend says so."""
     source = (FRONTEND / "js" / "views" / "settings.js").read_text(encoding="utf-8")

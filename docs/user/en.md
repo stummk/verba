@@ -221,6 +221,19 @@ without AI:
 This means a type you created yourself can use the speaker segments too —
 which used to be tied to the built-in types.
 
+There is also **Reproduce the text unchanged**, on for every type but the
+minutes one. The PDF export then structures the cleaned text and the
+translations by itself — without an AI step. Every sentence reaches the PDF
+unchanged and in its original order, paragraphs stay where the text puts
+them, and no heading appears that the text does not carry. The output-format
+prompt is then unused.
+
+Without this option the AI may restructure the text according to the
+output-format prompt. Only a type that turns its material into something else
+needs that — **Meeting Protocol**, for instance, which forms a summary with
+decisions and to-dos out of the conversation. If an export is caught dropping
+or rewording sentences, switch the option on.
+
 Next to it sits **Do not split sections across pages**. When a whole
 transcript is exported, one file otherwise follows the next on the same page,
 and a section breaks wherever the page happens to end. With this option a
@@ -694,18 +707,23 @@ language switch. Picking a single language that has no translation stored yet
 makes the job fail with a message instead of quietly exporting the original; in
 combined mode only the translations that exist are appended.
 
-The export runs in two stages: with an LLM configured the AI structures the
-text to match the transcript type (stanzas, speaker roles, minutes with
-summary and to-dos); without one the structure is rule-based — the export
-always works. The layout follows the type, e.g. invisible separators and
+The export runs in two stages, and how the first one works is the transcript
+type's choice via **Reproduce the text unchanged** (see "Transcript types").
+With the option on — every builtin type but the minutes one — Verba structures
+the cleaned text and the translations by itself: word for word, in the order
+of the text, without AI. With it off the AI structures the text according to
+the type's output-format prompt (minutes with a summary and to-dos, say);
+without an LLM the structure is rule-based even then — the export always
+works. The layout follows the type, e.g. invisible separators and
 extra whitespace or a script layout for role plays.
 Without a type a plain text PDF is produced.
 
 Running text is set **justified**. Line breaks that came from the transcript
 are pulled together into word spacing so a paragraph does not break in the
-middle of a sentence — only stanzas keep their lines. An answer from the
-language model that was not built from the transcript at all (for instance the
-question to please supply a text) is discarded and exported rule-based. If the
+middle of a sentence — only stanzas keep their lines. Where a type does let the AI
+structure, an answer that was not built from the transcript at all (for
+instance the question to please supply a text) is discarded and exported
+rule-based. If the
 transcript carries no text at all — a recording without speech, say — the
 export fails with a message instead of producing a PDF that holds nothing but
 the header line.

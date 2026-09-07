@@ -95,10 +95,15 @@ python -m ruff format --check backend/ tests/ run.py
     derived_texts, auto-chaining after transcription via the project's
     auto_process switch), chunking (segment boundaries + overlap), metadata (tags/file name),
     project_types (7 default types with cleanup prompt, output-format
-    prompt and layout; seeding + per-field backfill via meta table), pdf (two-stage
-    PDF export: LLM- or rule-based structuring → deterministic
+    prompt, layout and `verbatim`; seeding + per-field backfill via meta table),
+    pdf (two-stage
+    PDF export: deterministic or LLM structuring → deterministic
     fpdf2 renderer; the type's layout (paragraphs/stanzas/dialogue/script)
-    and output prompt drive both stages; compilation PDF without a table of
+    and output prompt drive both stages; a `verbatim` type (the default, every
+    builtin but `protocol`) never reaches the LLM — `_structure_rule_based()`
+    is lossless by construction, so the cleanup and the translations arrive
+    word for word with no invented heading, which is the whole promise of the
+    export (`tests/test_export_verbatim.py`); compilation PDF without a table of
     contents; optional combined export (original + translations in one PDF,
     separated by a `---` divider); a type may keep its sections whole
     (`keep_sections`): a file's documents form one group (`section_groups()`),
