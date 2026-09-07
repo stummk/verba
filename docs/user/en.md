@@ -753,20 +753,48 @@ text (proper names and rare terms match exactly). Under **Filters** the
 search can be narrowed to one transcript, a type, language, speaker and a
 date range.
 
-**The hit list.** Every file appears exactly once, with all of its hits below
-it in timeline order — each with a timestamp; a click opens the editor exactly
-there, and the audio starts at that position. Of the passage only the matches
-are shown: one to three lines around each match, the search terms highlighted
-inside them, everything in between elided with “…”. Emptying the search field
-clears the list along with the question.
+**The hit list.** Every file appears exactly once, with all of its matches
+below it. The card is headed by the file's **header** — the three header
+fields, the empty ones left out — and only where none of them is filled does
+the file name stand in for it. At the foot of the card, quietly, is the
+source: the file name; a click on it opens the editor. Each match says on the
+left where it sits: the timestamp in the transcript, **Header**, **Cleaned
+up** or **Translation**. A click opens exactly that place — in the transcript
+the audio jumps there, for a cleaned-up or translated text the panel holding
+it opens. Of the passage only the matches are shown: one to three lines
+around each match, the search terms highlighted inside them, everything in
+between elided with “…”. Emptying the search field clears the list along with
+the question.
+
+**The timestamp points at the search term.** A passage can span several
+segments; what is shown and jumped to is the segment the search term actually
+stands in — not the beginning of the passage. Only for a purely semantic hit,
+where no search word appears literally, is the start of the passage the right
+answer.
+
+**Everything belonging to a recording is searched.** The transcript, the
+cleaned-up text and every translation sit in the index separately. That is
+more than a convenience: what Whisper misheard is corrected by the cleanup
+first — a name is then only findable there. And a translation makes a
+recording findable in a language never spoken in it. Every new or changed
+cleanup and translation is reindexed automatically.
 
 **The header is searched too.** A name, a date or an extra note lives in a
-file's header, not in the spoken text — so Verba searches there as well:
-title, the three header fields, recording date and file name. Such a hit
-appears marked **Header** above the passages of the same file. It is matched
-literally and with all search terms at once, so “Meier 2024” finds that one
-file instead of every file with a 2024 somewhere in it; the date may be
-written in German notation (“12.05.2024”).
+file's header, not in the spoken text — so Verba searches there as well: the
+three header fields, the recording date and the file name. Such a hit appears
+marked **Header** and quotes exactly the fields that matched, so it is visible
+whether the name matched or the file name did. It is matched literally and
+with all search terms at once, so “Meier 2024” finds that one file instead of
+every file with a 2024 somewhere in it; the date may be written in German
+notation (“12.05.2024”).
+
+**What is not matched does not make the list.** The semantic half of the
+search only ranks — left to itself it always returns the nearest passages,
+even when none of them is about the question, and on a small index that is
+simply the whole index. Verba therefore only lets through what is genuinely
+close to the question. A question nothing answers comes back empty rather
+than with arbitrary passages. The literal half (full text and header) is
+unaffected: a rare name still matches exactly.
 
 With an LLM configured, **“AI answer”** sits right next to **Search** and
 produces an answer that backs every statement with numbered sources. The
@@ -775,8 +803,11 @@ itself stands in the answer above — and is clickable like a hit. The AI
 answers only from the retrieved passages; if there are none, it says so
 honestly instead of guessing.
 
-New transcriptions and segment edits are indexed automatically; deleted files
-disappear from the index immediately. **Settings → Search** shows the index
+New transcriptions, segment edits and every saved cleanup or translation are
+indexed automatically; deleted files disappear from the index immediately.
+After an update of Verba the index can be older than what it is meant to know
+— the settings say so then, and the rebuild button takes the missing texts
+in. **Settings → Search** shows the index
 status, the embedding model and a button for a manual rebuild. The search
 components are installed by the setup (feature group “Semantic search”). While
 they are missing, **Start setup** in step 1 stays clickable even when

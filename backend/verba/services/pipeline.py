@@ -98,6 +98,14 @@ def delete_text(file_id: int, kind: str, language: str = "") -> bool:
 
 
 def _publish_change(file_id: int, kind: str, language: str) -> None:
+    # The search indexes the derived texts alongside the transcript, so every
+    # write here is a change to what is findable — a name the cleanup corrected
+    # is only searchable once this ran. Imported late: the vectorstore builds
+    # its chunks from this module.
+    from .vectorstore import maybe_enqueue_index
+
+    maybe_enqueue_index(file_id)
+
     # The kinds travel with the event: an emptied or deleted text has to take
     # the "cleaned"/"translated" chip off the file row, and the receiver cannot
     # tell from one language alone whether the kind is gone for the whole file.

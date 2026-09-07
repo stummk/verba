@@ -788,19 +788,48 @@ und per Volltext (Eigennamen und seltene Begriffe treffen exakt). Unter
 Sprecher und einen Zeitraum einschränken.
 
 **Die Trefferliste.** Jede Datei steht genau einmal in der Liste, darunter
-alle ihre Treffer in zeitlicher Reihenfolge — jeder mit Zeitstempel, ein Klick
-öffnet den Editor genau an dieser Stelle, das Audio startet dort. Von der
-Textpassage stehen nur die Fundstellen da: ein bis drei Zeilen um jede
+alle ihre Fundstellen. Überschrieben ist die Karte mit der **Kopfzeile** der
+Datei — den drei Kopfzeilenfeldern, leere davon weggelassen —, und nur wenn
+kein einziges gefüllt ist, steht dort der Dateiname. Ganz unten auf der Karte
+steht dezent die Quelle, also der Dateiname; ein Klick darauf öffnet den
+Editor. Jede Fundstelle nennt links, wo sie steht: den Zeitstempel im
+Transkript, **Kopfzeile**, **Geglättet** oder **Übersetzung**. Ein Klick
+öffnet genau diese Stelle — im Transkript springt das Audio dorthin, bei
+einem geglätteten oder übersetzten Text öffnet sich der zugehörige Bereich.
+Von der Textpassage stehen nur die Fundstellen da: ein bis drei Zeilen um jede
 Fundstelle, die Suchbegriffe darin farbig markiert, alles dazwischen mit „…"
 ausgelassen. Leert man das Suchfeld, verschwindet die Liste mit der Frage.
 
+**Der Zeitstempel zeigt auf den Suchbegriff.** Eine Passage kann mehrere
+Segmente umfassen; angezeigt und angesprungen wird das Segment, in dem der
+Suchbegriff tatsächlich steht — nicht der Anfang der Passage. Nur bei einem
+rein semantischen Treffer, bei dem kein Suchwort wörtlich vorkommt, ist der
+Anfang der Passage die richtige Antwort.
+
+**Durchsucht wird alles, was zu einer Aufnahme gehört.** Das Transkript, der
+geglättete Text und jede Übersetzung liegen einzeln im Index. Das ist mehr als
+eine Bequemlichkeit: Was Whisper falsch gehört hat, korrigiert erst die
+Glättung — ein Name ist dann nur dort zu finden. Und eine Übersetzung macht
+eine Aufnahme in einer Sprache auffindbar, die darin nie gesprochen wurde.
+Jede neue oder geänderte Glättung und Übersetzung wird automatisch
+nachindiziert.
+
 **Auch die Kopfzeile wird durchsucht.** Name, Datum und Zusatzhinweis stehen
 im Kopf einer Datei, nicht im gesprochenen Text — deshalb sucht Verba dort
-mit: Titel, die drei Kopfzeilenfelder, Aufnahmedatum und Dateiname. Ein
-solcher Treffer erscheint mit der Marke **Kopfzeile** über den Textstellen
-derselben Datei. Gesucht wird wörtlich und mit allen Suchbegriffen zugleich,
+mit: die drei Kopfzeilenfelder, das Aufnahmedatum und der Dateiname. Ein
+solcher Treffer erscheint mit der Marke **Kopfzeile** und zitiert genau die
+Felder, die getroffen wurden — so ist zu sehen, ob der Name gepasst hat oder
+der Dateiname. Gesucht wird wörtlich und mit allen Suchbegriffen zugleich,
 damit „Meier 2024" genau diese Datei findet und nicht jede, in der irgendwo
 eine 2024 vorkommt; das Datum darf deutsch geschrieben sein („12.05.2024").
+
+**Was nicht getroffen wird, steht nicht in der Liste.** Die semantische Hälfte
+der Suche sortiert nur — von sich aus liefert sie immer die nächstgelegenen
+Passagen, auch wenn keine davon zur Frage passt, und bei einem kleinen Index
+ist das schlicht der ganze Index. Verba lässt deshalb nur durch, was der Frage
+wirklich nahe ist. Eine Frage, zu der es nichts gibt, kommt leer zurück statt
+mit beliebigen Passagen. Die wörtliche Hälfte (Volltext und Kopfzeile) ist
+davon nicht betroffen: ein seltener Name trifft weiterhin exakt.
 
 Mit konfiguriertem LLM steht **„KI-Antwort"** direkt neben **Suchen** und
 erzeugt eine Antwort, die jede Aussage mit nummerierten Quellen belegt. Die
@@ -809,8 +838,11 @@ selbst steht in der Antwort darüber — und ist klickbar wie ein Treffer. Die K
 antwortet ausschließlich aus den gefundenen Passagen; gibt es keine, sagt sie
 das ehrlich statt zu raten.
 
-Neue Transkriptionen und Segment-Änderungen werden automatisch indiziert,
-gelöschte Dateien sofort aus dem Index entfernt. Unter **Einstellungen →
+Neue Transkriptionen, Segment-Änderungen und jede gespeicherte Glättung oder
+Übersetzung werden automatisch indiziert, gelöschte Dateien sofort aus dem
+Index entfernt. Nach einer Aktualisierung von Verba kann der Index älter sein
+als das, was er können soll — die Einstellungen sagen das dann und der Knopf
+für den Neuaufbau nimmt die fehlenden Texte auf. Unter **Einstellungen →
 Suche** stehen der Index-Status, das Embedding-Modell und ein Knopf für den
 manuellen Neuaufbau. Die Suchkomponenten installiert die Einrichtung
 (Feature-Gruppe „Semantische Suche"). Fehlen sie noch, bleibt in Schritt 1 der

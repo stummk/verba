@@ -157,33 +157,22 @@ export async function render(view) {
 
   // ── one card per file, its hits below it ────────────────────────────
 
+  // The heading is the header the user wrote — its three fields, the empty
+  // ones left out. Only where none of them is filled does the file name stand
+  // in for it. Deliberately not the title: that one is parsed out of the file
+  // name at import and never written again, so it shows what an older parser
+  // made of the name long after the header has been corrected.
   function fileCard(group, terms) {
     const card = document.createElement("div");
     card.className = "card search-file";
 
     const head = document.createElement("div");
     head.className = "search-file-head";
+    const name = document.createElement("span");
+    name.className = "search-file-name";
+    appendSnippet(name, group.label || group.filename, terms);
     head.append(
-      Object.assign(document.createElement("span"), {
-        className: "search-file-name",
-        textContent: `${group.project_name} · ${group.title || group.filename}`,
-      }),
-    );
-    // a header hit already carries date and header below — with its matches
-    // marked — so the heading only repeats them when there is none
-    const hasHeaderHit = group.hits.some((hit) => hit.source === "header");
-    const details = hasHeaderHit
-      ? ""
-      : [group.recorded_at, group.header].filter(Boolean).join(" · ");
-    if (details) {
-      head.append(
-        Object.assign(document.createElement("span"), {
-          className: "small muted search-file-meta",
-          textContent: details,
-        }),
-      );
-    }
-    head.append(
+      name,
       Object.assign(document.createElement("span"), {
         className: "small muted search-file-count",
         textContent: t("search.hitCount", { count: group.hits.length }),
@@ -198,18 +187,47 @@ export async function render(view) {
       list.append(item);
     }
     card.append(head, list);
+
+    // Where the hits come from, quietly at the foot of the card: the recording
+    // itself. Skipped when the heading already is the file name.
+    if (group.filename && group.filename !== (group.label || group.filename)) {
+      const source = document.createElement("a");
+      source.className = "small muted search-file-source";
+      source.href = `#/editor/${group.file_id}`;
+      source.textContent = group.filename;
+      source.title = t("search.openFile");
+      card.append(source);
+    }
     return card;
+  }
+
+  // Where a hit sits: an audio position for the transcript, the panel it lives
+  // in for a derived text (those are one flowing text and have no timestamps).
+  function hitTarget(group, hit) {
+    if (hit.source === "cleanup") return `#/editor/${group.file_id}/0/cleanup`;
+    if (hit.source === "translation") {
+      return `#/editor/${group.file_id}/0/translation-${hit.source_language || ""}`;
+    }
+    return `#/editor/${group.file_id}/${hit.start_s}`;
+  }
+
+  function hitLabel(hit) {
+    if (hit.source === "header") return t("search.hitHeader");
+    if (hit.source === "cleanup") return t("search.hitCleanup");
+    if (hit.source === "translation") {
+      return t("search.hitTranslation", { language: (hit.source_language || "").toUpperCase() });
+    }
+    return formatDuration(hit.start_s);
   }
 
   function hitLink(group, hit, terms) {
     const link = document.createElement("a");
     link.className = "search-hit";
-    link.href = `#/editor/${group.file_id}/${hit.start_s}`;
+    link.href = hitTarget(group, hit);
 
     const label = document.createElement("span");
     label.className = "search-hit-time";
-    label.textContent =
-      hit.source === "header" ? t("search.hitHeader") : formatDuration(hit.start_s);
+    label.textContent = hitLabel(hit);
 
     const text = document.createElement("p");
     text.className = "search-hit-text";
@@ -281,14 +299,23 @@ export async function render(view) {
   function sourceLink(source, number) {
     const link = document.createElement("a");
     link.className = "search-source";
-    link.href = `#/editor/${source.file_id}/${source.start_s}`;
-    const position =
-      source.source === "header" ? t("search.hitHeader") : formatDuration(source.start_s);
+    link.href = hitTarget({ file_id: source.file_id }, source);
     link.textContent =
-      `[${number}] ${source.project_name} · ` +
-      `${source.title || source.filename} · ${position}`;
+      `[${number}] ${source.project_name} · ${fileLabel(source)} · ${hitLabel(source)}`;
     return link;
   }
+}
+
+// What a transcript is called: its header fields, the empty ones left out,
+// and the file name where none of them is filled in. The grouped hit list
+// gets this from the backend as `label`; a raw source hit carries the fields
+// themselves, so the RAG reference list computes it here.
+export function fileLabel(row) {
+  const header = [row.header_left, row.header_middle, row.header_right]
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(" · ");
+  return header || String(row.filename ?? "").trim();
 }
 
 // ── excerpt with marked matches ──────────────────────────────────────

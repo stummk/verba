@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 import threading
+import zlib
 
 import pytest
 
@@ -15,13 +16,19 @@ from verba.services import pipeline, rag, transcripts, vectorstore, workspace
 NO_CANCEL = threading.Event()
 
 
+# Wide enough that two unrelated sentences land near-orthogonal, the way a
+# real embedding model has them: with a handful of buckets everything collides
+# with everything, and a distance threshold could not be tested at all.
+FAKE_DIM = 64
+
+
 def fake_encode(texts, kind="passage"):
     """Deterministic bag-of-words vectors — similar texts get similar vectors."""
     out = []
     for text in texts:
-        vector = [0.0] * 8
+        vector = [0.0] * FAKE_DIM
         for word in re.findall(r"\w+", text.lower()):
-            vector[hash(word) % 8] += 1.0
+            vector[zlib.crc32(word.encode()) % FAKE_DIM] += 1.0
         norm = math.sqrt(sum(x * x for x in vector)) or 1.0
         out.append([x / norm for x in vector])
     return out
@@ -156,13 +163,16 @@ def test_header_search_finds_name_note_and_date(tmp_path):
     )
     vectorstore.index_file(file_row["id"])
 
+    # the date is looked up in the form it is typed, which is the one the
+    # import wrote into recorded_at — the header field carries the ISO one
+    set_header(file_row["id"], recorded_at="12.05.2024")
+
     for query in ("Mustermann", "Zusatzhinweis", "12.05.2024"):
         hits = vectorstore.search(query)
         header_hits = [hit for hit in hits if hit["source"] == "header"]
         assert header_hits, f"{query}: Kopfzeile wird nicht gefunden"
         assert header_hits[0]["file_id"] == file_row["id"]
         assert header_hits[0]["start_s"] == 0.0
-        assert "Mustermann" in header_hits[0]["text"]
 
 
 def test_header_search_ignores_case_beyond_ascii(tmp_path):
@@ -204,27 +214,60 @@ def test_transcript_hits_are_marked_as_such(tmp_path):
 
 
 def test_group_by_file_lists_every_file_once(tmp_path):
-    long_text = "Wort " * 120  # several chunks, so one file can match twice
+    text = "Mustermann berichtet. " * 30  # several chunks, all of them matching
     file_row, _ = make_done_file(
         tmp_path,
         "lang.mp3",
-        segments=tuple(("", long_text.strip(), i * 10.0, (i + 1) * 10.0) for i in range(4)),
+        segments=tuple(("", text.strip(), i * 10.0, (i + 1) * 10.0) for i in range(4)),
     )
     set_header(file_row["id"], header_left="Mustermann", title="Langes Gespräch")
     vectorstore.index_file(file_row["id"])
 
-    # the vector half ranks every chunk of the file, the header matches too
     groups = vectorstore.group_by_file(vectorstore.search("Mustermann"))
 
     assert [group["file_id"] for group in groups] == [file_row["id"]]  # exactly once
     group = groups[0]
-    assert group["title"] == "Langes Gespräch"
-    assert group["header"] == "Mustermann"
+    # the header the user wrote names the file, never the frozen import title
+    assert group["label"] == "Mustermann"
+    assert "title" not in group and "recorded_at" not in group
     assert len(group["hits"]) > 1
     # the header leads, the passages follow in timeline order
     assert group["hits"][0]["source"] == "header"
     starts = [hit["start_s"] for hit in group["hits"]]
     assert starts == sorted(starts)
+
+
+def test_a_file_is_named_by_its_header_and_falls_back_to_the_file_name(tmp_path):
+    """The import title is stale by design — it must never name a file."""
+    file_row, _ = make_done_file(tmp_path, "ru_de_Wesner.mp3", segments=(("", "Text.", 0, 3),))
+    set_header(file_row["id"], title="ru de Wesner Ronald", header_left="", header_right="")
+    assert vectorstore.display_label(workspace.get_file(file_row["id"])) == "ru_de_Wesner.mp3"
+
+    set_header(file_row["id"], header_left="Wesner Ronald", header_right="Bremen, 2026-07-31")
+    label = vectorstore.display_label(workspace.get_file(file_row["id"]))
+    assert label == "Wesner Ronald · Bremen, 2026-07-31"  # the empty middle is left out
+
+
+def test_a_header_hit_quotes_only_the_fields_that_matched(tmp_path):
+    file_row, _ = make_done_file(tmp_path, "protokoll.mp3", segments=(("", "Text.", 0, 3),))
+    set_header(file_row["id"], header_left="Anna Berg", header_right="Bremen, 2026-07-31")
+    vectorstore.index_file(file_row["id"])
+
+    [hit] = [h for h in vectorstore.search("Berg") if h["source"] == "header"]
+    assert hit["text"] == "Anna Berg"  # not the place, which nothing matched
+
+    [by_name] = [h for h in vectorstore.search("protokoll") if h["source"] == "header"]
+    assert by_name["text"] == "protokoll.mp3"
+
+
+def test_a_date_only_match_still_shows_the_header(tmp_path):
+    """`recorded_at` is searched but never shown — the header stands in."""
+    file_row, _ = make_done_file(tmp_path, "d.mp3", segments=(("", "Text.", 0, 3),))
+    set_header(file_row["id"], header_left="Anna Berg", recorded_at="12.05.2024")
+    vectorstore.index_file(file_row["id"])
+
+    [hit] = [h for h in vectorstore.search("12.05.2024") if h["source"] == "header"]
+    assert hit["text"] == "Anna Berg"
 
 
 def test_delete_file_removes_index_entries_immediately(tmp_path):
@@ -382,9 +425,145 @@ def test_cleanup_pipeline_available_flag_in_search_response(client, monkeypatch,
     assert data["llm_available"] is False
 
 
-def test_pipeline_save_text_does_not_touch_chunks(tmp_path):
-    """Derived texts and the search index are independent stores."""
+# ── what is indexed: transcript, cleanup, translations ────────────────
+
+
+def sources_of(file_id):
+    with db.get_conn() as conn:
+        rows = conn.execute(
+            "SELECT source, source_language, text FROM chunks WHERE file_id = ? "
+            "ORDER BY chunk_index",
+            (file_id,),
+        ).fetchall()
+    return [(r["source"], r["source_language"], r["text"]) for r in rows]
+
+
+def test_the_index_covers_the_derived_texts_too(tmp_path):
+    """The cleanup corrects mishearings — a name is only findable there."""
+    file_row, _ = make_done_file(tmp_path, segments=(("", "Amen. Martin Hummer.", 0, 3),))
+    pipeline.save_text(file_row["id"], "cleanup", "Amen. Martin Humann.")
+    pipeline.save_text(file_row["id"], "translation", "Amen. Martin Humann.", language="ru")
+    vectorstore.index_file(file_row["id"])
+
+    assert sources_of(file_row["id"]) == [
+        ("transcript", "", "Amen. Martin Hummer."),
+        ("cleanup", "", "Amen. Martin Humann."),
+        ("translation", "ru", "Amen. Martin Humann."),
+    ]
+
+    hits = {h["source"] for h in vectorstore.search("Humann")}
+    assert hits == {"cleanup", "translation"}  # the transcript never says it
+
+
+def test_a_derived_text_hit_carries_no_timestamp(tmp_path):
+    """One flowing text has no audio position — the panel is the position."""
+    file_row, _ = make_done_file(tmp_path)
+    pipeline.save_text(file_row["id"], "translation", "Ein Nashorn.", language="en")
+    vectorstore.index_file(file_row["id"])
+
+    [hit] = [h for h in vectorstore.search("Nashorn") if h["source"] == "translation"]
+    assert (hit["start_s"], hit["end_s"]) == (0.0, 0.0)
+    assert hit["source_language"] == "en"
+
+
+def test_a_long_derived_text_is_split_into_searchable_passages(tmp_path):
+    file_row, _ = make_done_file(tmp_path)
+    paragraphs = "\n\n".join(f"Absatz {i}. " + ("Wort " * 100) for i in range(4))
+    pipeline.save_text(file_row["id"], "cleanup", paragraphs)
+    vectorstore.index_file(file_row["id"])
+
+    chunks = [text for source, _, text in sources_of(file_row["id"]) if source == "cleanup"]
+    assert len(chunks) > 1
+    assert all(len(text) <= vectorstore.CHUNK_MAX_CHARS * 2 for text in chunks)
+
+
+def test_one_paragraph_longer_than_a_chunk_is_still_split(tmp_path):
+    """A cleaned-up transcript can be a single block of prose."""
+    blocks = vectorstore._text_blocks("Ein Satz. " * 300, vectorstore.CHUNK_MAX_CHARS)
+    assert len(blocks) > 1
+    assert all(len(block) <= vectorstore.CHUNK_MAX_CHARS for block in blocks)
+
+
+def test_saving_a_derived_text_enqueues_a_reindex_of_that_file(tmp_path):
     file_row, _ = make_done_file(tmp_path)
     vectorstore.index_file(file_row["id"])
     pipeline.save_text(file_row["id"], "cleanup", "Bereinigt.")
-    assert vectorstore.status()["chunk_count"] == 1
+
+    with db.get_conn() as conn:
+        row = conn.execute(
+            "SELECT file_id FROM jobs WHERE kind = 'index_file' AND status = 'queued'"
+        ).fetchone()
+    assert row is not None and row["file_id"] == file_row["id"]
+
+
+# ── a hit reports where the match is, not where its passage starts ────
+
+
+def test_a_hit_reports_the_segment_the_match_is_in(tmp_path):
+    """The word stands a minute in; the chunk it lives in starts at 0:00."""
+    file_row, _ = make_done_file(
+        tmp_path,
+        segments=(
+            ("", "Guten Abend allerseits.", 0.0, 30.0),
+            ("", "Nun zum Nashorn.", 30.0, 60.0),
+            ("", "Vielen Dank.", 60.0, 90.0),
+        ),
+    )
+    vectorstore.index_file(file_row["id"])
+    with db.get_conn() as conn:  # all three segments in one chunk
+        assert conn.execute("SELECT COUNT(*) AS n FROM chunks").fetchone()["n"] == 1
+
+    [hit] = [h for h in vectorstore.search("Nashorn") if h["source"] == "transcript"]
+    assert (hit["start_s"], hit["end_s"]) == (30.0, 60.0)
+
+
+def test_a_purely_semantic_hit_keeps_the_start_of_its_passage():
+    """With no term to locate, the beginning of the passage is the honest answer."""
+    row = {
+        "text": "Die Katze schläft.\nDer Hund bellt.",
+        "offsets": "[[0,0.0,3.0],[19,3.0,6.0]]",
+        "start_s": 0.0,
+        "end_s": 6.0,
+    }
+    vectorstore._locate_match(row, ["nashorn"])  # nothing of the query is in it
+    assert (row["start_s"], row["end_s"]) == (0.0, 6.0)
+
+    vectorstore._locate_match(row, ["hund"])
+    assert (row["start_s"], row["end_s"]) == (3.0, 6.0)
+
+
+# ── the vector half has to stay quiet when nothing is close ───────────
+
+
+def test_an_unrelated_file_is_not_dragged_in_by_the_vector_half(tmp_path):
+    """Nearest-neighbour search always answers — on a small index, with all of it."""
+    named, _ = make_done_file(
+        tmp_path, "named.mp3", segments=(("", "Es sprach Martin Hummer.", 0, 5),)
+    )
+    other, _ = make_done_file(
+        tmp_path, "other.mp3", segments=(("", "Ein Zebra läuft durch die Steppe.", 0, 5),)
+    )
+    vectorstore.index_file(named["id"])
+    vectorstore.index_file(other["id"])
+
+    hits = vectorstore.search("Martin")
+    assert {hit["file_id"] for hit in hits} == {named["id"]}
+
+
+def test_the_threshold_keeps_the_close_neighbours(tmp_path):
+    """A cutoff that also silenced the semantic half would be no improvement."""
+    file_row, _ = make_done_file(
+        tmp_path, segments=(("", "Die Katze schläft auf dem Sofa.", 0, 5),)
+    )
+    vectorstore.index_file(file_row["id"])
+    assert vectorstore.search("Die Katze schläft auf dem Sofa")
+
+
+def test_status_flags_an_index_from_an_older_version(tmp_path):
+    file_row, _ = make_done_file(tmp_path)
+    vectorstore.index_file(file_row["id"])
+    assert vectorstore.status()["stale_index"] is False
+
+    with db.get_conn() as conn:
+        conn.execute("UPDATE chunks SET index_version = 0")
+    assert vectorstore.status()["stale_index"] is True

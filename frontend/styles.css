@@ -1130,6 +1130,14 @@ dialog textarea {
 }
 .search-file-name { font-weight: 600; overflow-wrap: anywhere; }
 .search-file-count { margin-left: auto; white-space: nowrap; }
+/* the recording a card's hits come from — a footnote, not a heading */
+.search-file-source {
+  display: block;
+  margin-top: .4rem;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.search-file-source:hover { text-decoration: underline; }
 .search-hit-list { list-style: none; margin: 0; padding: 0; }
 .search-hit-list > li + li { border-top: .0625rem solid var(--md-outline-variant); }
 .search-hit {
@@ -1152,6 +1160,7 @@ dialog textarea {
   padding-top: .1rem;
 }
 .search-hit-text { flex: 1 1 14rem; margin: 0; font-size: .92rem; }
+.search-file-name mark,
 .search-hit-text mark {
   background: var(--md-primary-container);
   color: var(--md-on-primary-container);

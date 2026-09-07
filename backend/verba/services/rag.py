@@ -20,18 +20,34 @@ RAG_SYSTEM_PROMPT = (
 )
 
 
+# What a passage is: spoken text, header data, or one of the texts derived from
+# the recording. The model has to be told — it would otherwise quote a name from
+# the header as if someone had said it out loud, or present a translation as the
+# words of the speaker.
+_ORIGINS = {
+    "header": "Kopfdaten",
+    "cleanup": "geglätteter Text",
+    "translation": "Übersetzung",
+}
+
+
+def _origin(source: dict[str, Any]) -> str:
+    label = _ORIGINS.get(source.get("source", ""), "")
+    if not label:
+        return ""
+    language = source.get("source_language") or ""
+    return f", {label} {language}" if language else f", {label}"
+
+
 def ask(query: str, filters: dict[str, Any] | None = None, limit: int = 8) -> dict[str, Any]:
     """Hybrid search, then an LLM answer grounded in the hits."""
     sources = vectorstore.search(query, filters, limit=limit)
     if not sources:
         return {"answer": "", "sources": []}
 
-    # a header hit is metadata, not spoken text — say so, or the model quotes a
-    # name or a date as if someone had said it out loud
     passages = "\n\n".join(
-        f"[{index + 1}] ({source['project_name']} — {source['title'] or source['filename']}"
-        f"{', Kopfdaten' if source.get('source') == 'header' else ''}) "
-        f"{source['text']}"
+        f"[{index + 1}] ({source['project_name']} — "
+        f"{vectorstore.display_label(source)}{_origin(source)}) {source['text']}"
         for index, source in enumerate(sources)
     )
     answer = llm.chat(

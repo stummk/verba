@@ -138,16 +138,25 @@ CREATE TABLE IF NOT EXISTS jobs (
     finished_at TEXT
 );
 
+-- One searchable passage. A file contributes several: its transcript (with
+-- timestamps) and every derived text it has (cleaned up, translated) — those
+-- carry no timestamps, so `source` says which panel a hit belongs to.
+-- `offsets` maps character positions in `text` back to segments, so a hit can
+-- report where the match sits instead of where its passage starts.
 CREATE TABLE IF NOT EXISTS chunks (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    file_id     INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-    chunk_index INTEGER NOT NULL,
-    start_s     REAL NOT NULL,
-    end_s       REAL NOT NULL,
-    text        TEXT NOT NULL,
-    speakers    TEXT NOT NULL DEFAULT '',
-    model       TEXT NOT NULL DEFAULT '',
-    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_id         INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    chunk_index     INTEGER NOT NULL,
+    start_s         REAL NOT NULL,
+    end_s           REAL NOT NULL,
+    text            TEXT NOT NULL,
+    speakers        TEXT NOT NULL DEFAULT '',
+    model           TEXT NOT NULL DEFAULT '',
+    source          TEXT NOT NULL DEFAULT 'transcript',
+    source_language TEXT NOT NULL DEFAULT '',
+    offsets         TEXT NOT NULL DEFAULT '',
+    index_version   INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (file_id, chunk_index)
 );
 
@@ -307,6 +316,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_owner ON projects(owner_id)")
     add_missing("jobs", "session_id", "session_id TEXT NOT NULL DEFAULT ''")
     add_missing("jobs", "priority", "priority INTEGER NOT NULL DEFAULT 0")
+    # An index written before these columns existed knows only the transcript
+    # and only chunk-level timestamps; `index_version` stays 0 for those rows,
+    # which is what makes the settings page offer a reindex.
+    add_missing("chunks", "source", "source TEXT NOT NULL DEFAULT 'transcript'")
+    add_missing("chunks", "source_language", "source_language TEXT NOT NULL DEFAULT ''")
+    add_missing("chunks", "offsets", "offsets TEXT NOT NULL DEFAULT ''")
+    add_missing("chunks", "index_version", "index_version INTEGER NOT NULL DEFAULT 0")
 
     if not get_meta(conn, "file_headers_v2_initialized"):
         rows = conn.execute(

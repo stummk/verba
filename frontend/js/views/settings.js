@@ -1088,8 +1088,9 @@ async function refreshSearchStatus() {
   if (status.configured_label) parts.push(status.configured_label);
   if (status.last_index) parts.push(t("settings.searchLastIndex", { date: status.last_index }));
   if (status.model_mismatch) parts.push(t("settings.searchModelMismatch"));
+  if (status.stale_index) parts.push(t("settings.searchStaleIndex"));
   host.textContent = parts.join(" — ");
-  host.classList.toggle("warn", Boolean(status.model_mismatch));
+  host.classList.toggle("warn", Boolean(status.model_mismatch || status.stale_index));
 }
 
 // ── public API keys ───────────────────────────────────────────────────

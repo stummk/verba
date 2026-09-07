@@ -1,26 +1,35 @@
 """Semantic search index: one global hybrid index across all projects.
 
-Chunks follow segment boundaries (small, search-sized, with overlap) and keep
-their timestamps, so every hit can jump straight into the editor at the right
-audio position. Two halves per chunk:
+Everything a transcript says is searchable, not just what Whisper heard: the
+segments, the cleaned-up text and every translation are indexed side by side,
+each chunk remembering which of them it came from. Chunks follow segment
+boundaries (small, search-sized, with overlap) and keep their timestamps, and
+a chunk records where each of its segments starts inside its text — so a hit
+reports the position of the match, not the beginning of its passage. Two
+halves per chunk:
 
 - full text in an FTS5 table (kept in sync by DB triggers — proper names and
   rare words match even when embeddings miss them)
 - an embedding in a sqlite-vec table (multilingual model, CPU-friendly)
 
-Beside the transcript text, a file's header (title, the three header fields,
-date, file name) is searched directly in SQL: a name, a date or an extra note
-lives there, not in the spoken text, and an exact lookup beats a semantic one
-for those. Results are fused with reciprocal rank fusion. Each chunk records the
-embedding model it was built with; changing the model in the settings
-triggers a full reindex job. Both heavy imports (sentence-transformers,
-sqlite-vec) belong to the optional "search" feature group — every entry
-point checks availability first.
+Beside the transcript text, a file's header (the three header fields and the
+file name) is searched directly in SQL: a name, a date or an extra note lives
+there, not in the spoken text, and an exact lookup beats a semantic one for
+those.
+
+Results are fused with reciprocal rank fusion, but the vector half only
+contributes what is actually close to the query (see VEC_MAX_DISTANCE) —
+nearest-neighbour search always answers, and on a small index that answer is
+the entire index. Each chunk records the embedding model and the index layout
+it was built with; changing either triggers a full reindex job. Both heavy
+imports (sentence-transformers, sqlite-vec) belong to the optional "search"
+feature group — every entry point checks availability first.
 """
 
 from __future__ import annotations
 
 import datetime
+import json
 import logging
 import re
 import sqlite3
@@ -34,7 +43,7 @@ from typing import Any
 from .. import config, db
 from ..core.jobs import JobCancelled, job_queue
 from ..events import hub
-from . import chunking, hardware, maintenance, transcripts, workspace
+from . import chunking, hardware, maintenance, pipeline, transcripts, workspace
 
 logger = logging.getLogger(__name__)
 
@@ -46,20 +55,54 @@ CHUNK_OVERLAP_SEGMENTS = 1
 # Header fields of a file: the name, date and extra note a transcript carries
 # around its text. They are searched literally (every token has to appear),
 # which is what a lookup for "Meier 2024" expects.
+#
+# `title` is deliberately not among them: it is parsed out of the file name
+# once at import and no screen ever writes it again, so it keeps whatever an
+# older version of the parser made of the name, and a match in it pointed at
+# text nobody could see. `recorded_at` is frozen the same way but stays — it
+# is the only place the date stands in the form it is spoken and typed
+# ("12.05.2024"), where the header field carries the ISO one. It is searched,
+# not shown; a hit that matched only there falls back to showing the header.
 HEADER_FIELDS = (
-    "title",
     "header_left",
     "header_middle",
     "header_right",
     "recorded_at",
     "filename",
 )
+# The subset a hit may quote back — `recorded_at` is not fit to be shown.
+VISIBLE_HEADER_FIELDS = ("header_left", "header_middle", "header_right", "filename")
 MAX_HEADER_TOKENS = 8
 # a header lookup answers "which file is this?" — a handful is plenty
 MAX_HEADER_HITS = 5
 
+# The kinds of text a file contributes to the index. The transcript carries
+# timestamps; a derived text is one flowing text, so its hits open the panel
+# it lives in instead of jumping to an audio position.
+SOURCE_TRANSCRIPT = "transcript"
+DERIVED_SOURCES = ("cleanup", "translation")
+
+# Bumped whenever the shape of a chunk changes. Rows written by an older
+# version still answer queries — they just know less (no derived texts, no
+# offsets) — so the settings page offers a reindex instead of forcing one.
+INDEX_VERSION = 2
+
 VEC_DIM_KEY = "search_vec_dim"
 LAST_INDEX_KEY = "search_last_index"
+
+# The vector table measures cosine distance: 0 for identical, 1 for unrelated.
+# Two cutoffs keep nearest-neighbour search from filling the hit list with the
+# whole index — which is what it does on a small one, where every chunk is a
+# nearest neighbour of everything:
+#
+# - nothing beyond VEC_MAX_DISTANCE, however empty the result then is
+# - nothing far behind the best hit, so a query with one good match does not
+#   drag its runners-up along
+#
+# The lexical half is unaffected: a rare name still matches through FTS5 and
+# the header lookup, both of which are exact and need no threshold.
+VEC_MAX_DISTANCE = 0.55
+VEC_DISTANCE_MARGIN = 0.15
 
 _model_lock = threading.Lock()
 _model: Any = None
@@ -278,15 +321,24 @@ def _vec_table_exists(conn: sqlite3.Connection) -> bool:
 
 
 def _ensure_vec_table(conn: sqlite3.Connection, dim: int) -> None:
+    """The vector table, rebuilt whenever its dimension or metric changes.
+
+    Cosine is the metric the embeddings are trained for, and unlike the L2
+    default it puts a distance on a scale we can reason about — 0 identical,
+    1 unrelated — which is what the cutoffs above are written against. The
+    stored marker carries both, so an index built by an older version (which
+    stored the dimension alone) is recognised as the wrong shape and rebuilt.
+    """
+    marker = f"{dim}:cosine"
     stored = db.get_meta(conn, VEC_DIM_KEY)
-    if _vec_table_exists(conn) and stored == str(dim):
+    if _vec_table_exists(conn) and stored == marker:
         return
     conn.execute("DROP TABLE IF EXISTS vec_chunks")
     conn.execute(
         f"CREATE VIRTUAL TABLE vec_chunks USING vec0(chunk_id INTEGER PRIMARY KEY, "
-        f"embedding FLOAT[{dim}])"
+        f"embedding FLOAT[{dim}] distance_metric=cosine)"
     )
-    db.set_meta(conn, VEC_DIM_KEY, str(dim))
+    db.set_meta(conn, VEC_DIM_KEY, marker)
 
 
 def _serialize(vector: list[float]) -> bytes:
@@ -298,23 +350,138 @@ def _serialize(vector: list[float]) -> bytes:
 # ── indexing ──────────────────────────────────────────────────────────
 
 
-def _chunk_rows(file_id: int) -> list[dict[str, Any]]:
+def _segment_offsets(own: list[dict[str, Any]]) -> str:
+    """Where each segment begins inside the chunk text, with its timestamps.
+
+    `Chunk.own_text` joins the segments with a newline, so the offsets follow
+    from the lengths alone. Stored as compact JSON: the search uses it to
+    turn the position of a match into the segment that carries it, which is
+    the position a hit should report and jump to — the start of the passage
+    is a different question, and on a first chunk it is always 0:00.
+    """
+    entries: list[list[float]] = []
+    cursor = 0
+    for segment in own:
+        text = segment["text"].strip()
+        entries.append([cursor, float(segment["start_s"]), float(segment["end_s"])])
+        cursor += len(text) + 1  # the newline the join puts between them
+    return json.dumps(entries, separators=(",", ":"))
+
+
+def _transcript_rows(file_id: int) -> list[dict[str, Any]]:
     segments = transcripts.list_segments(file_id)
     rows = []
-    for index, chunk in enumerate(
-        chunking.chunk_segments(segments, max_chars=CHUNK_MAX_CHARS, overlap=CHUNK_OVERLAP_SEGMENTS)
+    for chunk in chunking.chunk_segments(
+        segments, max_chars=CHUNK_MAX_CHARS, overlap=CHUNK_OVERLAP_SEGMENTS
     ):
         own = chunk.segments[chunk.own_start :]
         speakers = sorted({s["speaker"].strip() for s in own if s.get("speaker", "").strip()})
         rows.append(
             {
-                "chunk_index": index,
                 "start_s": own[0]["start_s"],
                 "end_s": own[-1]["end_s"],
                 "text": chunk.own_text,
                 "speakers": ", ".join(speakers),
+                "source": SOURCE_TRANSCRIPT,
+                "source_language": "",
+                "offsets": _segment_offsets(own),
             }
         )
+    return rows
+
+
+_PARAGRAPH_SPLIT = re.compile(r"\n\s*\n")
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?…])\s+")
+
+
+def _text_blocks(content: str, max_chars: int) -> list[str]:
+    """A derived text cut into pieces no chunk has to split again.
+
+    Paragraphs first — they are the structure the text actually has. One that
+    is longer than a whole chunk on its own (a cleaned-up transcript can be a
+    single block of prose) is cut at sentence ends, and a sentence longer
+    still at word boundaries, so nothing ever lands in the index as one
+    unsearchably large passage.
+    """
+
+    def by_words(piece: str) -> list[str]:
+        words = piece.split()
+        out: list[str] = []
+        current = ""
+        for word in words:
+            if current and len(current) + 1 + len(word) > max_chars:
+                out.append(current)
+                current = word
+            else:
+                current = f"{current} {word}" if current else word
+        if current:
+            out.append(current)
+        return out
+
+    blocks: list[str] = []
+    for paragraph in _PARAGRAPH_SPLIT.split(content):
+        paragraph = paragraph.strip()
+        if not paragraph:
+            continue
+        if len(paragraph) <= max_chars:
+            blocks.append(paragraph)
+            continue
+        current = ""
+        for sentence in _SENTENCE_SPLIT.split(paragraph):
+            if len(sentence) > max_chars:
+                if current:
+                    blocks.append(current)
+                    current = ""
+                blocks.extend(by_words(sentence))
+            elif current and len(current) + 1 + len(sentence) > max_chars:
+                blocks.append(current)
+                current = sentence
+            else:
+                current = f"{current} {sentence}" if current else sentence
+        if current:
+            blocks.append(current)
+    return blocks
+
+
+def _derived_rows(file_id: int) -> list[dict[str, Any]]:
+    """Chunks for the cleaned-up text and every translation of a file.
+
+    The cleanup is what the user reads and exports, and it is where a
+    mishearing has been corrected — a name the transcript got wrong is only
+    findable here. A translation makes the same recording findable in a
+    language that was never spoken in it. Neither carries timestamps, so
+    their hits open the panel the text lives in instead of the audio.
+    """
+    rows = []
+    for text in pipeline.list_texts(file_id):
+        if text["kind"] not in DERIVED_SOURCES or not text["content"].strip():
+            continue
+        blocks = [
+            {"text": block, "start_s": 0.0, "end_s": 0.0, "speaker": ""}
+            for block in _text_blocks(text["content"], CHUNK_MAX_CHARS)
+        ]
+        for chunk in chunking.chunk_segments(
+            blocks, max_chars=CHUNK_MAX_CHARS, overlap=CHUNK_OVERLAP_SEGMENTS
+        ):
+            rows.append(
+                {
+                    "start_s": 0.0,
+                    "end_s": 0.0,
+                    "text": chunk.own_text,
+                    "speakers": "",
+                    "source": text["kind"],
+                    "source_language": text["language"],
+                    "offsets": "",  # no timestamps to map back to
+                }
+            )
+    return rows
+
+
+def _chunk_rows(file_id: int) -> list[dict[str, Any]]:
+    """Everything of a file that is searchable, in one numbered sequence."""
+    rows = _transcript_rows(file_id) + _derived_rows(file_id)
+    for index, row in enumerate(rows):
+        row["chunk_index"] = index
     return rows
 
 
@@ -330,8 +497,9 @@ def index_file(file_id: int) -> int:
         _delete_file_chunks(conn, file_id)
         for row, embedding in zip(rows, embeddings, strict=True):
             cursor = conn.execute(
-                "INSERT INTO chunks (file_id, chunk_index, start_s, end_s, text, speakers, model)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO chunks (file_id, chunk_index, start_s, end_s, text, speakers, "
+                "model, source, source_language, offsets, index_version)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     file_id,
                     row["chunk_index"],
@@ -340,6 +508,10 @@ def index_file(file_id: int) -> int:
                     row["text"],
                     row["speakers"],
                     model_name,
+                    row["source"],
+                    row["source_language"],
+                    row["offsets"],
+                    INDEX_VERSION,
                 ),
             )
             if _vec_table_exists(conn):
@@ -393,23 +565,38 @@ def _rrf(*ranked_lists: list[int], k: int = 60) -> list[int]:
     return sorted(scores, key=lambda cid: scores[cid], reverse=True)
 
 
+def _near_enough(rows: list[sqlite3.Row]) -> list[int]:
+    """Of the nearest neighbours, the ones actually near the query.
+
+    Without this every chunk in the index is a hit: `MATCH` ranks, it does not
+    judge, so a small index answers any query with all of itself. The best hit
+    sets the bar (nothing far behind it), and VEC_MAX_DISTANCE caps it — a
+    query that nothing is about must be allowed to come back empty from this
+    half.
+    """
+    if not rows:
+        return []
+    cutoff = min(rows[0]["distance"] + VEC_DISTANCE_MARGIN, VEC_MAX_DISTANCE)
+    return [row["chunk_id"] for row in rows if row["distance"] <= cutoff]
+
+
 def search(query: str, filters: dict[str, Any] | None = None, limit: int = 10) -> list[dict]:
     """Hybrid search (vector + full text), fused via reciprocal rank fusion."""
     filters = filters or {}
     candidates = max(40, limit * 4)
+    terms = _query_terms(query)
 
     query_vector = _encode([query], "query")[0]
     with _vec_conn() as conn:
         vec_ids: list[int] = []
         if _vec_table_exists(conn):
-            vec_ids = [
-                row["chunk_id"]
-                for row in conn.execute(
-                    "SELECT chunk_id FROM vec_chunks WHERE embedding MATCH ? "
+            vec_ids = _near_enough(
+                conn.execute(
+                    "SELECT chunk_id, distance FROM vec_chunks WHERE embedding MATCH ? "
                     "ORDER BY distance LIMIT ?",
                     (_serialize(query_vector), candidates),
-                )
-            ]
+                ).fetchall()
+            )
         fts = _fts_query(query)
         fts_ids: list[int] = []
         if fts:
@@ -422,10 +609,15 @@ def search(query: str, filters: dict[str, Any] | None = None, limit: int = 10) -
                 )
             ]
         fused = _rrf(vec_ids, fts_ids)
-        results = _load_results(conn, fused, filters, limit) if fused else []
+        results = _load_results(conn, fused, filters, limit, terms) if fused else []
         # header matches are exact and few: they lead, the passages follow
         headers = _header_hits(conn, query, filters, min(limit, MAX_HEADER_HITS))
         return headers + results
+
+
+# The order the hits of one file are shown in: the header first (it says what
+# the file is), then the transcript along its timeline, then the derived texts.
+_SOURCE_ORDER = {"header": 0, SOURCE_TRANSCRIPT: 1, "cleanup": 2, "translation": 3}
 
 
 def group_by_file(results: list[dict]) -> list[dict]:
@@ -442,12 +634,10 @@ def group_by_file(results: list[dict]) -> list[dict]:
             group = {
                 "file_id": hit["file_id"],
                 "filename": hit["filename"],
-                "title": hit["title"],
+                "label": display_label(hit),
                 "project_id": hit["project_id"],
                 "project_name": hit["project_name"],
                 "language": hit["language"],
-                "recorded_at": hit["recorded_at"],
-                "header": header_line(hit),
                 "hits": [],
             }
             groups[hit["file_id"]] = group
@@ -458,16 +648,19 @@ def group_by_file(results: list[dict]) -> list[dict]:
                 "end_s": hit["end_s"],
                 "text": hit["text"],
                 "speakers": hit["speakers"],
-                "source": hit.get("source", "transcript"),
+                "source": hit.get("source", SOURCE_TRANSCRIPT),
+                "source_language": hit.get("source_language", ""),
             }
         )
     for group in groups.values():
-        group["hits"].sort(key=lambda hit: (hit["source"] != "header", hit["start_s"]))
+        group["hits"].sort(
+            key=lambda hit: (_SOURCE_ORDER.get(hit["source"], 9), hit["start_s"]),
+        )
     return list(groups.values())
 
 
 FILE_COLUMNS = (
-    "f.filename, f.title, f.recorded_at, f.language, f.project_id, "
+    "f.filename, f.language, f.project_id, "
     "f.header_left, f.header_middle, f.header_right, "
     "p.name AS project_name, p.type_id"
 )
@@ -509,12 +702,51 @@ def _filter_clause(filters: dict[str, Any], speaker_sql: str) -> tuple[str, list
     return sql, params
 
 
+def _match_offset(text: str, terms: list[str]) -> int | None:
+    """Where in the passage the first query term stands, or None."""
+    haystack = text.lower()
+    positions = [at for term in terms if (at := haystack.find(term)) >= 0]
+    return min(positions) if positions else None
+
+
+def _locate_match(row: dict[str, Any], terms: list[str]) -> None:
+    """Move a hit's timestamps from the start of its passage onto the match.
+
+    A chunk is up to 800 characters — a first chunk therefore always begins at
+    0:00, whether the word is spoken in the first second or a minute later,
+    and the editor link jumped to the wrong place accordingly. `offsets` says
+    where each segment starts inside the text, so the match can be mapped back
+    to the segment that actually carries it. A purely semantic hit (no term to
+    find) keeps the start of its passage — that is genuinely where it begins.
+    """
+    if not terms or not row.get("offsets"):
+        return
+    try:
+        entries = json.loads(row["offsets"])
+    except (TypeError, ValueError):  # a row from a half-written older index
+        return
+    at = _match_offset(row["text"], terms)
+    if at is None or not entries:
+        return
+    chosen = entries[0]
+    for entry in entries:
+        if entry[0] > at:
+            break
+        chosen = entry
+    row["start_s"], row["end_s"] = float(chosen[1]), float(chosen[2])
+
+
 def _load_results(
-    conn: sqlite3.Connection, chunk_ids: list[int], filters: dict[str, Any], limit: int
+    conn: sqlite3.Connection,
+    chunk_ids: list[int],
+    filters: dict[str, Any],
+    limit: int,
+    terms: list[str] | None = None,
 ) -> list[dict]:
     marks = ",".join("?" for _ in chunk_ids)
     sql = (
         "SELECT c.id, c.file_id, c.start_s, c.end_s, c.text, c.speakers, "
+        "c.source, c.source_language, c.offsets, "
         f"{FILE_COLUMNS} "
         f"FROM chunks c JOIN files f ON f.id = c.file_id "
         f"JOIN projects p ON p.id = f.project_id WHERE c.id IN ({marks})"
@@ -524,30 +756,35 @@ def _load_results(
     sql += clause
     params += filter_params
 
-    by_id = {row["id"]: dict(row) | {"source": "transcript"} for row in conn.execute(sql, params)}
+    by_id: dict[int, dict[str, Any]] = {}
+    for raw in conn.execute(sql, params):
+        row = dict(raw)
+        row["source"] = row["source"] or SOURCE_TRANSCRIPT
+        _locate_match(row, terms or [])
+        by_id[row["id"]] = row
     return [by_id[cid] for cid in chunk_ids if cid in by_id][:limit]
 
 
 # ── header search ─────────────────────────────────────────────────────
 
 
-def _header_tokens(query: str) -> list[str]:
-    """The query tokens a header lookup is run with.
+def _query_terms(query: str) -> list[str]:
+    """The terms of a query that are worth matching on literally.
 
-    Every token has to appear, so a whole question simply finds nothing here
-    instead of dragging unrelated files in. Very short words are dropped —
-    they would match inside longer names — except numbers, which carry the
-    parts of a date ("12.05.2024").
+    Very short words are dropped — they would match inside longer names —
+    except numbers, which carry the parts of a date ("12.05.2024"). The same
+    rule marks the matches in the hit list, so what is highlighted there is
+    what a hit was located by here.
     """
     tokens = []
     for token in re.findall(r"\w+", query.lower(), re.UNICODE):
         if len(token) >= 3 or (token.isdigit() and len(token) >= 2):
             tokens.append(token)
-    return tokens[:MAX_HEADER_TOKENS]
+    return tokens
 
 
 def header_line(row: dict[str, Any]) -> str:
-    """The header as one readable line (what the UI shows under a file)."""
+    """The three header fields as one line, skipping the ones left empty."""
     parts = [
         str(row.get(field) or "").strip()
         for field in ("header_left", "header_middle", "header_right")
@@ -555,16 +792,43 @@ def header_line(row: dict[str, Any]) -> str:
     return " · ".join(part for part in parts if part)
 
 
+def display_label(row: dict[str, Any]) -> str:
+    """What a transcript is called wherever it is listed.
+
+    Its header, which is what the user wrote and what the PDF prints — and
+    the file name where no header field is filled in. Deliberately not
+    `title`: that one is parsed out of the file name at import and never
+    written again, so it keeps whatever an older version of the parser made
+    of the name long after the header has been corrected.
+    """
+    return header_line(row) or str(row.get("filename") or "").strip()
+
+
 def _sql_lower(value: str | None) -> str:
     """Unicode-aware lowercase for the header match (SQL helper)."""
     return (value or "").lower()
 
 
+def _matching_header_text(row: dict[str, Any], tokens: list[str]) -> str:
+    """Of the header, the parts the query actually hit.
+
+    The card already carries the whole header as its heading, so repeating it
+    verbatim underneath says nothing. Naming the fields that matched does: it
+    is the difference between "the name matched" and "the file name did".
+    """
+    parts = []
+    for field in VISIBLE_HEADER_FIELDS:
+        value = str(row.get(field) or "").strip()
+        if value and any(token in value.lower() for token in tokens):
+            parts.append(value)
+    return " · ".join(parts) or display_label(row)
+
+
 def _header_hits(
     conn: sqlite3.Connection, query: str, filters: dict[str, Any], limit: int
 ) -> list[dict]:
-    """Files whose header (name, date, note, title) matches the query itself."""
-    tokens = _header_tokens(query)
+    """Files whose header (name, note, date, file name) matches the query."""
+    tokens = _query_terms(query)[:MAX_HEADER_TOKENS]
     if not tokens or limit <= 0:
         return []
     # SQLite's own LOWER() only folds ASCII, which would make "MUELLER" match
@@ -586,16 +850,14 @@ def _header_hits(
     hits = []
     for row in conn.execute(sql, params):
         hit = dict(row)
-        title = (hit["title"] or hit["filename"]).strip()
-        date = (hit["recorded_at"] or "").strip()
-        header = header_line(hit)
         hit |= {
             "id": None,
             "start_s": 0.0,
             "end_s": 0.0,
             "speakers": "",
             "source": "header",
-            "text": " · ".join(part for part in (title, date, header) if part),
+            "source_language": "",
+            "text": _matching_header_text(hit, tokens),
         }
         hits.append(hit)
     return hits
@@ -607,7 +869,8 @@ def _header_hits(
 def status() -> dict[str, Any]:
     with db.get_conn() as conn:
         row = conn.execute(
-            "SELECT COUNT(*) AS chunks, COUNT(DISTINCT file_id) AS files FROM chunks"
+            "SELECT COUNT(*) AS chunks, COUNT(DISTINCT file_id) AS files, "
+            "MIN(index_version) AS version FROM chunks"
         ).fetchone()
         models = [
             r["model"] for r in conn.execute("SELECT DISTINCT model FROM chunks WHERE model != ''")
@@ -623,6 +886,9 @@ def status() -> dict[str, Any]:
         "configured_label": entry.label,
         # a model change invalidates every vector: the UI offers a reindex
         "model_mismatch": any(model != entry.name for model in models),
+        # an index from an older version answers, but knows neither the
+        # cleaned-up text nor where inside a passage a match sits
+        "stale_index": row["chunks"] > 0 and (row["version"] or 0) < INDEX_VERSION,
         "last_index": last_index,
     }
 

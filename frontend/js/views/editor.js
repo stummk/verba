@@ -25,6 +25,12 @@ export async function render(view, _status, params) {
   const fileId = Number(params[0]);
   // deep link from search results: #/editor/<fileId>/<seconds> jumps and plays
   const startAt = params[1] !== undefined ? Number(params[1]) : null;
+  // Third path segment of the same link: which text a hit was found in —
+  // "cleanup", or "translation-<code>". The cleaned-up text and the
+  // translations are indexed too, and a hit in one of them belongs in the
+  // panel that holds it, not at an audio position it does not have.
+  const wanted = String(params[2] ?? "");
+  const wantedPanel = wanted.startsWith("translation") ? "translation" : wanted;
   destroy(); // clean up a previous editor instance (the router calls it too)
 
   let data, textsData, settings, project;
@@ -294,7 +300,10 @@ export async function render(view, _status, params) {
   wavesurfer.on("ready", () => {
     el("wave-loading").hidden = true;
     el("play-toggle").disabled = false;
-    if (startAt !== null && Number.isFinite(startAt)) {
+    // a hit in a derived text carries no position — its link only names the
+    // panel, so starting the audio from the top would be an answer to a
+    // question nobody asked
+    if (startAt !== null && Number.isFinite(startAt) && !wantedPanel) {
       wavesurfer.setTime(startAt);
       wavesurfer.play();
       // a link from the search points at one hit deep in the transcript, so
@@ -567,13 +576,19 @@ export async function render(view, _status, params) {
   const desktopQuery = matchMedia("(min-width: 68.75em)");
   const activePanels = new Set(["segments"]);
   let translationLanguage =
-    derivedTexts.find((x) => x.kind === "translation" && x.content.trim())?.language ?? "en";
+    wanted.startsWith("translation-") && wanted.slice("translation-".length)
+      ? wanted.slice("translation-".length)
+      : (derivedTexts.find((x) => x.kind === "translation" && x.content.trim())?.language ?? "en");
   const textTimers = new Map();
 
   function setupPanels() {
     if (desktopQuery.matches) {
       if (hasText("cleanup")) activePanels.add("cleanup");
       if (hasText("translation")) activePanels.add("translation");
+    }
+    if (wantedPanel === "cleanup" || wantedPanel === "translation") {
+      if (!desktopQuery.matches) activePanels.clear();
+      activePanels.add(wantedPanel);
     }
     for (const tab of el("panel-tabs").querySelectorAll("button")) {
       tab.onclick = () => {
