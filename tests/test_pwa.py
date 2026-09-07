@@ -197,3 +197,103 @@ def test_a_new_release_is_announced_where_the_user_looks():
     assert "systemStatus?.update_available" in dashboard
     # installing belongs to an administrator, so only they are reminded
     assert 'access.user?.role === "admin"' in dashboard
+
+
+def test_the_file_list_is_a_list_of_cards():
+    """No table any more: a card per file, and the card is the link into it."""
+    source = (FRONTEND / "js" / "views" / "project.js").read_text(encoding="utf-8")
+    assert "<table" not in source and "filetable" not in source
+    assert 'class="file-cards"' in source
+    assert 'card.className = "card file-card"' in source
+    # the link is a layer over the card, never a wrapper around its controls:
+    # cancelling a click inside an <a> would also cancel the checkbox's tick
+    assert 'overlay.className = "file-card-overlay"' in source
+    assert "overlay.href = `#/editor/${fileRow.id}`" in source
+    # the multi-selection stays, in the corner of every card
+    assert 'select.className = "row-select file-card-select"' in source
+    assert 'id="file-select-all"' in source
+
+
+def test_every_file_card_shows_all_three_steps_as_badges():
+    """Always all three, so a card says what is missing, not only what is done."""
+    steps = (FRONTEND / "js" / "file-steps.js").read_text(encoding="utf-8")
+    for key, icon in (
+        ("transcribe", "speechToText"),
+        ("cleanup", "spellcheck"),
+        ("translation", "translate"),
+    ):
+        assert f'{{ key: "{key}", icon: "{icon}" }}' in steps
+
+    # the state is the whole message: grey / blue ring / green / red
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    for state in ("idle", "queued", "running", "done", "failed"):
+        assert f".step-{state}" in css, f"the badge state '{state}' has no styling"
+    assert "conic-gradient(" in css, "the progress of a step is the ring itself"
+
+    # and the text of a badge lives in its tooltip, in all three catalogs
+    keys = {
+        f"fileStep.{name}"
+        for name in (
+            "transcribe",
+            "cleanup",
+            "translation",
+            "idle",
+            "queued",
+            "queuedAt",
+            "running",
+            "runningPlain",
+            "done",
+            "failed",
+        )
+    }
+    for lang in ("de", "en", "ru"):
+        catalog = json.loads((FRONTEND / "i18n" / f"{lang}.json").read_text(encoding="utf-8"))
+        assert not keys - set(catalog), f"{lang}.json fehlt: {sorted(keys - set(catalog))}"
+
+
+def test_the_actions_of_a_file_live_in_an_overflow_menu():
+    """Icon plus label per entry — an icon-only row of six said nothing."""
+    menu = (FRONTEND / "js" / "menu.js").read_text(encoding="utf-8")
+    assert 'iconSvg("moreVert")' in menu
+    assert "item.innerHTML = iconSvg(icon)" in menu and "textContent: itemLabel" in menu
+    # Escape, a click elsewhere and scrolling all close it again
+    assert 'event.key === "Escape"' in menu
+    assert 'window.addEventListener("scroll", closeOpenMenu' in menu
+
+    source = (FRONTEND / "js" / "views" / "project.js").read_text(encoding="utf-8")
+    assert "overflowMenu({" in source
+    for label in (
+        't("project.transcribe")',
+        't("ai.title")',
+        't("project.openEditor")',
+        't("export.file")',
+        't("common.delete")',
+    ):
+        assert label in source
+    # stopping a running step stays on the card: it is the urgent one
+    assert 'stop.classList.add("file-card-stop")' in source
+    assert "stop.hidden = !isBusy(fileRow)" in source
+
+
+def test_the_step_badges_keep_their_place_while_the_stop_button_comes_and_goes():
+    """The badges sit one row lower, at the right edge of the card.
+
+    They used to share the corner with the stop button, which appears with a
+    running step and disappears with it — and shifted all three badges every
+    time. Two rules keep them still: the card is a grid whose lower rows span
+    past the actions column to its own edge, and that column holds the stop
+    button's place open while it is hidden.
+    """
+    source = (FRONTEND / "js" / "views" / "project.js").read_text(encoding="utf-8")
+    # the badges belong to the meta line, next to the language and the duration
+    assert "meta.append(stepBadges(fileRow, badgeContext(fileRow)));" in source
+    assert "card.append(select, title, actions, meta);" in source
+
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    card = css.split(".file-card {", 1)[1].split("}", 1)[0]
+    assert "display: grid" in card
+    assert ".file-card-meta { grid-column: 2 / -1;" in css
+    assert ".file-card-error { grid-column: 2 / -1;" in css
+    # the last block is the one that lays the column out (the first only places it)
+    actions = css.rsplit(".file-card-actions {", 1)[1].split("}", 1)[0]
+    assert "min-width:" in actions, "the stop button's slot stays reserved"

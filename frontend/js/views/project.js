@@ -1,15 +1,17 @@
-// Project view: import (upload, server browser, drag & drop), file table with
+// Project view: import (upload, server browser, drag & drop), file cards with
 // live progress, per-run advanced options (model/language), segment preview.
 
 import { api } from "../api.js";
 import { confirmAction, confirmDelete } from "../confirm.js";
 import { el, esc, formatDuration, html, raw, toast } from "../dom.js";
 import { closeExportDialog, openExportDialog } from "../export-dialog.js";
+import { stepBadges } from "../file-steps.js";
 import { iconButton, iconSvg } from "../icons.js";
 import { t } from "../i18n.js";
 import { jobCardHost, jobLine, jobStepLabel } from "../jobs.js";
 import { languageChip, setChipLanguage } from "../language-chip.js";
 import { fillLanguageSelect } from "../languages.js";
+import { overflowMenu } from "../menu.js";
 import { on } from "../ws.js";
 
 const AUDIO_RE = /\.(mp3|wav|m4a|flac|ogg|opus|aac|wma|webm|mp4)$/i;
@@ -19,9 +21,13 @@ let unsubscribers = [];
 let fabHandler = null;
 let queueTimerHandle = null;
 const fileJobs = new Map(); // file_id -> latest active job
-// file_id -> reason the last step failed. A failed AI step leaves the file
-// status at "done", so without this the row would give no hint at all.
+// file_id -> the last job that failed. A failed AI step leaves the file status
+// at "done", so without this the card would give no hint at all — and the job
+// itself says which of the three steps went wrong.
 const fileJobErrors = new Map();
+// file_id -> place in the queue, filled by refreshQueuePositions() and read by
+// the badge tooltips, which are the only place a waiting file is explained now.
+const fileQueuePositions = new Map();
 
 // Who else can reach this transcript — shown next to its name, because
 // "public" is not something to discover only when a colleague edits it.
@@ -162,20 +168,11 @@ export async function render(view, _status, params) {
             ${raw(iconSvg("delete"))} ${t("common.delete")}
           </button>
         </div>
-        <div class="table-scroll">
-        <table class="filetable">
-          <thead><tr>
-            <th class="col-select">
-              <input type="checkbox" id="file-select-all"
-                     title="${t("project.selectAll")}" aria-label="${t("project.selectAll")}">
-            </th>
-            <th>${t("project.colFile")}</th><th>${t("project.colLanguage")}</th>
-            <th>${t("project.colDuration")}</th>
-            <th>${t("project.colStatus")}</th><th class="col-actions"></th>
-          </tr></thead>
-          <tbody id="file-rows"></tbody>
-        </table>
-        </div>
+        <label class="checkline select-all-line" id="select-all-line">
+          <input type="checkbox" id="file-select-all">
+          <span class="muted small">${t("project.selectAll")}</span>
+        </label>
+        <div class="file-cards" id="file-rows"></div>
         <p class="muted small" id="no-files" hidden>${t("project.noFiles")}</p>
       </div>
     </details>
@@ -214,6 +211,7 @@ export async function render(view, _status, params) {
   const selectedExports = new Set();
   fileJobs.clear();
   fileJobErrors.clear();
+  fileQueuePositions.clear();
   renderRows(files);
 
   function flowOptions() {
@@ -455,7 +453,7 @@ export async function render(view, _status, params) {
         fileJobErrors.delete(job.file_id);
       } else {
         fileJobs.delete(job.file_id);
-        if (job.status === "failed" && job.error) fileJobErrors.set(job.file_id, job.error);
+        if (job.status === "failed" && job.error) fileJobErrors.set(job.file_id, job);
       }
       updateProgressRow(job);
       refreshQueuePositions();
@@ -496,25 +494,27 @@ export async function render(view, _status, params) {
           }
         }
       }
-      for (const tr of el("file-rows")?.querySelectorAll("tr") ?? []) {
-        const fileId = Number(tr.dataset.fileId);
-        const message = tr.querySelector(".job-message");
-        if (message && positions.has(fileId)) {
-          const step = fileJobs.has(fileId) ? `${jobStepLabel(fileJobs.get(fileId))} · ` : "";
-          message.textContent = step + t("project.queuePosition", { pos: positions.get(fileId) });
-        }
+      fileQueuePositions.clear();
+      for (const [fileId, position] of positions) fileQueuePositions.set(fileId, position);
+      // the position is only ever visible in a badge tooltip, so only the
+      // badges of the waiting files have to be redrawn
+      for (const card of el("file-rows")?.querySelectorAll(".file-card") ?? []) {
+        const fileId = Number(card.dataset.fileId);
+        const fileRow = files.get(fileId);
+        if (fileRow && positions.has(fileId)) refreshCardSteps(card, fileRow);
       }
     }, 300);
   }
 
   function renderRows(fileMap) {
-    const tbody = el("file-rows");
-    if (!tbody) return;
+    const host = el("file-rows");
+    if (!host) return;
     el("no-files").hidden = fileMap.size > 0;
+    el("select-all-line").hidden = fileMap.size === 0;
     for (const id of [...selectedFiles]) {
       if (!fileMap.has(id)) selectedFiles.delete(id); // deleted elsewhere
     }
-    tbody.replaceChildren(...[...fileMap.values()].map((fileRow) => buildRow(fileRow)));
+    host.replaceChildren(...[...fileMap.values()].map((fileRow) => buildRow(fileRow)));
     refreshFileSelection();
   }
 
@@ -530,130 +530,176 @@ export async function render(view, _status, params) {
     all.indeterminate = selectedFiles.size > 0 && selectedFiles.size < files.size;
   }
 
+  // One file, one card, and the whole card is the way into the editor — that
+  // is what the list is for. The link is a transparent layer over the card
+  // rather than a wrapper around it: a checkbox or a button inside an <a> can
+  // only be kept from navigating by cancelling the click, which also cancels
+  // the checkbox's own tick. So every control sits *above* that layer instead
+  // and keeps its plain behaviour.
   function buildRow(fileRow) {
-    const tr = document.createElement("tr");
-    tr.dataset.fileId = fileRow.id;
+    const card = document.createElement("div");
+    card.className = "card file-card";
+    card.dataset.fileId = fileRow.id;
+    const overlay = document.createElement("a");
+    overlay.className = "file-card-overlay";
+    overlay.href = `#/editor/${fileRow.id}`;
+    overlay.title = t("project.openEditor");
+    overlay.setAttribute("aria-label", `${fileRow.filename} — ${t("project.openEditor")}`);
+    card.append(overlay);
+    // The badges and the failure text have to sit above that layer, or they
+    // would never get a hover and never show their tooltip — which is where
+    // their whole text lives. So the card answers a click on them itself, and
+    // the whole card stays one surface leading into the editor.
+    card.addEventListener("click", (event) => {
+      if (event.target.closest("a, button, input")) return;
+      location.hash = `#/editor/${fileRow.id}`;
+    });
 
-    const selectCell = document.createElement("td");
-    selectCell.className = "col-select";
     const select = document.createElement("input");
     select.type = "checkbox";
-    select.className = "row-select";
+    select.className = "row-select file-card-select";
     select.checked = selectedFiles.has(fileRow.id);
     select.title = t("project.selectFile");
     select.setAttribute("aria-label", t("project.selectFile"));
     select.onchange = () => {
       if (select.checked) selectedFiles.add(fileRow.id);
       else selectedFiles.delete(fileRow.id);
+      card.classList.toggle("selected", select.checked);
       refreshFileSelection();
     };
-    selectCell.appendChild(select);
+    card.classList.toggle("selected", select.checked);
 
-    const nameCell = document.createElement("td");
-    nameCell.textContent = fileRow.filename;
-    const failure = fileRow.status === "failed" ? fileRow.error : fileJobErrors.get(fileRow.id);
-    if (failure) {
-      const err = document.createElement("div");
-      err.className = "small error-text";
-      err.textContent = failure;
-      err.title = failure; // the row clamps long endpoint messages
-      nameCell.appendChild(err);
-    }
+    const title = Object.assign(document.createElement("div"), {
+      className: "file-card-title", textContent: fileRow.filename, title: fileRow.filename,
+    });
 
-    const durationCell = document.createElement("td");
-    durationCell.textContent = formatDuration(fileRow.duration);
-
-    // The language of the row as a chip: the flag reads at a glance down the
-    // column, the tooltip names the language, and the picker behind it is
-    // filterable — a select of a hundred entries per row was neither.
-    const languageCell = document.createElement("td");
+    // Below the name the two facts about the recording itself: which language
+    // it is transcribed in (and can be changed to) and how long it runs.
+    const meta = document.createElement("div");
+    meta.className = "file-card-meta";
     const chipOptions = {
       hint: t("project.advLanguage"),
       autoTitle: t("project.advAuto"),
     };
-    const languageCellChip = languageChip({
+    const languageNode = languageChip({
       ...chipOptions,
       code: fileLanguages.get(fileRow.id) ?? fileRow.language ?? "",
       dialogTitle: t("project.advLanguage"),
       onPick: (code) => {
         fileLanguages.set(fileRow.id, code);
-        setChipLanguage(languageCellChip, code, chipOptions);
+        setChipLanguage(languageNode, code, chipOptions);
       },
     });
-    languageCell.appendChild(languageCellChip);
-
-    const statusCell = document.createElement("td");
-    const badge = document.createElement("span");
-    badge.className = `badge badge-${fileRow.status}`;
-    badge.textContent = t(`status.${fileRow.status}`);
-    statusCell.appendChild(badge);
-    const job = fileJobs.get(fileRow.id);
-    // Which steps a file has behind it: without this the row looks identical
-    // before and after the AI step, and the button gets clicked again.
-    const derived = (fileRow.derived_kinds ?? "").split(",").filter(Boolean);
-    for (const kind of ["cleanup", "translation"]) {
-      if (!derived.includes(kind)) continue;
-      const chip = document.createElement("span");
-      chip.className = "badge badge-done";
-      chip.textContent = t(`ai.badge.${kind}`);
-      statusCell.appendChild(chip);
-    }
-    if (fileRow.status === "transcribing" || job) {
-      const wrap = document.createElement("div");
-      wrap.className = "progressbar small-bar";
-      wrap.innerHTML = `<div style="width:${job?.progress ?? 0}%"></div>`;
-      statusCell.appendChild(wrap);
-      const message = document.createElement("div");
-      message.className = "small muted job-message";
-      message.textContent = job ? jobRowMessage(job, fileRow) : "";
-      statusCell.appendChild(message);
-    }
-
-    const actionCell = document.createElement("td");
-    actionCell.className = "col-actions";
-    if (fileRow.status === "transcribing" || job) {
-      actionCell.append(iconButton("stop", t("common.cancel"), async () => {
-        const activeJob = fileJobs.get(fileRow.id);
-        if (activeJob) await api.cancelJob(activeJob.id).catch((e) => toast(e.message));
-      }));
-    } else {
-      actionCell.append(iconButton(
-        fileRow.status === "done" ? "refresh" : "speechToText",
-        fileRow.status === "done" ? t("project.again") : t("project.transcribe"),
-        () => api.transcribeFile(fileRow.id, fileOptions(fileRow)).catch((e) => toast(e.message)),
-      ));
-    }
-    if (fileRow.status === "done") {
-      // in the order of the workflow: transcribe → AI processing → check in
-      // the editor → export; the editor button used to disappear between them
-      if (llmEnabled && job?.kind !== "llm_process") {
-        actionCell.append(
-          iconButton("sparkle", t("ai.title"), () => openAiDialog({ fileId: fileRow.id }))
-        );
-      }
-      actionCell.append(iconButton("editNote", t("project.openEditor"), () => {
-        location.hash = `#/editor/${fileRow.id}`;
-      }));
-      actionCell.append(
-        iconButton("pdf", t("export.file"), () => openExportDialog({ fileId: fileRow.id }))
-      );
-    }
-    actionCell.append(iconButton("delete", t("common.delete"), async () => {
-      const ok = await confirmDelete({
-        message: t("project.deleteFileConfirm", { name: fileRow.filename }),
-      });
-      if (!ok) return;
-      try {
-        await api.deleteFile(fileRow.id);
-        files.delete(fileRow.id);
-        renderRows(files);
-      } catch (error) {
-        toast(error.message);
-      }
+    meta.append(languageNode);
+    const duration = document.createElement("span");
+    duration.className = "file-card-duration muted small";
+    duration.title = t("project.colDuration");
+    duration.innerHTML = iconSvg("schedule");
+    duration.append(Object.assign(document.createElement("span"), {
+      textContent: formatDuration(fileRow.duration),
     }));
+    meta.append(duration);
+    // The badges close the meta line on the right, so they keep their place
+    // whatever happens in the corner above them: the stop button comes and
+    // goes with a running step, and it must not shove them around.
+    meta.append(stepBadges(fileRow, badgeContext(fileRow)));
 
-    tr.append(selectCell, nameCell, languageCell, durationCell, statusCell, actionCell);
-    return tr;
+    const actions = document.createElement("div");
+    actions.className = "file-card-actions";
+    // A running step is stopped from the card, not from the menu: it is the
+    // one action that is urgent, and it only exists while something runs.
+    const stop = iconButton("stop", t("common.cancel"), async () => {
+      const activeJob = fileJobs.get(fileRow.id);
+      if (activeJob) await api.cancelJob(activeJob.id).catch((e) => toast(e.message));
+    });
+    stop.classList.add("file-card-stop");
+    stop.hidden = !isBusy(fileRow);
+    actions.append(stop, fileMenu(fileRow));
+
+    card.append(select, title, actions, meta);
+    refreshCardFailure(card, fileRow);
+    return card;
+  }
+
+  // What the card shows and what its menu offers both depend on whether the
+  // file is working on something right now.
+  function isBusy(fileRow) {
+    return fileRow.status === "transcribing" || fileJobs.has(fileRow.id);
+  }
+
+  function badgeContext(fileRow) {
+    const job = fileJobs.get(fileRow.id) ?? null;
+    return {
+      job,
+      failed: fileJobErrors.get(fileRow.id) ?? null,
+      detail: job ? jobDetail(job, fileRow) : "",
+      queuePosition: job?.status === "queued"
+        ? (fileQueuePositions.get(fileRow.id) ?? null)
+        : null,
+    };
+  }
+
+  // The actions of a file, in the order of the workflow: transcribe → AI
+  // processing → check in the editor → export → delete. Built on every open,
+  // because a file that has just finished transcribing offers more than the
+  // same file did a minute ago.
+  function fileMenu(fileRow) {
+    return overflowMenu({
+      label: t("project.fileMenu"),
+      items: () => {
+        const current = files.get(fileRow.id) ?? fileRow;
+        const busy = isBusy(current);
+        const job = fileJobs.get(current.id);
+        return [
+          !busy && {
+            icon: current.status === "done" ? "refresh" : "speechToText",
+            label: current.status === "done" ? t("project.again") : t("project.transcribe"),
+            onSelect: () => api.transcribeFile(current.id, fileOptions(current))
+              .catch((e) => toast(e.message)),
+          },
+          busy && {
+            icon: "stop",
+            label: t("common.cancel"),
+            onSelect: () => {
+              if (job) api.cancelJob(job.id).catch((e) => toast(e.message));
+            },
+          },
+          current.status === "done" && llmEnabled && job?.kind !== "llm_process" && {
+            icon: "sparkle",
+            label: t("ai.title"),
+            onSelect: () => openAiDialog({ fileId: current.id }),
+          },
+          {
+            icon: "editNote",
+            label: t("project.openEditor"),
+            onSelect: () => { location.hash = `#/editor/${current.id}`; },
+          },
+          current.status === "done" && {
+            icon: "pdf",
+            label: t("export.file"),
+            onSelect: () => openExportDialog({ fileId: current.id }),
+          },
+          {
+            icon: "delete",
+            label: t("common.delete"),
+            danger: true,
+            onSelect: async () => {
+              const ok = await confirmDelete({
+                message: t("project.deleteFileConfirm", { name: current.filename }),
+              });
+              if (!ok) return;
+              try {
+                await api.deleteFile(current.id);
+                files.delete(current.id);
+                renderRows(files);
+              } catch (error) {
+                toast(error.message);
+              }
+            },
+          },
+        ];
+      },
+    });
   }
 
   function fileOptions(fileRow) {
@@ -662,36 +708,52 @@ export async function render(view, _status, params) {
     return language ? { ...options, language } : options;
   }
 
+  // A job event repaints only the badges and the stop button of its card. The
+  // card is not rebuilt: that would throw away the language chip mid-pick and
+  // close an open menu on every progress tick.
   function updateProgressRow(job) {
-    const tr = el("file-rows")?.querySelector(`tr[data-file-id="${job.file_id}"]`);
-    if (!tr) return;
-    const bar = tr.querySelector(".progressbar > div");
-    // A row only carries a bar while it has a job. AI processing leaves the
-    // file status at "done", so no file.update rebuilds the row — without
-    // this the cleanup of a finished file would run without any bar at all.
-    if (!bar) {
-      const active = job.status === "queued" || job.status === "running";
-      if (active) renderRows(files);
-      return;
-    }
-    if (!fileJobs.has(job.file_id)) {
-      renderRows(files); // the job ended: drop bar and cancel button again
-      return;
-    }
-    bar.style.width = `${job.progress}%`;
-    const message = tr.querySelector(".job-message");
-    if (message) message.textContent = jobRowMessage(job, files.get(job.file_id));
+    const card = el("file-rows")?.querySelector(`.file-card[data-file-id="${job.file_id}"]`);
+    const fileRow = files.get(job.file_id);
+    if (!card || !fileRow) return;
+    refreshCardSteps(card, fileRow);
   }
 
-  // "KI-Aufbereitung · Bereinigung 2/5": which step is running is exactly what
-  // the row never said, so a queued cleanup looked like nothing was happening.
-  // The file name is dropped — the first column already carries it.
-  function jobRowMessage(job, fileRow) {
+  function refreshCardSteps(card, fileRow) {
+    card.querySelector(".file-card-steps")?.replaceWith(
+      stepBadges(fileRow, badgeContext(fileRow))
+    );
+    const stop = card.querySelector(".file-card-stop");
+    if (stop) stop.hidden = !isBusy(fileRow);
+    // a failed AI step leaves the file status at "done", so no file.update
+    // rebuilds the card — the reason has to arrive with the job event
+    refreshCardFailure(card, fileRow);
+  }
+
+  // Why the last step did not work, in the third row of the card. The node is
+  // created and removed with the failure, so a successful retry clears it.
+  function refreshCardFailure(card, fileRow) {
+    const failure = fileRow.status === "failed"
+      ? fileRow.error
+      : fileJobErrors.get(fileRow.id)?.error;
+    const existing = card.querySelector(".file-card-error");
+    if (!failure) {
+      existing?.remove();
+      return;
+    }
+    const err = existing ?? document.createElement("div");
+    err.className = "small error-text file-card-error";
+    err.textContent = failure;
+    err.title = failure; // the card clamps long endpoint messages
+    if (!existing) card.append(err);
+  }
+
+  // What a running job is doing right now — "Bereinigung 2/5". It lands in the
+  // tooltip of the badge, which already names the step, so neither the step
+  // nor the file name is repeated here; the message carries both otherwise.
+  function jobDetail(job, fileRow) {
     const filename = fileRow?.filename ?? "";
     const detail = (job.message ?? "").replace(`${filename}:`, "").trim();
-    const label = jobStepLabel(job);
-    if (job.status === "queued") return t("app.jobQueuedPlain", { step: label });
-    return detail ? `${label} · ${detail}` : label;
+    return detail || jobStepLabel(job);
   }
 
   // ── AI processing dialog (cleanup / translation, per file or project) ──
@@ -1061,6 +1123,7 @@ export function destroy() {
   clearTimeout(queueTimerHandle);
   fileJobs.clear();
   fileJobErrors.clear();
+  fileQueuePositions.clear();
   if (fabHandler) window.removeEventListener("fab:click", fabHandler);
   fabHandler = null;
 }

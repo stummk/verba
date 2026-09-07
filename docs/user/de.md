@@ -302,20 +302,53 @@ Beim Hochladen (auch per Drag & Drop) zeigt eine Fortschrittskarte, welche
 Datei gerade übertragen wird („Datei 2 von 7“), wie weit die gesamte
 Auswahl gediehen ist und wann der Server die Datei speichert.
 
-**Mehrere Dateien auf einmal.** Jede Zeile der Dateiliste trägt vorn ein
-Kästchen, das Kästchen in der Kopfzeile wählt alle aus. Sobald etwas
+**Jede Datei ist eine Karte.** Die Dateiliste besteht aus Karten. Oben die
+Zeile mit dem Auswahlkästchen, dem Dateinamen und — ganz rechts — dem
+Drei-Punkte-Menü; darunter die Zeile mit Sprache und Dauer links und den drei
+runden Schritt-Symbolen rechts am Kartenrand. Dass die Symbole eine Zeile
+tiefer stehen, hat einen Grund: in der Ecke über ihnen kommt und geht der
+Stopp-Knopf, und die Symbole sollen dabei nicht hin- und herspringen.
+**Ein Klick auf die Karte öffnet den Editor**; alles andere auf der Karte
+(Kästchen, Sprachchip, Stopp-Knopf, Menü) tut nur das, was es sagt.
+
+**Mehrere Dateien auf einmal.** Jede Karte trägt links oben ein
+Kästchen, die Zeile *Alle auswählen* über der Liste wählt alle aus. Sobald etwas
 ausgewählt ist, erscheint über der Liste eine Leiste mit der Anzahl und drei
 Aktionen für genau diese Auswahl: **Transkribieren**, **Als PDF exportieren**
 (ein einziges PDF, in dem jede ausgewählte Datei ein Abschnitt ist — wie der
 Export des ganzen Transkripts, nur ohne die nicht ausgewählten Dateien; Dateien
 ohne Transkript werden übersprungen und die Leiste sagt wie viele) und
 **Löschen**. Die Auswahl bleibt erhalten, während
-Aufträge laufen und die Zeilen sich aktualisieren.
+Aufträge laufen und die Karten sich aktualisieren.
+
+**Die drei Schritt-Symbole.** Rechts auf jeder Karte stehen immer drei runde
+Symbole — **Transkription**, **Aufbereitung**, **Übersetzung** — auch dann,
+wenn ein Schritt noch nicht gelaufen ist. Genau das ist der Punkt: die Karte
+sagt ebenso deutlich, was noch fehlt, wie das, was fertig ist.
+
+| Aussehen | Bedeutung |
+| --- | --- |
+| ausgegraut | noch nicht ausgeführt |
+| grauer Ring, pulsierend | wartet in der Warteschlange |
+| Ring füllt sich blau | läuft gerade — der gefüllte Anteil ist der Fortschritt |
+| grün | abgeschlossen |
+| rot | fehlgeschlagen (der Grund steht als Text auf der Karte) |
+
+Der Text steht im **Tooltip**: darauf zeigen (oder auf dem Handy antippen)
+nennt den Schritt und, wenn er läuft, Prozent und Teilschritt —
+z. B. `Aufbereitung — 40 % · Bereinigung 2/5` oder
+`Transkription — wartet (Position 3)`.
+
+**Die Aktionen stehen im Drei-Punkte-Menü** rechts auf der Karte, jede mit
+Symbol und Text: *Transkribieren* bzw. *Erneut*, *KI-Aufbereitung*,
+*Im Editor öffnen*, *Als PDF exportieren*, *Löschen*. Läuft ein Schritt, steht
+daneben ein **Stopp-Knopf** direkt auf der Karte — abbrechen ist das eine,
+was dann dringend ist.
 
 ## Transkribieren {#transcribe}
 
-- **Einzelne Datei:** Mikrofon-Symbol in der Dateizeile (fertige Dateien
-  zeigen stattdessen ein Wiederholen-Symbol für einen erneuten Lauf)
+- **Einzelne Datei:** *Transkribieren* im Drei-Punkte-Menü der Karte (fertige
+  Dateien bieten dort stattdessen *Erneut* für einen zweiten Lauf)
 - **Alles:** „Alle transkribieren" in Schritt 2 der Aktionskarte — der Knopf
   nimmt sich die noch offenen Dateien. Sind schon alle transkribiert, bietet er
   einen zweiten Lauf über die ganze Liste an und fragt vorher nach, denn dabei
@@ -323,7 +356,8 @@ Aufträge laufen und die Zeilen sich aktualisieren.
   Rückfrage kommt, wenn eine Auswahl fertige Dateien enthält.
 - **Erweitert (aufklappbar):** Whisper-Modell und Aufnahmesprache nur für diesen
   Lauf ändern — die gespeicherten Einstellungen bleiben unberührt
-- Fortschritt erscheint live pro Datei; laufende Aufträge sind abbrechbar
+- Fortschritt erscheint live im Schritt-Symbol der Karte; laufende Aufträge
+  sind über den Stopp-Knopf der Karte abbrechbar
 - **Woher die Sprache kommt** — in dieser Reihenfolge, die erste Angabe
   gewinnt: die Sprache unter *Erweitert* für diesen einen Lauf, dann die Sprache
   der Datei (aus dem Dateinamen, im Editor änderbar), dann die Sprache aus den
@@ -333,8 +367,8 @@ Aufträge laufen und die Zeilen sich aktualisieren.
 - **Die Sprache steht als Chip** — mit der Fahne ihres Landes, dem Kürzel und
   dem vollen Namen im Tooltip; steht keine Sprache fest, heißt der Chip „auto".
   Ein Klick öffnet die Sprachauswahl mit einem Filterfeld: tippen genügt, die
-  Eingabetaste nimmt den ersten Treffer. So steht die Sprache in der Spalte
-  *Sprache* der Dateiliste, unter der Wellenform im Editor und in der
+  Eingabetaste nimmt den ersten Treffer. So steht die Sprache auf der Karte
+  der Datei, unter der Wellenform im Editor und in der
   Werkzeugzeile des Arbeitsbereichs für die Übersetzung. Zeichnet das Betriebssystem keine Fahnen — Windows tut es nicht —,
   steht das Länderkürzel im Fahnenkasten; eine Sprache ohne ein einzelnes Land
   (Katalanisch, Baskisch, Latein …) bekommt eine Weltkugel.
@@ -345,12 +379,14 @@ Aufträge laufen und die Zeilen sich aktualisieren.
 **Wo der Fortschritt zu sehen ist.** Jeder Schritt meldet, an welcher Datei er
 arbeitet und wie weit er ist:
 
-- **In der Dateizeile** (Transkript-Ansicht): Balken und Text, z. B.
-  `lied.mp3: 01:23` beim Transkribieren (Prozent = Position in der Aufnahme),
-  `Bereinigung 2/5` und `Übersetzung 1/3` bei der KI-Aufbereitung,
-  `Warteschlange: Position 3` beim Warten. Auch „Alle transkribieren" und
-  „KI-Aufbereitung (alle)" legen einen Auftrag **pro Datei** an — jede Zeile
-  hat also ihren eigenen Balken.
+- **Auf der Karte der Datei** (Transkript-Ansicht): im Schritt-Symbol, dessen
+  Ring sich füllt, mit dem Text im Tooltip — z. B.
+  `Transkription — 40 % · 01:23` beim Transkribieren (Prozent = Position in
+  der Aufnahme), `Aufbereitung — 40 % · Bereinigung 2/5`,
+  `Übersetzung — 70 % · Übersetzung 1/3` und
+  `Transkription — wartet (Position 3)` beim Warten. Auch „Alle
+  transkribieren" und „KI-Aufbereitung (alle)" legen einen Auftrag **pro
+  Datei** an — jede Karte zeigt also ihren eigenen Fortschritt.
 - **Oben in der Kopfzeile**: eine Zusammenfassung, die auch beim Wechsel der
   Ansicht mitläuft — `KI-Aufbereitung — lied.mp3: Bereinigung 2/5 · 40 %`.
   Laufen zwei Aufträge parallel (Transkription und Aufbereitung), stehen beide
@@ -374,8 +410,9 @@ Reihenfolge bleibt fair pro Nutzer.
 
 Sobald ein Sprachmodell konfiguriert ist (Abschnitt „Sprachmodell (LLM)
 einrichten"), erscheint bei
-transkribierten Dateien das **Funken-Symbol (KI-Aufbereitung)** und in
-Schritt 2 der Aktionskarte der Knopf **KI-Aufbereitung (alle)**:
+transkribierten Dateien im Drei-Punkte-Menü der Karte der Eintrag
+**KI-Aufbereitung** und in Schritt 2 der Aktionskarte der Knopf
+**KI-Aufbereitung (alle)**:
 
 - **Bereinigen** entfernt Füllwörter und Falschstarts, korrigiert Zeichensetzung
   und offensichtliche Hörfehler — der Transkripttyp fließt als Kontext ein

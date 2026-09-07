@@ -237,15 +237,6 @@ body.nav-hidden { padding-bottom: 0; }
 .muted { color: var(--md-on-surface-variant); }
 .small { font-size: .82rem; }
 .error-text { color: var(--md-error); }
-/* An endpoint quotes its own refusal in full — readable in the row, but the
-   row must not grow to a paragraph; the tooltip carries the rest. */
-td .error-text {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
-  max-width: 22rem;
-}
 .hint { font-size: .78rem; color: var(--md-on-surface-variant); margin-top: .25rem; }
 
 /* ── buttons ─────────────────────────────────────────────────────── */
@@ -392,32 +383,189 @@ details.advanced .form-grid { margin-top: .25rem; }
 }
 .project-card:hover { background: var(--md-surface-container-high); }
 
-/* the row must never be cut off: on a window too narrow even for the trimmed
-   columns below, the table scrolls sideways instead of hiding its buttons */
-.table-scroll { overflow-x: auto; }
-.filetable { width: 100%; border-collapse: collapse; font-size: .9rem; }
-.filetable th {
-  text-align: left;
-  color: var(--md-on-surface-variant);
-  font-weight: 600;
-  font-size: .78rem;
-  padding: .35rem .5rem;
-  border-bottom: .0625rem solid var(--md-outline-variant);
+/* ── the files of a transcript, one card each ─────────────────────────
+   A card, not a table row: the name needs the room, the three steps of the
+   workflow are round badges on the right, and everything else lives in the
+   overflow menu. The card is the link into the editor. */
+.file-cards { display: flex; flex-direction: column; gap: .5rem; }
+/* Three columns, three rows: the checkbox, the name and the actions share the
+   first row; the meta line and the failure text below it run from the name to
+   the right edge of the card, past the actions column. That is what keeps the
+   step badges still — they end at the card's edge, and nothing that happens
+   in the corner above them can move them. */
+.file-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: .75rem;
+  row-gap: .35rem;
+  align-items: center;
+  padding: .75rem .9rem;
+  margin: 0;
+  background: var(--md-surface-container);
+  color: var(--md-on-surface);
+  transition: background .15s, box-shadow .15s;
 }
-.filetable td {
-  padding: .55rem .5rem;
-  border-bottom: .0625rem solid var(--md-outline-variant);
-  vertical-align: top;
+.file-card-select { grid-column: 1; grid-row: 1; }
+.file-card-title { grid-column: 2; grid-row: 1; }
+.file-card-actions { grid-column: 3; grid-row: 1; }
+.file-card-meta { grid-column: 2 / -1; grid-row: 2; }
+.file-card-error { grid-column: 2 / -1; grid-row: 3; }
+.file-card:hover { background: var(--md-surface-container-high); box-shadow: var(--elev-1); }
+.file-card:focus-within { outline: .125rem solid var(--md-primary); outline-offset: .125rem; }
+.file-card.selected {
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+/* the link into the editor, spread over the whole card and invisible; every
+   control of the card sits above it and therefore keeps its own click */
+.file-card-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  text-decoration: none;
+}
+.file-card-select,
+.file-card-error,
+.file-card-meta > *,
+.file-card-steps > *,
+.file-card-actions > * { position: relative; z-index: 1; }
+/* The stop button comes and goes here with a running step, so the slot stays
+   reserved while it is gone — the name beside it would otherwise re-wrap on
+   every start and end of a step. */
+.file-card-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .1rem;
+  min-width: 5.1rem; /* two icon buttons and the gap between them */
+}
+.file-card-title {
+  font-weight: 600;
+  font-size: .95rem;
+  line-height: 1.3;
   overflow-wrap: anywhere;
 }
-/* the language column holds a chip, which is as wide as its flag and code */
-.filetable td .lang-chip { white-space: nowrap; }
-.filetable tr:last-child td { border-bottom: none; }
-.col-actions { text-align: right; white-space: nowrap; }
-.col-actions button { margin-left: .3rem; }
-/* selection column: only as wide as the checkbox needs */
-.col-select { width: 1.5rem; padding-right: 0; }
+.file-card-meta { display: flex; align-items: center; gap: .5rem .75rem; flex-wrap: wrap; }
+.file-card-meta .lang-chip { white-space: nowrap; }
+.file-card-duration { display: inline-flex; align-items: center; gap: .25rem; }
+.file-card-duration svg { width: 1rem; height: 1rem; }
+/* an endpoint quotes its own refusal in full — readable, but never a paragraph */
+.file-card-error {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.select-all-line { margin-bottom: .5rem; }
 .row-select { width: 1.1rem; height: 1.1rem; accent-color: var(--md-primary); cursor: pointer; }
+
+/* ── the three step badges (transcription, cleanup, translation) ──────
+   Always all three, so the card says what is still missing as clearly as what
+   is done. The ring is the progress; the words are in the tooltip. */
+/* they close the meta line at the right edge of the card, so they stand under
+   the corner and keep their place while the stop button up there comes and goes */
+.file-card-steps {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  flex: none;
+  margin-left: auto;
+}
+.step-badge {
+  --progress: 0;
+  --ring: var(--md-outline-variant);
+  --ring-track: var(--md-outline-variant);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  flex: none;
+  border-radius: var(--shape-full);
+  color: var(--md-on-surface-variant);
+}
+.step-badge svg { position: relative; width: .9rem; height: .9rem; }
+/* the ring: a conic arc masked hollow, the same device as the job spinner */
+.step-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: conic-gradient(
+    var(--ring) calc(var(--progress) * 1%),
+    var(--ring-track) 0
+  );
+  -webkit-mask: radial-gradient(farthest-side, #0000 calc(100% - .16rem), #000 calc(100% - .15rem));
+  mask: radial-gradient(farthest-side, #0000 calc(100% - .16rem), #000 calc(100% - .15rem));
+  transition: background .3s;
+}
+/* not run yet: greyed out, and legible enough to say which step it is */
+.step-idle { opacity: .45; }
+/* waiting its turn: the ring is still empty, but the icon already carries the
+   colour of the step — and the whole badge breathes, so it does not read as
+   a step nobody asked for */
+.step-queued {
+  --ring: var(--md-outline);
+  color: var(--md-primary);
+  animation: step-pulse 1.6s ease-in-out infinite;
+}
+/* running: the ring fills with blue as the step progresses */
+.step-running { --ring: var(--md-primary); color: var(--md-primary); }
+.step-done {
+  --ring: var(--md-success);
+  --ring-track: var(--md-success);
+  background: var(--md-success-container);
+  color: var(--md-success);
+}
+.step-failed {
+  --ring: var(--md-error);
+  --ring-track: var(--md-error);
+  background: var(--md-error-container);
+  color: var(--md-error);
+}
+@keyframes step-pulse { 50% { opacity: .5; } }
+@media (prefers-reduced-motion: reduce) {
+  .step-queued { animation: none; }
+  .step-ring { transition: none; }
+}
+
+/* ── the overflow menu of a card ─────────────────────────────────────
+   Anchored in the card, so no coordinates have to be computed; it flips
+   above the button when the card sits at the bottom of the viewport. */
+.card-menu { position: relative; flex: none; }
+/* the open sheet has to cover the cards below it — every control of a card
+   sits on its own layer, and a later card would otherwise paint over it */
+.card-menu.open { z-index: 40; }
+.menu-sheet {
+  position: absolute;
+  right: 0;
+  top: calc(100% + .25rem);
+  z-index: 30;
+  min-width: 12rem;
+  padding: .35rem;
+  border-radius: var(--shape-md);
+  background: var(--md-surface-container-high);
+  box-shadow: var(--elev-3);
+}
+.menu-sheet.up { top: auto; bottom: calc(100% + .25rem); }
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  width: 100%;
+  padding: .55rem .6rem;
+  border-radius: var(--shape-sm);
+  background: transparent;
+  box-shadow: none;
+  color: var(--md-on-surface);
+  font-size: .88rem;
+  font-weight: 500;
+  text-align: left;
+}
+.menu-item:hover { background: var(--md-surface-container); box-shadow: none; filter: none; }
+.menu-item svg { flex: none; color: var(--md-on-surface-variant); }
+.danger-item, .danger-item svg { color: var(--md-error); }
 /* the bar over a list — appears only while something is selected */
 .bulk-bar {
   display: flex;
@@ -431,15 +579,11 @@ details.advanced .form-grid { margin-top: .25rem; }
   font-size: .85rem;
   font-weight: 600;
 }
-/* narrow phones: drop the duration column so the file name keeps room
-   (fourth column — the first one holds the selection checkbox) */
+/* narrow phones: tighter card, and the badges drop onto a line of their own
+   rather than squeeze the language and the running time off it */
 @media (max-width: 30em) {
-  .filetable th:nth-child(4),
-  .filetable td:nth-child(4) { display: none; }
-  /* the row has to fit: tighter cells — the language chip is small enough to
-     stay, where the select before it pushed the action buttons off screen */
-  .filetable th, .filetable td { padding-left: .3rem; padding-right: .3rem; }
-  .col-actions button { margin-left: 0; }
+  .file-card { padding: .7rem .6rem; column-gap: .5rem; }
+  .file-card-steps { flex-basis: 100%; justify-content: flex-end; }
 }
 
 .badge {
@@ -1316,7 +1460,6 @@ dialog textarea {
   color: var(--md-on-primary);
   filter: brightness(1.08);
 }
-.col-actions { white-space: nowrap; }
 
 /* ── first-run wizard: six steps, each skippable ──────────────────── */
 .wizard-steps {

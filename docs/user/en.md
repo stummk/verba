@@ -290,18 +290,51 @@ While files are uploading (drag & drop included) a progress card shows which
 file is going over the wire (“File 2 of 7”), how far the whole selection has
 come and when the server is storing the file.
 
-**Several files at once.** Every row of the file list carries a checkbox in
-front, and the one in the header selects them all. As soon as something is
+**Every file is a card.** The file list is a list of cards. The top line
+carries the selection checkbox, the file name and — at the far right — the
+three-dot menu; the line below it carries the language and the running time on
+the left and the three round step badges at the right edge of the card. The
+badges sit one line lower for a reason: the stop button comes and goes in the
+corner above them, and the badges must not jump around when it does.
+**Clicking the card opens the editor**; everything else on it (checkbox,
+language chip, stop button, menu) does only what it says.
+
+**Several files at once.** Every card carries a checkbox in its top left
+corner, and the *Select all* line above the list selects them all. As soon as something is
 selected, a bar appears above the list with the count and three actions for
 exactly that selection: **Transcribe**, **Export as PDF** (a single PDF in
 which every selected file is one section — like the export of the whole
 transcript, just without the files that were not selected; files without a
-transcript are skipped and the bar says how many) and **Delete**. The selection survives while jobs run and the rows update.
+transcript are skipped and the bar says how many) and **Delete**. The selection survives while jobs run and the cards update.
+
+**The three step badges.** On the right of every card stand three round badges
+— **transcription**, **cleanup**, **translation** — always all three, even for
+a step that has not run. That is the point: the card says what is still
+missing as clearly as what is done.
+
+| Look | Meaning |
+| --- | --- |
+| greyed out | not run yet |
+| grey ring, pulsing | waiting in the queue |
+| ring filling with blue | running — the filled share is the progress |
+| green | completed |
+| red | failed (the reason stands as text on the card) |
+
+The words are in the **tooltip**: hovering it (or tapping it on a phone) names
+the step and, while it runs, the percentage and the sub-step — e.g.
+`Aufbereitung — 40 % · Bereinigung 2/5` or
+`Transkription — wartet (Position 3)`.
+
+**The actions live in the three-dot menu** on the right of the card, each with
+an icon and a label: *Transcribe* or *Again*, *AI processing*,
+*Open in the editor*, *Export as PDF*, *Delete*. While a step runs, a **stop
+button** sits next to it directly on the card — cancelling is the one thing
+that is urgent then.
 
 ## Transcribing {#transcribe}
 
-- **Single file:** microphone icon in the file row (finished files show a
-  repeat icon for another run instead)
+- **Single file:** *Transcribe* in the three-dot menu of the card (finished
+  files offer *Again* there instead, for a second run)
 - **Everything:** "Transcribe all" in step 2 of the action card — the button
   takes the files that are still open. Once they are all transcribed it offers a
   second run over the whole list and asks first, because that replaces the
@@ -309,7 +342,8 @@ transcript are skipped and the bar says how many) and **Delete**. The selection 
   when a selection contains finished files.
 - **Advanced (expandable):** change the Whisper model and recording language
   for this run only — saved settings stay unchanged
-- Progress appears live per file; running jobs can be cancelled
+- Progress appears live in the step badge of the card; a running job is
+  cancelled with the stop button on the card
 - **Where the language comes from** — in this order, the first one given
   wins: the language under *Advanced* for this single run, then the language of
   the file (from the file name, editable in the editor), then the language from
@@ -319,8 +353,8 @@ transcript are skipped and the bar says how many) and **Delete**. The selection 
 - **A language is shown as a chip** — with its country's flag, the ISO code and
   the full name in the tooltip; where no language is set the chip reads "auto".
   A click opens the language picker with a filter field: typing narrows it and
-  Enter takes the first match. That is how the language appears in the *Language*
-  column of the file list, below the waveform in the editor and in the tool row
+  Enter takes the first match. That is how the language appears on the card of
+  the file, below the waveform in the editor and in the tool row
   of the workspace for the translation. Where the operating system draws no flags — Windows does not —
   the country letters stand in the flag's box; a language without a single
   country behind it (Catalan, Basque, Latin, …) gets a globe.
@@ -331,11 +365,14 @@ transcript are skipped and the bar says how many) and **Delete**. The selection 
 **Where the progress is shown.** Every step reports which file it is working
 on and how far it has got:
 
-- **In the file row** (transcript view): a bar and a text, e.g.
-  `lied.mp3: 01:23` while transcribing (percent = position in the recording),
-  `Bereinigung 2/5` and `Übersetzung 1/3` during AI processing,
-  `Warteschlange: Position 3` while waiting. "Transcribe all" and "AI
-  processing (all)" create one job **per file**, so every row has its own bar.
+- **On the card of the file** (transcript view): in the step badge, whose ring
+  fills up, with the text in the tooltip — e.g.
+  `Transkription — 40 % · 01:23` while transcribing (percent = position in
+  the recording), `Aufbereitung — 40 % · Bereinigung 2/5`,
+  `Übersetzung — 70 % · Übersetzung 1/3` and
+  `Transkription — wartet (Position 3)` while waiting. "Transcribe all" and
+  "AI processing (all)" create one job **per file**, so every card shows its
+  own progress.
 - **In the top bar**: a summary that keeps running while you switch views —
   `KI-Aufbereitung — lied.mp3: Bereinigung 2/5 · 40 %`. With two jobs in
   parallel (transcription and processing) both are named, further ones as
@@ -357,8 +394,8 @@ ahead, and the order stays fair per user.
 
 Once a language model is configured (section "Setting up a language model
 (LLM)"), transcribed files get a
-**sparkle icon (AI processing)** and step 2 of the action card gains
-**AI processing (all)**:
+an **AI processing** entry in the three-dot menu of their card, and step 2 of
+the action card gains **AI processing (all)**:
 
 - **Cleanup** removes filler words and false starts, fixes punctuation and
   obvious mishearings — the transcript type flows in as context (a "revelation"
