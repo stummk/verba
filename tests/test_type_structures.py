@@ -167,7 +167,7 @@ def test_script_layout_capitalizes_speakers(tmp_path):
     }
     for structure in ("script", "dialogue"):
         target = tmp_path / f"{structure}.pdf"
-        pdf.render_pdf([doc], structure, target)
+        pdf.render_pdf([dict(doc, structure=structure)], target)
         assert target.stat().st_size > 0
     # the capitals only differ inside the PDF; the deterministic renderer at
     # least has to produce different bytes for the two layouts

@@ -155,6 +155,34 @@ LEGACY_KEYS = {
 }
 
 
+# The columns a joined type contributes to a project or a file row. Both rows
+# carry them under the same names, which is what lets `for_file()` answer with
+# one of the two without anybody downstream having to know which.
+TYPE_FIELDS = (
+    "type_id",
+    "type_key",
+    "type_name",
+    "type_prompt",
+    "type_output_prompt",
+    "type_structure",
+    "type_keep_sections",
+    "type_verbatim",
+)
+
+
+def for_file(project: dict[str, Any] | None, file_row: dict[str, Any] | None) -> dict[str, Any]:
+    """The transcript type that applies to one file.
+
+    The project's type is the rule; a file that names one of its own is the
+    exception — a project holding a song next to an interview needs both, and
+    only the file knows which of them it is. The answer carries the same
+    `type_*` keys a project row does, so everything reading a type
+    (`is_verbatim`, the cleanup, the export) works from it unchanged.
+    """
+    source = file_row if (file_row or {}).get("type_id") else project
+    return {field: (source or {}).get(field) for field in TYPE_FIELDS}
+
+
 def is_verbatim(project: dict[str, Any]) -> bool:
     """Whether a project's transcript type reproduces its material word for word.
 
@@ -388,8 +416,13 @@ def update_type(
 
 
 def delete_type(type_id: int) -> bool:
-    """Delete a type (builtins included); projects using it fall back to no type."""
+    """Delete a type (builtins included); whoever used it falls back.
+
+    A project loses its type, a file falls back to whatever its project says —
+    the same thing a file that never named a type of its own does.
+    """
     with db.get_conn() as conn:
         conn.execute("UPDATE projects SET type_id = NULL WHERE type_id = ?", (type_id,))
+        conn.execute("UPDATE files SET type_id = NULL WHERE type_id = ?", (type_id,))
         cursor = conn.execute("DELETE FROM project_types WHERE id = ?", (type_id,))
         return cursor.rowcount > 0

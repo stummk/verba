@@ -57,9 +57,9 @@ def rendered(monkeypatch) -> list:
     seen: list = []
     original = pdf.render_pdf
 
-    def spy(docs, structure, target, **kwargs):
-        seen.append({"docs": docs, "structure": structure, "target": target, **kwargs})
-        return original(docs, structure, target, **kwargs)
+    def spy(docs, target, **kwargs):
+        seen.append({"docs": docs, "target": target, **kwargs})
+        return original(docs, target, **kwargs)
 
     monkeypatch.setattr(pdf, "render_pdf", spy)
     return seen
@@ -301,7 +301,7 @@ def test_the_types_page_break_reaches_the_renderer(data_env, tmp_path, monkeypat
     seen = rendered(monkeypatch)
 
     run_export({"scope": "project", "project_id": project["id"]})
-    assert seen[-1]["keep_sections"] is False
+    assert all(entry["keep_sections"] is False for entry in seen[-1]["docs"])
 
     song = next(entry for entry in project_types.list_types() if entry["key"] == "song")
     project_types.update_type(
@@ -314,4 +314,4 @@ def test_the_types_page_break_reaches_the_renderer(data_env, tmp_path, monkeypat
     )
 
     run_export({"scope": "project", "project_id": project["id"]})
-    assert seen[-1]["keep_sections"] is True
+    assert all(entry["keep_sections"] is True for entry in seen[-1]["docs"])

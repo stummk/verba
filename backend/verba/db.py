@@ -88,6 +88,10 @@ CREATE TABLE IF NOT EXISTS files (
     source_path TEXT NOT NULL DEFAULT '',
     duration    REAL,
     language    TEXT NOT NULL DEFAULT '',
+    -- A file follows its project's transcript type unless it names one of its
+    -- own: a project may hold a song next to an interview, and only the file
+    -- knows which it is.
+    type_id     INTEGER REFERENCES project_types(id) ON DELETE SET NULL,
     status      TEXT NOT NULL DEFAULT 'pending',
     error       TEXT NOT NULL DEFAULT '',
     title       TEXT NOT NULL DEFAULT '',
@@ -331,6 +335,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     add_missing("files", "header_middle", "header_middle TEXT NOT NULL DEFAULT ''")
     add_missing("files", "header_right", "header_right TEXT NOT NULL DEFAULT ''")
     add_missing("files", "target_language", "target_language TEXT NOT NULL DEFAULT ''")
+    add_missing("files", "type_id", "type_id INTEGER REFERENCES project_types(id)")
     add_missing("projects", "owner_id", "owner_id INTEGER REFERENCES users(id)")
     add_missing("projects", "visibility", "visibility TEXT NOT NULL DEFAULT 'public'")
     # not part of _SCHEMA: that script runs before this migration, so on a

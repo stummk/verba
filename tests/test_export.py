@@ -312,7 +312,7 @@ def test_running_text_is_justified_but_verses_are_not(tmp_path, monkeypatch):
         return original(self, height, value, align)
 
     monkeypatch.setattr(pdf._Renderer, "_write", spy)
-    pdf.render_pdf([ALL_KINDS_DOC], "paragraphs", tmp_path / "out.pdf")
+    pdf.render_pdf([dict(ALL_KINDS_DOC, structure="paragraphs")], tmp_path / "out.pdf")
 
     assert aligns.count("J") == 3  # two paragraphs and the spoken contribution
     assert "J" not in aligns[:1]  # the heading keeps its left alignment
@@ -321,15 +321,15 @@ def test_running_text_is_justified_but_verses_are_not(tmp_path, monkeypatch):
 @pytest.mark.parametrize("structure", ["", "paragraphs", "stanzas", "dialogue", "script"])
 def test_render_pdf_all_block_kinds(tmp_path, structure):
     target = tmp_path / "out.pdf"
-    pdf.render_pdf([ALL_KINDS_DOC], structure, target)
+    pdf.render_pdf([dict(ALL_KINDS_DOC, structure=structure)], target)
     assert target.read_bytes().startswith(b"%PDF")
 
 
 def test_render_pdf_folder_sections_without_toc(tmp_path):
     """Folder export: sections flow with spacing only — one continuous PDF."""
-    docs = [dict(ALL_KINDS_DOC, title=f"Datei {i}") for i in range(3)]
+    docs = [dict(ALL_KINDS_DOC, title=f"Datei {i}", structure="paragraphs") for i in range(3)]
     target = tmp_path / "sammel.pdf"
-    pdf.render_pdf(docs, "speech", target)
+    pdf.render_pdf(docs, target)
     data = target.read_bytes()
     assert data.startswith(b"%PDF")
 
@@ -406,9 +406,9 @@ def test_a_selection_becomes_one_pdf_of_exactly_those_files(client, tmp_path, mo
     rendered: list[list[dict]] = []
     original = pdf.render_pdf
 
-    def spy(docs, structure, target, **kwargs):
+    def spy(docs, target, **kwargs):
         rendered.append(docs)
-        return original(docs, structure, target, **kwargs)
+        return original(docs, target, **kwargs)
 
     monkeypatch.setattr(pdf, "render_pdf", spy)
 

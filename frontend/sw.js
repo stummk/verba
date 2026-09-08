@@ -26,6 +26,7 @@ const SHELL = [
   "/js/llamainstall.js",
   "/js/markdown.js",
   "/js/menu.js",
+  "/js/type-chip.js",
   "/js/ws.js",
   "/js/views/dashboard.js",
   "/js/views/docs.js",

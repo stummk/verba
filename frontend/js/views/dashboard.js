@@ -1,7 +1,7 @@
 // Project overview: list, create (via FAB dialog), open, rename, delete.
 
 import { api } from "../api.js";
-import { el, esc, html, raw, toast } from "../dom.js";
+import { dragScroll, el, esc, html, raw, toast } from "../dom.js";
 import { iconButton } from "../icons.js";
 import { t } from "../i18n.js";
 import { isActive } from "../jobs.js";
@@ -315,6 +315,28 @@ function parseRoute() {
   return location.hash.replace(/^#\/?/, "").split("/")[0] || "dashboard";
 }
 
+/**
+ * The second row of a project card: every type single files named for
+ * themselves, outlined so the project's own type stays the one that reads as
+ * the rule.
+ *
+ * There can be more of them than a card is wide, and a card must not grow a
+ * scrollbar over it — so the row scrolls sideways with the scrollbar hidden
+ * and is dragged with the mouse instead.
+ */
+function typeRow(fileTypes) {
+  const row = document.createElement("div");
+  row.className = "project-card-types";
+  for (const entry of fileTypes) {
+    const badge = document.createElement("span");
+    badge.className = "badge badge-type-file";
+    badge.textContent = entry.name;
+    badge.title = t("type.filesTitle", { name: entry.name });
+    row.append(badge);
+  }
+  return dragScroll(row);
+}
+
 function renderList(projects, activeJobs = new Map()) {
   const list = el("project-list");
   if (!list) return;
@@ -351,12 +373,20 @@ function renderList(projects, activeJobs = new Map()) {
       left.append(title);
       const right = document.createElement("div");
       right.className = "project-card-right";
+      // The type this project prescribes stands with the title, where there is
+      // room for exactly one badge. The types single files named for
+      // themselves get a row of their own below (see `typeRow`) — there can be
+      // as many of them as the project has types, and they must not push the
+      // title or the buttons around.
       if (project.type_name) {
         const typeBadge = document.createElement("span");
         typeBadge.className = "badge badge-type";
         typeBadge.textContent = project.type_name;
+        typeBadge.title = t("type.projectTitle", { name: project.type_name });
         right.append(typeBadge);
       }
+      // says nothing the badge above it does not
+      const fileTypes = (project.file_types ?? []).filter((e) => e.id !== project.type_id);
       if (access.enabled) {
         const visibilityBadge = document.createElement("span");
         visibilityBadge.className = `badge badge-visibility ${project.visibility}`;
@@ -395,8 +425,9 @@ function renderList(projects, activeJobs = new Map()) {
       actions.append(deleteBtn);
       right.append(actions);
       header.append(left, right);
+      card.append(header);
+      if (fileTypes.length) card.append(typeRow(fileTypes));
       card.append(
-        header,
         Object.assign(document.createElement("span"), {
           className: "muted small",
           textContent: t("dashboard.fileStats", {

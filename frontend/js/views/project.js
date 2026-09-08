@@ -12,6 +12,7 @@ import { jobCardHost, jobLine, jobStepLabel } from "../jobs.js";
 import { languageChip, setChipLanguage } from "../language-chip.js";
 import { fillLanguageSelect } from "../languages.js";
 import { overflowMenu } from "../menu.js";
+import { setChipType, typeChip } from "../type-chip.js";
 import { on } from "../ws.js";
 
 const AUDIO_RE = /\.(mp3|wav|m4a|flac|ogg|opus|aac|wma|webm|mp4)$/i;
@@ -45,13 +46,15 @@ function visibilityChip(project, authState) {
 export async function render(view, _status, params) {
   const projectId = Number(params[0]);
   let projectError = null;
-  const [project, settings, authState] = await Promise.all([
+  const [project, settings, authState, types] = await Promise.all([
     api.getProject(projectId).catch((error) => {
       projectError = error;
       return null;
     }),
     api.getSettings().catch(() => null),
     api.authState().catch(() => ({ enabled: false, user: null })),
+    // the picker behind every file's type chip — one list for the whole view
+    api.listTypes().catch(() => []),
   ]);
   // The model list scans directories and probes the hardware — the view must
   // not wait for it, so the advanced dropdown fills in once it arrives.
@@ -64,7 +67,12 @@ export async function render(view, _status, params) {
 
   view.replaceChildren(html`
     <p><a href="#/" class="muted small">${t("project.back")}</a></p>
-    <h1>${project.name}${project.type_name ? raw(` <span class="type-chip">${esc(project.type_name)}</span>`) : ""}${visibilityChip(project, authState)}</h1>
+    <h1 class="view-title">
+      <span class="view-title-text" title="${project.name}">${project.name}</span>${
+        project.type_name
+          ? raw(`<span class="type-chip" title="${esc(t("type.projectTitle", { name: project.type_name }))}">${esc(project.type_name)}</span>`)
+          : ""
+      }${visibilityChip(project, authState)}</h1>
     <div class="card">
       <div class="step-tabs" role="tablist">
         <button type="button" class="step-tab" role="tab" data-step="1" aria-controls="step-panel-1">
@@ -591,6 +599,27 @@ export async function render(view, _status, params) {
       },
     });
     meta.append(languageNode);
+    // Which type this file is transcribed as: the project's, or one of its
+    // own. The chip says which of the two it is and opens the picker.
+    meta.append(typeChip({
+      typeId: fileRow.type_id ?? null,
+      types,
+      projectTypeName: project.type_name ?? "",
+      onPick: async (typeId) => {
+        try {
+          const updated = await api.updateFileType(fileRow.id, typeId);
+          files.set(updated.id, updated);
+          const chip = card.querySelector(".file-type-chip");
+          if (chip) {
+            setChipType(chip, updated.type_id ?? null, {
+              types, projectTypeName: project.type_name ?? "",
+            });
+          }
+        } catch (error) {
+          toast(error.message);
+        }
+      },
+    }));
     const duration = document.createElement("span");
     duration.className = "file-card-duration muted small";
     duration.title = t("project.colDuration");

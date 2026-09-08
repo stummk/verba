@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.jobs import JobCancelled, job_queue, report_step
-from . import llm, overview, pipeline, transcripts, workspace
+from . import llm, overview, pipeline, project_types, transcripts, workspace
 from .metadata import format_display_date
 from .project_types import is_verbatim
 
@@ -349,26 +349,29 @@ def build_document(
     progress_range: tuple[int, int] = (0, 100),
 ) -> dict[str, Any]:
     """Stage 1 for one file: title/date from metadata plus structured blocks."""
+    # the type that applies to *this* file: its own where it named one, its
+    # project's otherwise — one export may carry a song and an interview
+    type_row = project_types.for_file(project, file_row)
     # only whether a type is assigned matters here — everything type-specific
     # comes from its own fields (structure, output prompt), never from its key
-    has_type = bool(project.get("type_key"))
-    structure = normalize_structure(project.get("type_structure"))
+    has_type = bool(type_row.get("type_key"))
+    structure = normalize_structure(type_row.get("type_structure"))
     text = _base_text(file_row["id"], structure, language)
 
     blocks: list[dict[str, Any]] | None = None
     # a verbatim type never reaches the LLM: the export must not be able to
     # reword the cleanup or a translation, invent a heading the text does not
     # carry, or leave a sentence out
-    if has_type and not is_verbatim(project) and llm.llm_location() != "none":
+    if has_type and not is_verbatim(type_row) and llm.llm_location() != "none":
         # Only what the pipeline has already read: the export must not start
         # condensing a two-hour recording of its own accord. Where it is
         # there, it keeps the structuring of a long text on one line of
         # thought instead of a heading per chunk.
-        whole = overview.load(file_row["id"], project.get("type_prompt") or "")
+        whole = overview.load(file_row["id"], type_row.get("type_prompt") or "")
         blocks = _structure_llm(
             text,
-            project.get("type_output_prompt") or "",
-            project.get("type_prompt") or "",
+            type_row.get("type_output_prompt") or "",
+            type_row.get("type_prompt") or "",
             cancel,
             report,
             progress_range,
@@ -389,6 +392,10 @@ def build_document(
         "header_middle": file_row.get("header_middle") or "",
         "header_right": format_display_date(file_row.get("header_right") or ""),
         "blocks": blocks,
+        # the layout travels with the document, not with the export: a
+        # compilation of files with different types renders each in its own
+        "structure": structure,
+        "keep_sections": bool(type_row.get("type_keep_sections")),
     }
 
 
@@ -470,12 +477,17 @@ def flow_text(value: str) -> str:
 
 
 class _Renderer:
-    """Deterministic layout of structure blocks according to the type template."""
+    """Deterministic layout of structure blocks according to the type template.
 
-    def __init__(self, pdf: Any, family: str, structure: str) -> None:
+    The layout belongs to the section being rendered, not to the export: a
+    compilation may hold a script next to a song, and each has to keep the
+    template of its own type. `section()` sets it from the document.
+    """
+
+    def __init__(self, pdf: Any, family: str) -> None:
         self.pdf = pdf
         self.family = family
-        self.structure = structure
+        self.structure = ""
 
     def _text(self, value: str) -> str:
         return _sanitize_for(self.family, value)
@@ -500,6 +512,7 @@ class _Renderer:
 
     def section(self, doc: dict[str, Any]) -> None:
         """Render one file's optional header and its blocks."""
+        self.structure = normalize_structure(doc.get("structure"))
         left = doc.get("header_left") or ""
         middle = doc.get("header_middle") or ""
         right = doc.get("header_right") or ""
@@ -519,15 +532,17 @@ class _Renderer:
                 self.divider()
             self.section(doc)
 
-    def place_group(self, docs: list[dict[str, Any]], keep_together: bool) -> None:
+    def place_group(self, docs: list[dict[str, Any]]) -> None:
         """Render a file behind the one before it — on a new page if it must.
 
-        `keep_together` is the transcript type's choice: the file's section
-        then starts on a new page whenever it would not fit on the current one
-        as a whole. Whether it fits is answered by laying it out into a dummy
-        document first, so the answer covers everything the section carries —
-        the header, every block, and the translations that belong to it.
+        Whether to keep the section whole is the choice of *this* file's
+        transcript type: it then starts on a new page whenever it would not
+        fit on the current one as a whole. Whether it fits is answered by
+        laying it out into a dummy document first, so the answer covers
+        everything the section carries — the header, every block, and the
+        translations that belong to it.
         """
+        keep_together = bool(docs and docs[0].get("keep_sections"))
         if keep_together and not self._fits_here(docs):
             self.pdf.add_page()
             self.group(docs)
@@ -633,17 +648,17 @@ def section_groups(docs: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
     return groups
 
 
-def render_pdf(
-    docs: list[dict[str, Any]], structure: str, target: Path, keep_sections: bool = False
-) -> None:
+def render_pdf(docs: list[dict[str, Any]], target: Path) -> None:
     """Stage 2: render one or many file sections into a single PDF.
 
     Multiple sections flow continuously, separated by spacing only — no table
     of contents and no extra section titles (the template header per file is
     the only marker).
 
-    `keep_sections` comes from the transcript type: with it, a file's section
-    is not torn across a page boundary but starts on a new page instead.
+    Layout and page breaks come from each document itself (`structure`,
+    `keep_sections`, both written by `build_document` from the type that
+    applies to that file) — a compilation may hold files of different types,
+    and none of them may be laid out as another one's.
     """
     try:
         from fpdf import FPDF
@@ -655,10 +670,10 @@ def render_pdf(
     family = _setup_fonts(pdf)
     pdf.set_title(_sanitize_for(family, docs[0]["title"]) if docs else "Verba")
     pdf.add_page()
-    renderer = _Renderer(pdf, family, normalize_structure(structure))
+    renderer = _Renderer(pdf, family)
     for index, group in enumerate(section_groups(docs)):
         if index:
-            renderer.place_group(group, keep_sections)
+            renderer.place_group(group)
         else:
             renderer.group(group)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -807,12 +822,7 @@ def handle_export_job(
         target = exports_dir(project) / export_name(stem, language, combine)
 
     report(95, "Erzeuge PDF ...")
-    render_pdf(
-        docs,
-        project.get("type_structure") or "",
-        target,
-        keep_sections=bool(project.get("type_keep_sections")),
-    )
+    render_pdf(docs, target)
     report(100, f"Export fertig: {target.name}")
     return target.name
 

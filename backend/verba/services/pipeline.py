@@ -628,10 +628,13 @@ def handle_llm_process_job(
     if file_row is None:
         raise RuntimeError(f"File {file_id} not found")
     project = workspace.get_project(file_row["project_id"])
-    type_prompt = (project or {}).get("type_prompt") or ""
+    # the file's own type where it has one, its project's otherwise — a
+    # project may hold a song next to an interview
+    type_row = project_types.for_file(project, file_row)
+    type_prompt = type_row.get("type_prompt") or ""
     # whether this type reproduces its material or writes something of its
-    # own decides how the cleanup runs; a project without a type reproduces
-    verbatim = project_types.is_verbatim(project or {})
+    # own decides how the cleanup runs; a file without a type reproduces
+    verbatim = project_types.is_verbatim(type_row)
 
     total_steps = len(steps)
     cleaned: str | None = None

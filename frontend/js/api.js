@@ -130,6 +130,9 @@ export const api = {
     request("PUT", `/api/files/${fileId}/header`, header),
   updateFileLanguage: (fileId, language) =>
     request("PUT", `/api/files/${fileId}/language`, { language }),
+  // null puts the file back under its project's type
+  updateFileType: (fileId, typeId) =>
+    request("PUT", `/api/files/${fileId}/type`, { type_id: typeId }),
   browse: (path = "") => request("GET", `/api/files/browse?path=${encodeURIComponent(path)}`),
 
   // models

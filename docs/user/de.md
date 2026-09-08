@@ -288,6 +288,31 @@ einen neuen Typ an; auch Standardtypen lassen sich bearbeiten und löschen.
 „Standardtypen wiederherstellen" bringt gelöschte oder veränderte Standards
 zurück (beide Prompts).
 
+### Ein eigener Typ für eine einzelne Datei
+
+Der Typ des Transkripts gilt für alles, was darin liegt — aber ein Transkript
+enthält, was aufgenommen wurde, und das ist nicht immer von einer Sorte: die
+Lieder einer Probe neben dem Gespräch darüber. Deshalb kann **jede Datei einen
+eigenen Typ** bekommen, der dann für sie gilt.
+
+In der Dateiliste zeigt ein **Chip** neben Sprache und Dauer, mit welchem Typ
+die Datei aufbereitet wird. Er ist umrandet und kursiv, solange die Datei dem
+Transkript folgt, und gefüllt, sobald sie einen eigenen Typ nennt. Ein Klick
+öffnet die Auswahl: **Vorgabe des Transkripts** stellt sie wieder unter den
+globalen Typ, jeder andere Eintrag setzt ihren eigenen.
+
+Der Typ der Datei entscheidet danach alles, was der Typ entscheidet: den
+Bereinigungsprompt der KI-Aufbereitung, ob der Text unverändert übernommen
+wird, die Gliederung des PDF-Exports und den Seitenumbruch im Sammel-Export.
+Ein Sammel-PDF kann so ein Lied in Strophen und ein Interview mit Sprechern
+enthalten — jede Datei in ihrer eigenen Form. In der Suche filtert der
+Typfilter nach dem Typ, der für die Datei gilt.
+
+In der **Transkript-Übersicht** stehen alle Typen eines Transkripts
+nebeneinander: der Typ des Transkripts gefüllt, dahinter umrandet die Typen,
+die einzelne Dateien für sich festgelegt haben. Wird ein Typ gelöscht, fallen
+die Dateien, die ihn nannten, wieder auf den Typ des Transkripts zurück.
+
 ## Audio importieren {#import}
 
 Die Aktionskarte im Transkript gliedert den Ablauf in drei Reiter:

@@ -277,6 +277,31 @@ list and a detail view, one at a time. The **+** button creates a new type;
 built-in types can be edited and deleted too. "Restore default types" brings
 deleted or modified defaults back (both prompts).
 
+### A type of its own for a single file
+
+A transcript's type applies to everything in it — but a transcript holds what
+was recorded, and that is not always of one kind: the songs of a rehearsal
+next to the conversation about them. So **every file can be given a type of
+its own**, which then applies to it.
+
+In the file list a **chip** next to language and duration says which type the
+file is processed as. It is outlined and italic while the file follows the
+transcript, and filled as soon as it names a type of its own. A click opens
+the picker: **From the transcript** puts it back under the global type, any
+other entry sets its own.
+
+The file's type then decides everything a type decides: the cleanup prompt of
+the AI processing, whether the text is reproduced unchanged, the layout of the
+PDF export and the page break in a compilation export. One compilation PDF can
+therefore hold a song in stanzas and an interview with speakers — every file
+in its own shape. In the search, the type filter matches the type that applies
+to the file.
+
+In the **transcript overview** every type of a transcript stands side by side:
+the transcript's own type filled, and behind it, outlined, the types single
+files set for themselves. When a type is deleted, the files that named it fall
+back to the transcript's type.
+
 ## Importing audio {#import}
 
 The action card in a transcript organises the workflow into three tabs:

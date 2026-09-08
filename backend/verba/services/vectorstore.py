@@ -663,7 +663,9 @@ def group_by_file(results: list[dict]) -> list[dict]:
 FILE_COLUMNS = (
     "f.filename, f.language, f.project_id, "
     "f.header_left, f.header_middle, f.header_right, "
-    "p.name AS project_name, p.type_id"
+    # the type that applies to the file, not the one the project prescribes:
+    # a file may name one of its own, and the hit belongs to the file
+    "p.name AS project_name, COALESCE(f.type_id, p.type_id) AS type_id"
 )
 
 
@@ -686,7 +688,7 @@ def _filter_clause(filters: dict[str, Any], speaker_sql: str) -> tuple[str, list
         sql += " AND f.project_id = ?"
         params.append(filters["project_id"])
     if filters.get("type_id"):
-        sql += " AND p.type_id = ?"
+        sql += " AND COALESCE(f.type_id, p.type_id) = ?"
         params.append(filters["type_id"])
     if filters.get("language"):
         sql += " AND f.language = ?"

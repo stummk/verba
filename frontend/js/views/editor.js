@@ -51,7 +51,9 @@ export async function render(view, _status, params) {
   const file = data.file;
   // a dialogue layout builds its PDF from the segments (it needs the speakers),
   // every other layout prefers the cleaned text — the hint below says which
-  const dialogueLayout = ["dialogue", "script"].includes(project?.type_structure);
+  // the file's own type where it named one, its project's otherwise
+  const structure = file.type_id ? file.type_structure : project?.type_structure;
+  const dialogueLayout = ["dialogue", "script"].includes(structure);
   const projectFiles = project?.files ?? [];
   view.classList.add("wide"); // workspace uses the full width on large displays
   let derivedTexts = textsData?.texts ?? [];
@@ -60,7 +62,7 @@ export async function render(view, _status, params) {
   view.replaceChildren(html`
     <p><a href="#/project/${file.project_id}" class="muted small">${t("editor.back")}</a></p>
     <div class="editor-title-row">
-      <h1>${file.filename}</h1>
+      <h1 class="view-title-text" title="${file.filename}">${file.filename}</h1>
       <span class="spacer"></span>
       <select id="file-switch" class="file-switch" hidden
               aria-label="${t("editor.switchFile")}" title="${t("editor.switchFile")}"></select>

@@ -70,11 +70,15 @@ def section_starts(monkeypatch, tmp_path):
         monkeypatch.setattr(pdf._Renderer, "_fits_here", fits)
         monkeypatch.setattr(pdf._Renderer, "group", group)
         target = Path(tmp_path) / name
-        # None: called the way the export called it before this existed
-        if keep_sections is None:
-            pdf.render_pdf(docs, "paragraphs", target)
-        else:
-            pdf.render_pdf(docs, "paragraphs", target, keep_sections=keep_sections)
+        # None: a document that says nothing about it, the way one written
+        # before this existed does
+        prepared = [
+            dict(entry, structure="paragraphs")
+            if keep_sections is None
+            else dict(entry, structure="paragraphs", keep_sections=keep_sections)
+            for entry in docs
+        ]
+        pdf.render_pdf(prepared, target)
         assert target.read_bytes().startswith(b"%PDF")
         return starts
 

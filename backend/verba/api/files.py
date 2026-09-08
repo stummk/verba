@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from .. import config
 from ..core.jobs import job_queue
-from ..services import pipeline, transcripts, workspace
+from ..services import pipeline, project_types, transcripts, workspace
 from ..services.languages import LANGUAGE_NAMES
 from ..services.llm import llm_location
 from ..services.media import is_audio_file
@@ -290,6 +290,29 @@ def update_file_language(file_id: int, body: FileLanguageUpdate, request: Reques
     if code and code not in LANGUAGE_NAMES:
         raise HTTPException(status_code=422, detail=f"Unbekannter Sprachcode: {body.language}")
     updated = workspace.update_file(file_id, {"language": code})
+    assert updated is not None
+    return updated
+
+
+class FileTypeUpdate(BaseModel):
+    """The file's own transcript type; null means it follows its project's."""
+
+    type_id: int | None = None
+
+
+@router.put("/files/{file_id}/type")
+def update_file_type(file_id: int, body: FileTypeUpdate, request: Request) -> dict:
+    """Give one file a transcript type of its own.
+
+    The project's type is the rule for everything in it — but a project holds
+    what was recorded, and that is not always of one kind: a rehearsal with
+    the songs next to the conversation about them. So a file may name its own
+    type, and null puts it back under the project's.
+    """
+    _file_or_404(file_id, request)
+    if body.type_id is not None and project_types.get_type(body.type_id) is None:
+        raise HTTPException(status_code=422, detail="Unbekannter Transkripttyp")
+    updated = workspace.update_file(file_id, {"type_id": body.type_id})
     assert updated is not None
     return updated
 

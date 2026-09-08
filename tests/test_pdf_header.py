@@ -56,7 +56,7 @@ def header_cells(monkeypatch, docs: list[dict], structure: str, target) -> list[
         return original(self, w, h, text, *args, **kwargs)
 
     monkeypatch.setattr(FPDF, "cell", spy)
-    pdf.render_pdf(docs, structure, target)
+    pdf.render_pdf([dict(entry, structure=structure) for entry in docs], target)
     return written
 
 
@@ -253,7 +253,7 @@ def test_gaps_stay_tight(data_env, tmp_path, monkeypatch):
         return original(self, h)
 
     monkeypatch.setattr(FPDF, "ln", spy)
-    pdf.render_pdf(docs, "stanzas", tmp_path / "out.pdf")
+    pdf.render_pdf([dict(entry, structure="stanzas") for entry in docs], tmp_path / "out.pdf")
 
     assert gaps, "the renderer inserted no spacing at all"
     assert max(gaps) <= pdf.GAP_BETWEEN_SECTIONS

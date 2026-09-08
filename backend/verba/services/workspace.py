@@ -190,7 +190,34 @@ def list_projects(user: dict[str, Any] | None = None) -> list[dict[str, Any]]:
             """,
             params,
         ).fetchall()
-    return db.rows_to_dicts(rows)
+        projects = db.rows_to_dicts(rows)
+        _attach_file_types(conn, projects)
+    return projects
+
+
+def _attach_file_types(conn, projects: list[dict[str, Any]]) -> None:
+    """Give every project the transcript types its files name themselves.
+
+    The project's own type is the rule, `file_types` the exceptions standing
+    next to it — the overview shows both, so a project holding a song next to
+    an interview says so before it is opened. One query for the whole list:
+    a name per project would be one more round trip per card.
+    """
+    if not projects:
+        return
+    ids = [project["id"] for project in projects]
+    marks = ", ".join("?" for _ in ids)
+    rows = conn.execute(
+        "SELECT DISTINCT f.project_id, t.id, t.name FROM files f "
+        "JOIN project_types t ON t.id = f.type_id "
+        f"WHERE f.project_id IN ({marks}) ORDER BY t.name",  # noqa: S608 — placeholders only
+        ids,
+    ).fetchall()
+    by_project: dict[int, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_project.setdefault(row["project_id"], []).append({"id": row["id"], "name": row["name"]})
+    for project in projects:
+        project["file_types"] = by_project.get(project["id"], [])
 
 
 def set_visibility(
@@ -244,9 +271,17 @@ def delete_project(project_id: int, delete_files: bool = True) -> None:
 # Every file row carries which derived texts exist for it ("cleanup",
 # "translation"): only that tells the UI whether a file has already been
 # through the AI step — its status stays "done" either way.
+#
+# The transcript type is joined under the same names a project row uses, and
+# every one of them is NULL for a file that names no type of its own — that
+# is what `project_types.for_file()` reads to fall back to the project.
 FILE_SELECT = (
     "SELECT f.*, (SELECT group_concat(DISTINCT kind) FROM derived_texts "
-    "WHERE file_id = f.id AND trim(content) != '') AS derived_kinds FROM files f"
+    "WHERE file_id = f.id AND trim(content) != '') AS derived_kinds, "
+    "t.key AS type_key, t.name AS type_name, t.system_prompt AS type_prompt, "
+    "t.output_prompt AS type_output_prompt, t.structure AS type_structure, "
+    "t.keep_sections AS type_keep_sections, t.verbatim AS type_verbatim "
+    "FROM files f LEFT JOIN project_types t ON t.id = f.type_id"
 )
 
 
@@ -269,7 +304,16 @@ def get_file(file_id: int) -> dict[str, Any] | None:
 # `title` is import metadata, written by the import and by
 # `apply_suggested_title`; no API route offers it (every one of them passes a
 # pydantic model of its own), so it is here to be written, not to be exposed.
-UPDATABLE_FILE_FIELDS = ("header_left", "header_middle", "header_right", "language", "title")
+# `type_id` is the file's own transcript type — NULL means it follows its
+# project's, which is what almost every file does.
+UPDATABLE_FILE_FIELDS = (
+    "header_left",
+    "header_middle",
+    "header_right",
+    "language",
+    "title",
+    "type_id",
+)
 
 
 def update_file(file_id: int, changes: dict[str, Any]) -> dict[str, Any] | None:
