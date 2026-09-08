@@ -277,6 +277,12 @@ export async function render(view) {
                    value="${settings.logging.retention_days}">
             <p class="hint">${t("settings.logRetentionHint")}</p>
           </div>
+          <div>
+            <label class="checkline">
+              <input type="checkbox" id="general-audio-backup"> ${t("settings.audioBackup")}
+            </label>
+            <p class="hint">${t("settings.audioBackupHint")}</p>
+          </div>
         </div>
       </div>
 
@@ -432,6 +438,7 @@ export async function render(view) {
   };
 
   el("update-auto").checked = settings.updates?.check_enabled ?? true;
+  el("general-audio-backup").checked = settings.general?.audio_backup ?? true;
   el("update-check").onclick = async () => {
     el("update-status").textContent = t("update.checking");
     await refreshUpdate(true);
@@ -576,6 +583,7 @@ export async function render(view) {
         ui_language: el("ui-language").value,
         data_dir: el("general-data-dir").value.trim(),
         workspaces_dir: el("general-workspaces").value.trim(),
+        audio_backup: el("general-audio-backup").checked,
       },
       updates: { check_enabled: el("update-auto").checked },
       server: { port: Number(el("server-port").value) },

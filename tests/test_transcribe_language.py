@@ -160,7 +160,7 @@ def range_job(file_row, monkeypatch):
     )
     return {
         "file_id": file_row["id"],
-        "payload": {"start_s": 1.0, "end_s": 3.0},
+        "payload": {"ranges": [[1.0, 3.0]]},
     }
 
 
@@ -199,6 +199,25 @@ def test_a_selection_is_transcribed_in_the_declared_language(range_job, monkeypa
     whisper.handle_transcribe_range_job(range_job, NO_CANCEL, noop_report)
 
     assert model.asked_for == "ru"
+
+
+def test_several_selections_are_transcribed_in_one_job(range_job, monkeypatch):
+    """One job, one loaded model, one event per passage — the editor lists them."""
+    range_job["payload"]["ranges"] = [[1.0, 3.0], [5.0, 6.0]]
+    events: list[dict] = []
+    monkeypatch.setattr(
+        whisper.hub,
+        "publish",
+        lambda event_type, data=None, **scope: events.append({"type": event_type, "data": data}),
+    )
+    install_model(monkeypatch, [FakeSegment(0.0, 1.0, "Text")])
+
+    whisper.handle_transcribe_range_job(range_job, NO_CANCEL, noop_report)
+
+    published = [e["data"] for e in events if e["type"] == "range.text"]
+    assert [(p["start_s"], p["end_s"]) for p in published] == [(1.0, 3.0), (5.0, 6.0)]
+    assert [p["index"] for p in published] == [0, 1]
+    assert {p["total"] for p in published} == {2}
 
 
 def test_a_silent_selection_says_so_in_german(range_job, monkeypatch):

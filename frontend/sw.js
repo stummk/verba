@@ -23,6 +23,7 @@ const SHELL = [
   "/js/jobs.js",
   "/js/language-chip.js",
   "/js/languages.js",
+  "/js/timeline.js",
   "/js/llamainstall.js",
   "/js/markdown.js",
   "/js/menu.js",

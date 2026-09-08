@@ -619,31 +619,68 @@ transkribierten Datei öffnet den Editor — einen
   korrigiert wurde. Bereinigung und Übersetzungen bleiben stehen, bis sie über
   „Neu erzeugen" neu erstellt werden. Der Fortschritt läuft unter der
   Wellenform.
-- **Auswahl** durch Ziehen auf der Wellenform, dann:
-  - **Auswahl transkribieren** — nur dieser Abschnitt wird erkannt, und das
-    Ergebnis ist **reiner Text**: Er erscheint unter den Schaltflächen und geht
-    zugleich in die Zwischenablage. Erlaubt der Browser das Kopieren nicht von
-    allein (er verlangt dafür meist einen Klick), genügt die Schaltfläche
-    *Kopieren* daneben. **Es entstehen dabei keine Segmente** — die vorhandenen
-    bleiben unangetastet. So lässt sich nachhören, was an einer Stelle
-    tatsächlich gesagt wurde, ohne die eigene Korrektur zu überschreiben; für
-    das Ersetzen der Segmente ist „Ganze Datei neu transkribieren" da.
-    Soll der erkannte Text dann doch stehen bleiben, legt **Text als Segment
-    übernehmen** — die Schaltfläche mit dem Plus neben *Kopieren* — ihn als
-    neues Segment für genau diesen Abschnitt an.
-  - **Leeres Segment für die Auswahl anlegen** — die Schaltfläche mit dem Plus:
-    Für den ausgewählten Abschnitt entsteht ein Segment ohne Text, in das
-    sofort geschrieben werden kann. Gedacht für eine Stelle, die die Erkennung
-    übersprungen hat. Das Segment reiht sich nach seiner Anfangszeit an der
-    richtigen Stelle in die Liste ein, nicht an deren Ende.
-  - **Auf Auswahl kürzen** — behält nur den ausgewählten Bereich.
-  - **Auswahl entfernen** — schneidet den ausgewählten Bereich heraus und fügt
-    den Rest davor und dahinter wieder zusammen.
-  - Beide schneiden das Audio per ffmpeg und **verändern die geöffnete Datei
-    nicht**: Das Ergebnis entsteht als *neue* Datei im selben Transkript
-    (Namenszusatz `-trim` bzw. `-cut`), noch ohne Transkript, mit dem Status
-    *offen*. Original und Segmente bleiben erhalten; die neue Datei wird eigens
-    transkribiert.
+- **Auswahl** durch Ziehen auf der Wellenform. Es lassen sich **mehrere
+  Abschnitte** auswählen:
+  - **Shift+Ziehen** nimmt einen weiteren Abschnitt zur Auswahl hinzu; ein Ziehen
+    ohne Shift beginnt eine neue Auswahl.
+  - Die **rechte Maustaste** auf einem ausgewählten Abschnitt nimmt genau diesen
+    wieder heraus; das Kreuz hebt die ganze Auswahl auf.
+  - Überlappende Abschnitte werden zu einem zusammengefasst — man kann also
+    dazuziehen, ohne auf Lücken zu achten. Unter der Wellenform steht, wie viele
+    Abschnitte ausgewählt sind und wie viel Zeit sie zusammen ausmachen.
+- **Abspielen spielt die Auswahl** — und nur sie: von der ersten Auswahl an, die
+  Lücken dazwischen werden übersprungen, und am Ende der letzten hält es an. Ein
+  **Klick auf einen ausgewählten Abschnitt** spielt genau diesen. Ohne Auswahl
+  läuft die ganze Datei, und sind Schnitte vorgemerkt (siehe unten), lässt sich
+  so vorher anhören, wie sie klingen wird.
+- Mit einer Auswahl:
+  - **Auswahl transkribieren** — nur die ausgewählten Abschnitte werden erkannt,
+    und das Ergebnis ist **reiner Text**: eine Liste unter den Schaltflächen, ein
+    Eintrag je Abschnitt, in der Reihenfolge der Aufnahme und mit ihrer
+    Anfangszeit. Bei einem einzigen Abschnitt geht der Text zugleich in die
+    Zwischenablage; erlaubt der Browser das nicht von allein (er verlangt dafür
+    meist einen Klick), genügen die Schaltflächen *Kopieren* je Eintrag oder
+    *Alles kopieren* oben. **Es entstehen dabei keine Segmente** — die
+    vorhandenen bleiben unangetastet. So lässt sich nachhören, was an einer
+    Stelle tatsächlich gesagt wurde, ohne die eigene Korrektur zu
+    überschreiben; für das Ersetzen der Segmente ist „Ganze Datei neu
+    transkribieren" da. Soll ein erkannter Text dann doch stehen bleiben, legt
+    das **Plus** in seiner Zeile ihn als neues Segment für genau diesen
+    Abschnitt an. Die Anfangszeit in der Zeile spielt den Abschnitt noch einmal.
+  - **Leere Segmente für die Auswahl anlegen** — die Schaltfläche mit dem Plus:
+    Für jeden ausgewählten Abschnitt entsteht ein Segment ohne Text, in das
+    sofort geschrieben werden kann; der Schreibcursor landet im ersten davon.
+    Gedacht für Stellen, die die Erkennung übersprungen hat. Die Segmente reihen
+    sich nach ihrer Anfangszeit an der richtigen Stelle in die Liste ein, nicht
+    an deren Ende.
+
+**Schneiden — wie in einem Audio-Editor.** Die Aufnahme selbst wird geändert,
+und zwar die geöffnete Datei: Es entsteht **keine zweite Datei** je Schnitt.
+Damit das nicht überraschend passiert, werden Schnitte erst **vorgemerkt** und
+dann in einem Durchgang übernommen:
+
+- **Auf Auswahl kürzen** behält nur die ausgewählten Abschnitte, **Auswahl
+  entfernen** nimmt sie heraus. Beides ändert zunächst nichts an der Datei — es
+  merkt den Schnitt vor. Was wegfallen würde, ist auf der Wellenform **rot
+  markiert** und weiterhin hörbar.
+- Beides lässt sich mehrfach und beliebig kombinieren; jeder Schritt rechnet mit
+  dem, was der vorige übrig gelassen hat. Über der Segmentliste steht die Bilanz:
+  wie viele Schnitte vorgemerkt sind, wie viel wegfällt und wie lang die Aufnahme
+  danach ist.
+- **Schritt zurück** nimmt den letzten Schnitt wieder heraus, **Verwerfen** alle.
+  Solange nichts übernommen ist, ist die Datei unberührt — auch nach einem
+  versehentlichen Neuladen der Seite bleiben die Vormerkungen erhalten.
+- **Übernehmen** schreibt sie nach einer Rückfrage in einem einzigen
+  ffmpeg-Durchgang in die Datei. Die **Segmente rücken mit**: ihre Zeitstempel
+  werden umgerechnet, und Segmente, die vollständig im Weggeschnittenen liegen,
+  werden gelöscht. Wellenform, Dauer, Transkript-Datei im Arbeitsordner und
+  Suchindex sind danach auf dem neuen Stand.
+- **Das Original bleibt gesichert.** Vor dem ersten Übernehmen legt Verba die
+  unbearbeitete Aufnahme einmal beiseite — mitsamt dem Transkript, wie es zu ihr
+  gehörte. **Original wiederherstellen** (das Uhr-Symbol, das nur dann erscheint)
+  holt beides zurück. Eine Kopie je bearbeiteter Aufnahme, nicht je Schnitt; wem
+  der Platz wichtiger ist, schaltet die Sicherung unter *Einstellungen →
+  Speicherorte* ab — dann ist ein übernommener Schnitt endgültig.
 - Im Bereich **PDF-Header** im Editor lassen sich pro Datei ein Titel, ein Zusatz
   und ein Feld für Ort/Datum bearbeiten. Die Kopfzeile lautet dann
   `Titel (Zusatz)` links und Ort/Datum rechts: der Zusatz steht in Klammern
@@ -1071,6 +1108,12 @@ bestätigt eine kurze Meldung.
   ein Hinweis stehen, und alles arbeitet unverändert am bisherigen Ort weiter.
   Liegen die Transkript-Ordner an ihrem Standardplatz im Datenverzeichnis,
   wandern sie mit.
+- **Original einer geschnittenen Aufnahme sichern:** Wird eine Aufnahme im
+  Editor geschnitten, legt Verba die unbearbeitete Datei einmal daneben — im
+  Ordner `.original` des Transkripts, samt dem Transkript, wie es zu ihr
+  gehörte. Genau daraus holt „Original wiederherstellen" im Editor beides
+  zurück. Eine Kopie je bearbeiteter Aufnahme, nicht je Schnitt. Abgeschaltet
+  ist ein übernommener Schnitt endgültig.
 - **Platzbedarf der Datenbank:** Beim Löschen eines Transkripts gibt SQLite die
   Seiten frei, verkleinert die Datei aber nicht — der Platz wird beim nächsten
   Schreiben wiederverwendet. Ist genug davon frei geworden, verdichtet Verba

@@ -303,6 +303,11 @@ class GeneralSettings(BaseModel):
     # happened, never by the settings form.
     data_dir_active: str = ""
     browse_roots: list[str] = Field(default_factory=list)  # empty = user home dir only
+    # Cutting a recording rewrites it in place, so the untouched file is
+    # copied aside once before the first cut — one copy per edited file, and
+    # what makes "restore the original" possible at all. Off for those to
+    # whom the disk space matters more than that way back.
+    audio_backup: bool = True
 
     @field_validator("workspaces_dir", "data_dir", "data_dir_active")
     @classmethod

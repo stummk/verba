@@ -33,7 +33,7 @@ from .core.jobs import job_queue
 from .events import hub
 from .logging_setup import setup_logging
 from .services import auth, llamacpp, updates
-from .services.audio import handle_audio_edit_job
+from .services.audio import handle_audio_edit_job, handle_audio_restore_job
 from .services.maintenance import handle_vacuum_job
 from .services.pdf import handle_export_job
 from .services.pipeline import handle_llm_process_job
@@ -62,6 +62,7 @@ async def _lifespan(app: FastAPI):
     job_queue.register("transcribe", handle_transcribe_job)
     job_queue.register("transcribe_range", handle_transcribe_range_job)
     job_queue.register("audio_edit", handle_audio_edit_job)
+    job_queue.register("audio_restore", handle_audio_restore_job)
     job_queue.register("llm_process", handle_llm_process_job)
     job_queue.register("export_pdf", handle_export_job)
     job_queue.register("index_file", handle_index_file_job)

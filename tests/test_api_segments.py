@@ -7,7 +7,7 @@ import pytest
 
 from verba import config, db
 from verba.core.jobs import job_queue
-from verba.services.audio import build_edit_command
+from verba.services.audio import build_keep_command
 
 
 @pytest.fixture(autouse=True)
@@ -24,6 +24,7 @@ def file_row(client, tmp_path, monkeypatch):
     monkeypatch.setitem(job_queue._handlers, "transcribe", lambda *a: None)
     monkeypatch.setitem(job_queue._handlers, "transcribe_range", lambda *a: None)
     monkeypatch.setitem(job_queue._handlers, "audio_edit", lambda *a: None)
+    monkeypatch.setitem(job_queue._handlers, "audio_restore", lambda *a: None)
 
     (tmp_path / "a.mp3").write_bytes(b"x")
     project = client.post("/api/projects", json={"name": "Seg"}).json()
@@ -115,66 +116,115 @@ def test_delete_segment_endpoint(client, file_row):
     assert client.get(f"/api/files/{file_row['id']}/segments").json()["segments"] == []
 
 
-def test_transcribe_range_enqueues_payload(client, file_row):
+def test_transcribe_range_enqueues_the_selected_passages(client, file_row):
     response = client.post(
         f"/api/files/{file_row['id']}/transcribe-range",
-        json={"start_s": 1.0, "end_s": 3.5, "language": "de"},
+        json={"ranges": [{"start_s": 1.0, "end_s": 3.5}], "language": "de"},
     )
     assert response.status_code == 200
     payload = json.loads(response.json()["payload"])
-    assert payload == {"start_s": 1.0, "end_s": 3.5, "language": "de"}
+    assert payload == {"ranges": [[1.0, 3.5]], "language": "de"}
+
+
+def test_transcribe_range_takes_several_passages_in_one_job(client, file_row):
+    """One job, one loaded model — and the passages sorted as they lie."""
+    response = client.post(
+        f"/api/files/{file_row['id']}/transcribe-range",
+        json={
+            "ranges": [
+                {"start_s": 8.0, "end_s": 9.0},
+                {"start_s": 1.0, "end_s": 2.0},
+            ]
+        },
+    )
+    assert response.status_code == 200
+    assert json.loads(response.json()["payload"])["ranges"] == [[1.0, 2.0], [8.0, 9.0]]
+
+
+def test_transcribe_range_merges_selections_that_overlap(client, file_row):
+    response = client.post(
+        f"/api/files/{file_row['id']}/transcribe-range",
+        json={
+            "ranges": [
+                {"start_s": 1.0, "end_s": 4.0},
+                {"start_s": 3.0, "end_s": 6.0},
+            ]
+        },
+    )
+    assert json.loads(response.json()["payload"])["ranges"] == [[1.0, 6.0]]
 
 
 def test_transcribe_range_rejects_invalid_span(client, file_row):
     response = client.post(
-        f"/api/files/{file_row['id']}/transcribe-range", json={"start_s": 3.0, "end_s": 1.0}
+        f"/api/files/{file_row['id']}/transcribe-range",
+        json={"ranges": [{"start_s": 3.0, "end_s": 1.0}]},
     )
     assert response.status_code == 422
 
 
-def test_audio_edit_enqueues_job(client, file_row):
+def test_transcribe_range_rejects_an_empty_list(client, file_row):
+    response = client.post(f"/api/files/{file_row['id']}/transcribe-range", json={"ranges": []})
+    assert response.status_code == 422
+
+
+# ── cutting the recording ─────────────────────────────────────────────
+
+
+def test_apply_cuts_enqueues_the_spans_that_stay(client, file_row):
     response = client.post(
-        f"/api/files/{file_row['id']}/audio/edit",
-        json={"op": "trim", "start_s": 0.5, "end_s": 2.0},
+        f"/api/files/{file_row['id']}/audio/apply",
+        json={"keeps": [{"start_s": 0.0, "end_s": 2.0}, {"start_s": 5.0, "end_s": 9.0}]},
     )
     assert response.status_code == 200
     assert response.json()["kind"] == "audio_edit"
+    assert json.loads(response.json()["payload"])["keeps"] == [[0.0, 2.0], [5.0, 9.0]]
 
 
-def test_audio_edit_rejects_unknown_op(client, file_row):
+def test_apply_cuts_refuses_a_recording_that_is_not_cut_at_all(client, file_row):
+    """Keeping everything is not an edit — re-encoding it would only cost quality."""
+    with db.get_conn() as conn:  # the fixture's stub file has no readable duration
+        conn.execute("UPDATE files SET duration = 30 WHERE id = ?", (file_row["id"],))
     response = client.post(
-        f"/api/files/{file_row['id']}/audio/edit",
-        json={"op": "explode", "start_s": 0.5, "end_s": 2.0},
+        f"/api/files/{file_row['id']}/audio/apply",
+        json={"keeps": [{"start_s": 0.0, "end_s": 30.0}]},
     )
     assert response.status_code == 422
+
+
+def test_apply_cuts_refuses_an_empty_result(client, file_row):
+    response = client.post(f"/api/files/{file_row['id']}/audio/apply", json={"keeps": []})
+    assert response.status_code == 422
+
+
+def test_an_untouched_recording_cannot_be_restored(client, file_row):
+    assert client.get(f"/api/files/{file_row['id']}/audio/original").json() == {
+        "can_restore": False
+    }
+    assert client.post(f"/api/files/{file_row['id']}/audio/restore").status_code == 404
 
 
 # ── ffmpeg command construction (pure) ────────────────────────────────
 
 
-def test_build_trim_command():
-    cmd = build_edit_command("ffmpeg", Path("in.mp3"), Path("out.mp3"), "trim", 1.0, 5.0, 60.0)
+def test_one_span_becomes_a_plain_trim():
+    """No filter graph: ffmpeg may seek to the start instead of decoding to it."""
+    cmd = build_keep_command("ffmpeg", Path("in.mp3"), Path("out.mp3"), [(1.0, 5.0)])
     assert cmd[:6] == ["ffmpeg", "-y", "-ss", "1.000", "-to", "5.000"]
+    assert "-filter_complex" not in cmd
 
 
-def test_build_cut_command_uses_concat_filter():
-    cmd = build_edit_command("ffmpeg", Path("in.mp3"), Path("out.mp3"), "cut", 10.0, 20.0, 60.0)
+def test_several_spans_are_concatenated_in_one_pass():
+    cmd = build_keep_command("ffmpeg", Path("in.mp3"), Path("out.mp3"), [(0.0, 5.0), (8.0, 20.0)])
     joined = " ".join(cmd)
-    assert "atrim=end=10.000" in joined
-    assert "atrim=start=20.000" in joined
+    assert "atrim=start=0.000:end=5.000" in joined
+    assert "atrim=start=8.000:end=20.000" in joined
     assert "concat=n=2" in joined
+    assert cmd[-1] == "out.mp3"
 
 
-def test_build_cut_at_file_start_degrades_to_trim():
-    cmd = build_edit_command("ffmpeg", Path("in.mp3"), Path("out.mp3"), "cut", 0.0, 5.0, 60.0)
-    assert "-filter_complex" not in cmd
-    assert cmd[2:4] == ["-ss", "5.000"]
-
-
-def test_build_cut_at_file_end_degrades_to_trim():
-    cmd = build_edit_command("ffmpeg", Path("in.mp3"), Path("out.mp3"), "cut", 50.0, 60.0, 60.0)
-    assert "-filter_complex" not in cmd
-    assert cmd[2:4] == ["-to", "50.000"]
+def test_cutting_a_recording_down_to_nothing_is_refused():
+    with pytest.raises(ValueError):
+        build_keep_command("ffmpeg", Path("in.mp3"), Path("out.mp3"), [])
 
 
 def test_update_file_language_endpoint(client, file_row):

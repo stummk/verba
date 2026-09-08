@@ -1,6 +1,7 @@
 // Transcript editor: waveform timeline (wavesurfer), text↔audio sync,
 // segment editing with autosave + undo, the language of the recording,
-// transcribing the whole file or just a selection, audio cutting.
+// transcribing the whole file or the selected passages, and cutting the
+// recording itself — collected first, written in one pass (services/audio.py).
 
 import WaveSurfer from "/vendor/wavesurfer.esm.js";
 import RegionsPlugin from "/vendor/wavesurfer.regions.esm.js";
@@ -12,9 +13,23 @@ import { iconButton, iconSvg, setIcon } from "../icons.js";
 import { currentLanguage, t } from "../i18n.js";
 import { languageChip, setChipLanguage } from "../language-chip.js";
 import { languageName } from "../languages.js";
+import * as tl from "../timeline.js";
 import { on } from "../ws.js";
 
 const AUTOSAVE_DELAY = 700;
+const SELECTION_COLOR = "rgba(80, 120, 255, 0.18)";
+// What a pending cut looks like: the passage is still there and still audible,
+// it is only *going* to go — so it is marked, not hidden, and in the colour
+// everything destructive uses.
+const CUT_COLOR = "rgba(220, 60, 60, 0.28)";
+const PENDING_CUTS_KEY = "verba.pendingCuts.";
+// How far the stored length may be off before the marks count as stale: a
+// container's duration is read back to the millisecond, a cut changes it by
+// seconds.
+const STALE_MARKS_TOLERANCE = 0.5;
+// A cursor this close to a span's end counts as "at the end", not "inside":
+// pressing play there means play it again, not play the last frame.
+const RESUME_MARGIN = 0.15;
 // everything that acts on the selected passage — enabled and disabled together
 const SELECTION_BUTTONS = [
   "range-transcribe", "range-add-segment", "audio-trim", "audio-cut", "clear-selection",
@@ -23,6 +38,50 @@ const SPELLCHECK_KEY = "verba.spellcheck";
 
 let wavesurfer = null;
 let unsubscribers = [];
+
+// The audio is fetched with the file's own URL plus a stamp: after a cut the
+// recording behind that URL is a different one, and without the stamp the
+// browser would happily show the waveform of the file as it used to be.
+function audioUrl(fileId) {
+  return `/api/files/${fileId}/audio?t=${Date.now()}`;
+}
+
+// Cuts that are collected but not yet applied survive a reload — they are a
+// few numbers, and losing ten minutes of careful marking to a stray F5 is not
+// something an editor should do. They stay in this browser and reach nobody
+// else: nothing has happened to the recording yet.
+function loadPendingCuts(fileId, duration) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(PENDING_CUTS_KEY + fileId) || "null");
+    if (!stored?.keeps?.length) {
+      localStorage.removeItem(PENDING_CUTS_KEY + fileId);
+      return null;
+    }
+    // The marks describe the recording they were drawn on. If that recording
+    // has changed since — somebody else applied a cut, or put the original
+    // back — they name passages that have moved, and applying them would take
+    // out the wrong audio. An open editor hears about such a change and drops
+    // them (reloadAudio); a closed one has to notice it here, and the length
+    // is what tells it.
+    if (Math.abs(Number(stored.duration) - duration) > STALE_MARKS_TOLERANCE) {
+      localStorage.removeItem(PENDING_CUTS_KEY + fileId);
+      return null;
+    }
+    return stored.keeps;
+  } catch {
+    return null;
+  }
+}
+
+function savePendingCuts(fileId, keeps, duration) {
+  try {
+    if (keeps) {
+      localStorage.setItem(PENDING_CUTS_KEY + fileId, JSON.stringify({ duration, keeps }));
+    } else {
+      localStorage.removeItem(PENDING_CUTS_KEY + fileId);
+    }
+  } catch { /* a browser with no storage simply forgets them */ }
+}
 
 export async function render(view, _status, params) {
   const fileId = Number(params[0]);
@@ -114,6 +173,25 @@ export async function render(view, _status, params) {
                 title="${t("editor.cut")}" aria-label="${t("editor.cut")}"></button>
         <button id="clear-selection" class="icon-btn" disabled
                 title="${t("editor.clearSelection")}" aria-label="${t("editor.clearSelection")}"></button>
+        <button id="audio-restore" class="icon-btn" hidden
+                title="${t("editor.restoreOriginal")}"
+                aria-label="${t("editor.restoreOriginal")}"></button>
+      </div>
+      <!-- Cuts are collected, not carried out: the recording only changes when
+           the user says so, and until then this bar is the whole state of the
+           editing — what will go, what will be left, and the way back. -->
+      <div class="cut-pending" id="cut-pending" hidden>
+        <span class="cut-badge" id="cut-summary"></span>
+        <span class="spacer"></span>
+        <button type="button" class="text-btn small-btn" id="cut-undo">
+          ${t("editor.cutUndo")}
+        </button>
+        <button type="button" class="text-btn small-btn" id="cut-discard">
+          ${t("editor.cutDiscard")}
+        </button>
+        <button type="button" class="tonal small-btn" id="cut-apply">
+          ${t("editor.cutApply")}
+        </button>
       </div>
       <div class="progressbar small-bar" id="range-progress" hidden><div></div></div>
       <p class="muted small job-message" id="range-message"></p>
@@ -122,14 +200,12 @@ export async function render(view, _status, params) {
           <span class="muted small" id="range-result-span"></span>
           <span class="spacer"></span>
           <button type="button" class="icon-btn" id="range-copy"
-                  title="${t("editor.rangeCopy")}" aria-label="${t("editor.rangeCopy")}"></button>
-          <button type="button" class="icon-btn" id="range-result-segment"
-                  title="${t("editor.rangeAsSegment")}"
-                  aria-label="${t("editor.rangeAsSegment")}"></button>
+                  title="${t("editor.rangeCopyAll")}"
+                  aria-label="${t("editor.rangeCopyAll")}"></button>
           <button type="button" class="icon-btn" id="range-result-close"
                   title="${t("common.close")}" aria-label="${t("common.close")}"></button>
         </div>
-        <p class="range-result-text" id="range-result-text"></p>
+        <div id="range-result-list"></div>
       </div>
     </div>
 
@@ -215,8 +291,8 @@ export async function render(view, _status, params) {
   el("audio-cut").innerHTML = iconSvg("cut");
   el("clear-selection").innerHTML = iconSvg("close");
   el("range-add-segment").innerHTML = iconSvg("add");
+  el("audio-restore").innerHTML = iconSvg("restore");
   el("range-copy").innerHTML = iconSvg("copy");
-  el("range-result-segment").innerHTML = iconSvg("add");
   el("range-result-close").innerHTML = iconSvg("close");
   el("editor-export").innerHTML = iconSvg("pdf");
   // The editor has no export list to pick the finished PDF from, so it hands
@@ -314,24 +390,188 @@ export async function render(view, _status, params) {
   const regions = RegionsPlugin.create();
   wavesurfer = WaveSurfer.create({
     container: "#waveform",
-    url: `/api/files/${fileId}/audio`,
+    url: audioUrl(fileId),
     height: 96,
     waveColor: styles.getPropertyValue("--md-outline-variant").trim() || "#999",
     progressColor: styles.getPropertyValue("--md-primary").trim() || "#36c",
     cursorColor: styles.getPropertyValue("--md-error").trim() || "#c00",
     plugins: [regions],
   });
-  regions.enableDragSelection({ color: "rgba(80, 120, 255, 0.18)" });
+  regions.enableDragSelection({ color: SELECTION_COLOR });
 
-  let selection = null;
+  // ── what is selected, and what is marked for removal ────────────────
+  //
+  // Both are lists of spans of the recording *as it currently is*, and the
+  // regions on the waveform are drawn from them — never read back as state.
+  // A drag therefore does not "create a selection": it hands over a span, the
+  // list decides what that means (replace, or add on Shift), and the regions
+  // are rendered again from the result. Overlapping drags merge instead of
+  // piling up, which is what makes several selections usable at all.
+  let selections = [];      // [[start, end], …] sorted, merged
+  // null = the recording is untouched; marks from an earlier visit only come
+  // back when they still fit this recording (see loadPendingCuts)
+  const recordingLength = () => Number(file.duration) || 0;
+  let keeps = loadPendingCuts(fileId, recordingLength());
+  const rememberCuts = () => savePendingCuts(fileId, keeps, recordingLength());
+  const cutUndo = [];       // earlier `keeps` states, for the undo button
+  let syncingRegions = false;
+  let extendSelection = false;   // Shift was held when this drag began
+
+  const waveHost = el("waveform");
+  // Shift is read at the start of the drag, not at its end: the plugin only
+  // reports a region once the pointer has travelled, and by then the key may
+  // be up again.
+  waveHost.addEventListener("pointerdown", (event) => {
+    extendSelection = event.shiftKey;
+  }, true);
+  // The right button takes a selection away again — the counterpart to
+  // Shift+drag, and the reason the browser's own menu has to stay closed.
+  waveHost.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    const index = tl.indexAt(selections, timeAt(event.clientX));
+    if (index < 0) return;
+    selections = selections.filter((_span, at) => at !== index);
+    renderSelection();
+  });
+
+  function timeAt(clientX) {
+    const wrapper = wavesurfer.getWrapper();
+    const box = wrapper.getBoundingClientRect();
+    const duration = wavesurfer.getDuration() || 0;
+    return Math.min(duration, Math.max(0, ((clientX - box.left) / box.width) * duration));
+  }
+
+  function currentKeeps() {
+    return keeps ?? [[0, wavesurfer.getDuration() || file.duration || 0]];
+  }
+
+  /** The passages that would be gone if the pending cuts were applied. */
+  function pendingCuts() {
+    if (keeps === null) return [];
+    return tl.subtract([[0, wavesurfer.getDuration() || file.duration || 0]], keeps);
+  }
+
+  function renderRegions() {
+    syncingRegions = true;
+    regions.clearRegions();
+    // the cuts first, so a selection drawn over one stays visible on top
+    for (const [start, end] of pendingCuts()) {
+      regions.addRegion({
+        id: `cut-${start.toFixed(3)}`,
+        start, end,
+        color: CUT_COLOR,
+        drag: false,
+        resize: false,
+      });
+    }
+    for (const [start, end] of selections) {
+      regions.addRegion({ id: `sel-${start.toFixed(3)}`, start, end, color: SELECTION_COLOR });
+    }
+    syncingRegions = false;
+  }
+
+  function renderSelection() {
+    renderRegions();
+    renderSelectionInfo();
+  }
+
+  function renderSelectionInfo() {
+    const info = el("selection-info");
+    if (selections.length === 0) info.textContent = t("editor.noSelection");
+    else if (selections.length === 1) {
+      info.textContent = t("editor.selection", {
+        start: formatDuration(selections[0][0]), end: formatDuration(selections[0][1]),
+      });
+    } else {
+      info.textContent = t("editor.selectionCount", {
+        count: selections.length, total: formatDuration(tl.total(selections)),
+      });
+    }
+    for (const id of SELECTION_BUTTONS) el(id).disabled = selections.length === 0;
+  }
+
+  function clearSelections() {
+    selections = [];
+    renderSelection();
+  }
+
+  regions.on("region-created", (region) => {
+    if (syncingRegions) return;
+    const span = [region.start, region.end];
+    region.remove();  // the state owns the regions, so it is drawn again below
+    selections = extendSelection
+      ? tl.normalize([...selections, span])
+      : tl.normalize([span]);
+    extendSelection = false;
+    renderSelection();
+  });
+
+  // Resizing or dragging an existing selection: the state follows, but the
+  // regions are deliberately *not* redrawn — that would pull the region out
+  // from under the pointer mid-drag.
+  regions.on("region-updated", (region) => {
+    if (syncingRegions || !region.id.startsWith("sel-")) return;
+    selections = tl.normalize(
+      regions.getRegions()
+        .filter((other) => other.id.startsWith("sel-"))
+        .map((other) => [other.start, other.end])
+    );
+    renderSelectionInfo();
+  });
+
+  // A click on one selection plays that one alone — the quickest way to check
+  // a single passage while several are marked.
+  regions.on("region-clicked", (region, event) => {
+    if (!region.id.startsWith("sel-")) return;
+    event.stopPropagation();
+    playSpans(tl.intersect([[region.start, region.end]], currentKeeps()));
+  });
+
+  // ── playback: only what is selected, and only what will be left ─────
+  //
+  // The selected passages are played in order and the gaps between them are
+  // skipped, so the button answers "what have I selected?" — and with nothing
+  // selected but cuts pending, it answers "what will this sound like?".
+  let playSpansList = null;   // the spans this run walks through
+  let playIndex = 0;
+
+  function playbackSpans() {
+    const base = selections.length ? selections : [[0, wavesurfer.getDuration() || 0]];
+    return tl.intersect(base, currentKeeps());
+  }
+
+  function playSpans(spans) {
+    playSpansList = spans;
+    playIndex = 0;
+    if (!spans.length) return;
+    // carry on where the cursor stands if it is inside one of the spans —
+    // otherwise a pause in the middle would always jump back to the start
+    const time = wavesurfer.getCurrentTime();
+    const at = spans.findIndex(([start, end]) => time >= start && time < end - RESUME_MARGIN);
+    playIndex = Math.max(at, 0);
+    if (at < 0) wavesurfer.setTime(spans[0][0]);
+    wavesurfer.play();
+  }
+
+  /** Playing from one position — a segment's timestamp — ignores the spans. */
+  function playFrom(time) {
+    playSpansList = null;
+    wavesurfer.setTime(time);
+    if (!wavesurfer.isPlaying()) wavesurfer.play();
+  }
+
+  let arrived = false;   // the deep-link jump happens once, not on every reload
 
   wavesurfer.on("ready", () => {
     el("wave-loading").hidden = true;
     el("play-toggle").disabled = false;
+    renderSelection();
+    renderCutState();
     // a hit in a derived text carries no position — its link only names the
     // panel, so starting the audio from the top would be an answer to a
     // question nobody asked
-    if (startAt !== null && Number.isFinite(startAt) && !wantedPanel) {
+    if (!arrived && startAt !== null && Number.isFinite(startAt) && !wantedPanel) {
+      arrived = true;
       wavesurfer.setTime(startAt);
       wavesurfer.play();
       // a link from the search points at one hit deep in the transcript, so
@@ -345,43 +585,40 @@ export async function render(view, _status, params) {
     el("time-display").textContent =
       `${formatDuration(time)} / ${formatDuration(wavesurfer.getDuration())}`;
     highlightActiveSegment(time);
+    hopToNextSpan(time);
   });
 
-  regions.on("region-created", (region) => {
-    for (const other of regions.getRegions()) {
-      if (other !== region) other.remove();
+  function hopToNextSpan(time) {
+    if (!playSpansList || !wavesurfer.isPlaying()) return;
+    const span = playSpansList[playIndex];
+    if (!span || time < span[1]) return;
+    const next = playSpansList[playIndex + 1];
+    if (next) {
+      playIndex += 1;
+      wavesurfer.setTime(next[0]);
+      return;
     }
-    setSelection(region.start, region.end);
-  });
-  regions.on("region-updated", (region) => setSelection(region.start, region.end));
-
-  function setSelection(start, end) {
-    selection = { start, end };
-    el("selection-info").textContent = t("editor.selection", {
-      start: formatDuration(start), end: formatDuration(end),
-    });
-    for (const id of SELECTION_BUTTONS) {
-      el(id).disabled = false;
-    }
+    // The end of the last selected passage: stop there, and stay there. A
+    // `timeupdate` arrives every few hundred milliseconds, so the end is
+    // noticed a fraction late — the cursor is put back onto it, both to leave
+    // it exactly where the selection ends and so that pressing play again
+    // plays the selection rather than its last frame.
+    wavesurfer.pause();
+    wavesurfer.setTime(span[1]);
+    playSpansList = null;
   }
 
-  function clearSelection() {
-    selection = null;
-    regions.clearRegions();
-    el("selection-info").textContent = t("editor.noSelection");
-    for (const id of SELECTION_BUTTONS) {
-      el(id).disabled = true;
-    }
-  }
-
-  el("play-toggle").onclick = () => wavesurfer.playPause();
-  el("clear-selection").onclick = clearSelection;
+  el("play-toggle").onclick = () => {
+    if (wavesurfer.isPlaying()) wavesurfer.pause();
+    else playSpans(playbackSpans());
+  };
+  el("clear-selection").onclick = clearSelections;
 
   // Two transcriptions that must not be confused with one another:
   //
   //   the whole file — throws the segments away and recognises them again,
   //                    which is the way out of a wrong language or model;
-  //   the selection  — hands back the text of that passage and nothing else.
+  //   the selection  — hands back the text of those passages and nothing else.
   //                    It writes no segments: one listens to a passage to
   //                    check what was recognised there, and a result written
   //                    back would overwrite exactly the edit one was checking.
@@ -403,38 +640,160 @@ export async function render(view, _status, params) {
   };
 
   el("range-transcribe").onclick = async () => {
-    if (!selection) return;
+    if (!selections.length) return;
     try {
-      await api.transcribeRange(fileId, selection.start, selection.end);
+      rangeResults = [];
+      renderRangeResults();
+      await api.transcribeRanges(fileId, selections);
       toast(t("editor.rangeStarted"));
     } catch (error) {
       toast(error.message);
     }
   };
-  // A passage the recognition left out: the selection becomes a row one can
-  // type into. It carries no text — that is the point — so it is added
-  // straight away and the cursor lands in its field.
+  // Passages the recognition left out: every selection becomes a row one can
+  // type into. They carry no text — that is the point — so they are added
+  // straight away and the cursor lands in the first one's field.
   el("range-add-segment").onclick = async () => {
-    if (!selection) return;
-    await addSegment(selection.start, selection.end, "");
+    if (!selections.length) return;
+    await addSegments(selections.map(([start, end]) => ({ start, end, text: "" })));
   };
 
-  el("audio-trim").onclick = () => runAudioEdit("trim");
-  el("audio-cut").onclick = () => runAudioEdit("cut");
-
-  // ── the text of a transcribed selection ─────────────────────────────
+  // ── cuts, collected until the user says so ──────────────────────────
   //
-  // It goes to the clipboard by itself, because that is what it is for — but
-  // a browser only allows that while the page has the focus, and the result
-  // arrives long after the click that asked for it. So the text is shown as
-  // well, with a copy button that runs inside a click and always works.
-  let rangeText = "";
-  let rangeSpan = null;   // the passage that text was recognised in
+  // "Auf Auswahl kürzen" and "Auswahl entfernen" no longer touch the file and
+  // no longer produce a second one: they change the list of spans that are to
+  // be *kept*, the waveform strikes out what would go, and one "Übernehmen"
+  // writes the whole collection into the recording in a single pass.
+  el("audio-trim").onclick = () => markKeeps(tl.intersect(currentKeeps(), selections));
+  el("audio-cut").onclick = () => markKeeps(tl.subtract(currentKeeps(), selections));
 
-  async function copyRangeText({ silent = false } = {}) {
-    if (!rangeText) return false;
+  // Both markings pass through here, because both can end up with nothing
+  // left: removing everything that is still there, or keeping only a passage
+  // that is already marked for removal. An empty result is not a cut anybody
+  // can apply — the backend refuses it — so it is refused right here.
+  function markKeeps(next) {
+    if (!selections.length) return;
+    if (!next.length) {
+      toast(t("editor.cutEverything"));
+      return;
+    }
+    setKeeps(next);
+  }
+
+  function setKeeps(next) {
+    cutUndo.push(keeps);
+    keeps = tl.coversAll(next, wavesurfer.getDuration() || file.duration || 0) ? null : next;
+    rememberCuts();
+    clearSelections();   // the selected passage is now marked, not selected
+    renderCutState();
+  }
+
+  function renderCutState() {
+    const bar = el("cut-pending");
+    if (!bar) return;
+    const cuts = pendingCuts();
+    bar.hidden = cuts.length === 0;
+    el("cut-undo").disabled = cutUndo.length === 0;
+    if (!cuts.length) return;
+    el("cut-summary").textContent = t(
+      cuts.length === 1 ? "editor.cutPendingOne" : "editor.cutsPending",
+      {
+        count: cuts.length,
+        removed: formatDuration(tl.total(cuts)),
+        left: formatDuration(tl.total(currentKeeps())),
+      }
+    );
+  }
+
+  el("cut-undo").onclick = () => {
+    if (!cutUndo.length) return;
+    keeps = cutUndo.pop();
+    rememberCuts();
+    renderSelection();
+    renderCutState();
+  };
+  el("cut-discard").onclick = () => {
+    cutUndo.length = 0;
+    keeps = null;
+    rememberCuts();
+    renderSelection();
+    renderCutState();
+  };
+  el("cut-apply").onclick = async () => {
+    const cuts = pendingCuts();
+    if (!cuts.length) return;
+    const ok = await confirmAction({
+      title: t("editor.cutApplyTitle"),
+      message: t(
+        settings?.general?.audio_backup === false
+          ? "editor.cutApplyConfirmNoBackup"
+          : "editor.cutApplyConfirm",
+        { removed: formatDuration(tl.total(cuts)) }
+      ),
+      confirmLabel: t("editor.cutApply"),
+    });
+    if (!ok) return;
     try {
-      await navigator.clipboard.writeText(rangeText);
+      await api.applyAudioCuts(fileId, currentKeeps());
+      toast(t("editor.cutStarted"));
+    } catch (error) {
+      toast(error.message);
+    }
+  };
+
+  // The way back out of every cut ever applied — offered only while the
+  // untouched recording is actually still lying next to it.
+  async function refreshRestoreButton() {
+    const button = el("audio-restore");
+    if (!button) return;
+    const state = await api.audioOriginalState(fileId).catch(() => null);
+    button.hidden = !state?.can_restore;
+  }
+  refreshRestoreButton();
+
+  el("audio-restore").onclick = async () => {
+    const ok = await confirmAction({
+      title: t("editor.restoreOriginalTitle"),
+      message: t("editor.restoreOriginalConfirm"),
+      confirmLabel: t("editor.restoreOriginal"),
+    });
+    if (!ok) return;
+    try {
+      await api.restoreAudioOriginal(fileId);
+      toast(t("editor.restoreStarted"));
+    } catch (error) {
+      toast(error.message);
+    }
+  };
+
+  /** After a cut or a restore: the audio on disk is a different file now. */
+  async function reloadAudio() {
+    cutUndo.length = 0;
+    keeps = null;
+    rememberCuts();
+    selections = [];
+    playSpansList = null;
+    el("wave-loading").hidden = false;
+    try {
+      await wavesurfer.load(audioUrl(fileId));
+    } catch { /* a load cancelled by the next one is not an error */ }
+    renderCutState();
+    refreshRestoreButton();
+  }
+
+  // ── the text of the transcribed selections ──────────────────────────
+  //
+  // Every passage lands in this list as its recognition finishes. It goes
+  // nowhere else: the text is there to be read against what stands in the
+  // segments, and each row offers the two things worth doing with it — take it
+  // over as a segment, or copy it. A single passage also goes to the clipboard
+  // by itself, because that is what one asks for it for.
+  let rangeResults = [];
+
+  async function copyText(text, { silent = false } = {}) {
+    if (!text) return false;
+    try {
+      await navigator.clipboard.writeText(text);
       if (!silent) toast(t("editor.rangeCopied"));
       return true;
     } catch {
@@ -443,47 +802,78 @@ export async function render(view, _status, params) {
     }
   }
 
-  function showRangeText({ start_s, end_s, text }) {
-    rangeText = text ?? "";
-    rangeSpan = { start: start_s, end: end_s };
-    el("range-result").hidden = false;
-    el("range-result-span").textContent = t("editor.rangeResult", {
-      start: formatDuration(start_s), end: formatDuration(end_s),
-    });
-    el("range-result-text").textContent = rangeText || t("editor.rangeEmpty");
-    el("range-result-text").lang = sourceLanguage;
-    el("range-copy").disabled = !rangeText;
-    el("range-result-segment").disabled = !rangeText;
-    copyRangeText({ silent: true }).then((copied) => {
-      if (copied) toast(t("editor.rangeCopied"));
-    });
-  }
-
-  // The recognised text of a selection is meant to be checked, not written
-  // back (see above) — but once it turns out to be the missing passage, it
-  // should not have to be typed again either.
-  el("range-result-segment").onclick = async () => {
-    if (!rangeSpan) return;
-    await addSegment(rangeSpan.start, rangeSpan.end, rangeText);
-  };
-
-  el("range-copy").onclick = () => copyRangeText();
-  el("range-result-close").onclick = () => {
-    rangeText = "";
-    rangeSpan = null;
-    el("range-result").hidden = true;
-  };
-
-  async function runAudioEdit(op) {
-    if (!selection) return;
-    try {
-      await api.editAudio(fileId, op, selection.start, selection.end);
-      toast(t("editor.editStarted"));
-      clearSelection();
-    } catch (error) {
-      toast(error.message);
+  function showRangeText(payload) {
+    if ((payload.index ?? 0) === 0) rangeResults = [];   // a new run starts over
+    rangeResults[payload.index ?? 0] = {
+      start: payload.start_s, end: payload.end_s, text: payload.text ?? "",
+    };
+    renderRangeResults();
+    if ((payload.total ?? 1) === 1 && payload.text) {
+      copyText(payload.text, { silent: true }).then((copied) => {
+        if (copied) toast(t("editor.rangeCopied"));
+      });
     }
   }
+
+  function renderRangeResults() {
+    const host = el("range-result-list");
+    const box = el("range-result");
+    if (!host || !box) return;
+    const found = rangeResults.filter(Boolean);
+    box.hidden = found.length === 0;
+    el("range-copy").disabled = !found.some((row) => row.text);
+    el("range-result-span").textContent = found.length > 1
+      ? t("editor.rangeResults", { count: found.length })
+      : found.length === 1
+        ? t("editor.rangeResult", {
+            start: formatDuration(found[0].start), end: formatDuration(found[0].end),
+          })
+        : "";
+    host.replaceChildren(...found.map((row, index) => buildRangeRow(row, index, found.length)));
+  }
+
+  function buildRangeRow(row, index, count) {
+    const wrap = document.createElement("div");
+    wrap.className = "range-row";
+
+    const head = document.createElement("div");
+    head.className = "range-row-head";
+    const span = document.createElement("button");
+    span.type = "button";
+    span.className = "seg-ts";
+    span.textContent = count > 1
+      ? `${index + 1}. ${formatDuration(row.start)}`
+      : formatDuration(row.start);
+    span.title = t("editor.rangePlay");
+    span.onclick = () => playSpans([[row.start, row.end]]);
+    head.append(span, Object.assign(document.createElement("span"), { className: "spacer" }));
+
+    const asSegment = iconButton("add", t("editor.rangeAsSegment"), async () => {
+      await addSegments([{ start: row.start, end: row.end, text: row.text }]);
+    });
+    const copy = iconButton("copy", t("editor.rangeCopy"), () => copyText(row.text));
+    asSegment.disabled = !row.text;
+    copy.disabled = !row.text;
+    head.append(asSegment, copy);
+
+    const text = document.createElement("p");
+    text.className = "range-result-text";
+    text.textContent = row.text || t("editor.rangeEmpty");
+    text.lang = sourceLanguage;
+
+    wrap.append(head, text);
+    return wrap;
+  }
+
+  el("range-copy").onclick = () => {
+    // several passages copy as one text, in their order, one per line
+    const text = rangeResults.filter((row) => row?.text).map((row) => row.text).join("\n\n");
+    copyText(text);
+  };
+  el("range-result-close").onclick = () => {
+    rangeResults = [];
+    renderRangeResults();
+  };
 
   // ── segment list with autosave + undo ───────────────────────────────
   let segments = data.segments;
@@ -508,19 +898,28 @@ export async function render(view, _status, params) {
     row.querySelector(".seg-text")?.focus();
   }
 
-  // The one way a segment comes into being from the editor: for the selected
-  // passage, empty or with the text a re-transcription handed back.
-  async function addSegment(start, end, text) {
+  // The one way segments come into being from the editor: for the selected
+  // passages, empty or with the text a re-transcription handed back. Several
+  // at once, because several passages can be selected — the cursor then lands
+  // in the first of them, which is the one the user was looking at.
+  async function addSegments(spans) {
+    if (!spans.length) return;
+    let created = 0;
     try {
-      const created = await api.createSegment(fileId, {
-        start_s: start, end_s: end, text: text ?? "",
-      });
-      focusSegmentId = created.id;
+      for (const span of spans) {
+        const row = await api.createSegment(fileId, {
+          start_s: span.start, end_s: span.end, text: span.text ?? "",
+        });
+        if (!created) focusSegmentId = row.id;
+        created += 1;
+      }
       showSegmentsPanel();
       const fresh = await api.getSegments(fileId);
       segments = fresh.segments;
       renderSegments();
-      toast(t("editor.segmentAdded"));
+      toast(created > 1
+        ? t("editor.segmentsAdded", { count: created })
+        : t("editor.segmentAdded"));
     } catch (error) {
       toast(error.message);
     } finally {
@@ -541,10 +940,7 @@ export async function render(view, _status, params) {
     ts.type = "button";
     ts.className = "seg-ts";
     ts.textContent = formatDuration(segment.start_s);
-    ts.onclick = () => {
-      wavesurfer.setTime(segment.start_s);
-      if (!wavesurfer.isPlaying()) wavesurfer.play();
-    };
+    ts.onclick = () => playFrom(segment.start_s);
 
     const speaker = document.createElement("input");
     speaker.className = "seg-speaker";
@@ -960,10 +1356,11 @@ export async function render(view, _status, params) {
       if (payload.file_id === fileId) showRangeText(payload);
     }),
     on("file.update", (row) => {
-      // the language may have been corrected elsewhere (project view, a new run)
+      // the language may have been corrected elsewhere (project view, a new
+      // run), and the duration changes when a cut is applied
       if (row.id !== fileId) return;
       Object.assign(file, row);
-      if (el("file-language")) el("file-language").value = file.language ?? "";
+      setChipLanguage(audioLanguageChip, file.language ?? "", audioChipOptions);
     }),
     on("texts.changed", async ({ file_id }) => {
       if (file_id !== fileId) return;
@@ -976,9 +1373,17 @@ export async function render(view, _status, params) {
     }),
     on("job.update", (job) => {
       if (job.file_id !== fileId) return;
-      // both transcriptions report in the same line under the waveform
-      if (job.kind === "transcribe_range" || job.kind === "transcribe") {
+      // everything that works on the audio reports in the same line under
+      // the waveform: the two transcriptions, the cut, and the restore
+      if (["transcribe_range", "transcribe", "audio_edit", "audio_restore"].includes(job.kind)) {
         showJobState("range-progress", "range-message", job);
+      }
+      // The recording behind the waveform is a different file now — the
+      // pending cuts are written (or gone), and everything drawn from the old
+      // one, marks and selection included, has to go with it.
+      if (job.status === "done" && (job.kind === "audio_edit" || job.kind === "audio_restore")) {
+        reloadAudio();
+        toast(t(job.kind === "audio_edit" ? "editor.cutDone" : "editor.restoreDone"));
       }
       if (job.kind === "llm_process") {
         showJobState("ai-progress", "ai-message", job, t("ai.title"));

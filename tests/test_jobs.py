@@ -7,6 +7,50 @@ from verba import db
 from verba.core.jobs import JobQueue
 
 
+def test_an_interrupted_cut_is_not_replayed():
+    """A cut is the one job that must not run twice.
+
+    Its payload names positions in the recording *as it was*; after a crash
+    nobody knows whether it was already written, and running it again would
+    take a second, wrong passage out of the file. So it is failed with a
+    reason instead of queued again.
+    """
+    queue = make_queue()
+    ran = threading.Event()
+
+    with db.get_conn() as conn:
+        conn.execute(
+            "INSERT INTO jobs (kind, status, progress) VALUES ('audio_edit', 'running', 60)"
+        )
+
+    queue.register("audio_edit", lambda job, cancel, report: ran.set())
+    queue.start()
+    try:
+        assert not ran.wait(0.5)
+        with db.get_conn() as conn:
+            row = conn.execute("SELECT status, error FROM jobs").fetchone()
+        assert row["status"] == "failed"
+        assert "Neustart" in row["error"]  # the UI says why, in German
+    finally:
+        queue.stop()
+
+
+def test_a_cut_that_never_started_is_still_run():
+    """Only a *running* cut is in doubt — a queued one has touched nothing."""
+    queue = make_queue()
+    ran = threading.Event()
+
+    with db.get_conn() as conn:
+        conn.execute("INSERT INTO jobs (kind, status) VALUES ('audio_edit', 'queued')")
+
+    queue.register("audio_edit", lambda job, cancel, report: ran.set())
+    queue.start()
+    try:
+        assert ran.wait(5)
+    finally:
+        queue.stop()
+
+
 def wait_for(predicate, timeout=5.0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:

@@ -1,4 +1,4 @@
-"""Segment editing, range re-transcription and audio editing endpoints."""
+"""Segment editing, transcribing selections, and cutting the recording itself."""
 
 from __future__ import annotations
 
@@ -6,8 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ..core.jobs import job_queue
-from ..services import transcripts, vectorstore
-from ..services.audio import EDIT_OPS
+from ..services import audio, timeline, transcripts, vectorstore
 from .deps import file_or_403 as _file_or_404
 
 router = APIRouter(prefix="/api", tags=["segments"])
@@ -70,19 +69,25 @@ def delete_segment(segment_id: int, request: Request) -> dict:
     return {"deleted": True}
 
 
-class RangeRequest(BaseModel):
+class TimeSpan(BaseModel):
     start_s: float = Field(ge=0)
     end_s: float = Field(gt=0)
+
+
+class RangeRequest(BaseModel):
+    """The passages to transcribe — one per selection on the waveform."""
+
+    ranges: list[TimeSpan] = Field(min_length=1, max_length=50)
     model: str = ""
     language: str = ""
 
 
 @router.post("/files/{file_id}/transcribe-range")
 def transcribe_range(file_id: int, body: RangeRequest, request: Request) -> dict:
+    """Transcribe the selected passages — as text, in one job, in their order."""
     file_row = _file_or_404(file_id, request)
-    if body.end_s <= body.start_s:
-        raise HTTPException(status_code=422, detail="End must be after start")
-    payload = {"start_s": body.start_s, "end_s": body.end_s}
+    spans = _spans_or_422(body.ranges, file_row)
+    payload: dict = {"ranges": [list(span) for span in spans]}
     if body.model:
         payload["model"] = body.model
     if body.language:
@@ -92,22 +97,64 @@ def transcribe_range(file_id: int, body: RangeRequest, request: Request) -> dict
     )
 
 
-class AudioEditRequest(BaseModel):
-    op: str
-    start_s: float = Field(ge=0)
-    end_s: float = Field(gt=0)
+class AudioCutRequest(BaseModel):
+    """What is to be left of the recording, as spans of it (see services/timeline)."""
+
+    keeps: list[TimeSpan] = Field(min_length=1, max_length=200)
 
 
-@router.post("/files/{file_id}/audio/edit")
-def edit_audio(file_id: int, body: AudioEditRequest, request: Request) -> dict:
+@router.post("/files/{file_id}/audio/apply")
+def apply_audio_cuts(file_id: int, body: AudioCutRequest, request: Request) -> dict:
+    """Write the collected cuts into the recording — one pass, in place.
+
+    The editor holds its cuts until the user asks for this, so what arrives
+    here is not "remove that passage" but the whole result: the spans of the
+    recording that survive. That makes the call idempotent and keeps a
+    half-finished sequence of edits out of the file.
+    """
     file_row = _file_or_404(file_id, request)
-    if body.op not in EDIT_OPS:
-        raise HTTPException(status_code=422, detail=f"Unknown operation: {body.op}")
-    if body.end_s <= body.start_s:
-        raise HTTPException(status_code=422, detail="End must be after start")
+    keeps = _spans_or_422(body.keeps, file_row)
+    if timeline.covers_all(keeps, file_row.get("duration")):
+        raise HTTPException(status_code=422, detail="An dieser Aufnahme ist nichts geschnitten")
     return job_queue.enqueue(
         "audio_edit",
-        payload={"op": body.op, "start_s": body.start_s, "end_s": body.end_s},
+        payload={"keeps": [list(span) for span in keeps]},
         file_id=file_id,
         project_id=file_row["project_id"],
     )
+
+
+@router.get("/files/{file_id}/audio/original")
+def original_state(file_id: int, request: Request) -> dict:
+    """Whether this recording can be put back the way it was imported."""
+    file_row = _file_or_404(file_id, request)
+    return {"can_restore": audio.has_original(file_row)}
+
+
+@router.post("/files/{file_id}/audio/restore")
+def restore_audio(file_id: int, request: Request) -> dict:
+    """Undo every cut ever applied — the audio and the transcript with it."""
+    file_row = _file_or_404(file_id, request)
+    if not audio.has_original(file_row):
+        raise HTTPException(status_code=404, detail="Von dieser Aufnahme liegt keine Sicherung vor")
+    return job_queue.enqueue("audio_restore", file_id=file_id, project_id=file_row["project_id"])
+
+
+def _spans_or_422(spans: list[TimeSpan], file_row: dict) -> list[tuple[float, float]]:
+    """The selections as sorted, merged, in-range spans — or a plain refusal.
+
+    Every one of them comes from a drag on a waveform, so overlapping and
+    touching selections are normal input, not an error; what is worth refusing
+    is a span that says nothing (end before start) or lies outside the
+    recording, because then the caller and the file disagree about the file.
+    """
+    for span in spans:
+        if span.end_s <= span.start_s:
+            raise HTTPException(status_code=422, detail="Ende muss nach dem Anfang liegen")
+    duration = file_row.get("duration") or 0.0
+    normalized = timeline.normalize(
+        [(span.start_s, span.end_s) for span in spans], duration or None
+    )
+    if not normalized:
+        raise HTTPException(status_code=422, detail="Die Auswahl liegt nicht in der Aufnahme")
+    return normalized

@@ -62,3 +62,15 @@ def test_setup_state_cannot_be_changed_via_settings_api(client):
     data["setup"]["completed"] = True
     client.put("/api/settings", json=data)
     assert config.get_settings().setup.completed is False
+
+
+def test_the_audio_backup_can_be_switched_off_in_the_settings(client):
+    """Whether a cut recording leaves its original behind is the user's call."""
+    data = client.get("/api/settings").json()
+    assert data["general"]["audio_backup"] is True  # on unless it is turned off
+    data["general"]["audio_backup"] = False
+
+    assert client.put("/api/settings", json=data).status_code == 200
+
+    config.reset_cache()
+    assert config.get_settings().general.audio_backup is False

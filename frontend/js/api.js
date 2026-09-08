@@ -193,11 +193,20 @@ export const api = {
   createSegment: (fileId, segment) => request("POST", `/api/files/${fileId}/segments`, segment),
   updateSegment: (segmentId, changes) => request("PUT", `/api/segments/${segmentId}`, changes),
   deleteSegment: (segmentId) => request("DELETE", `/api/segments/${segmentId}`),
-  transcribeRange: (fileId, startS, endS, options = {}) =>
-    request("POST", `/api/files/${fileId}/transcribe-range`,
-      { start_s: startS, end_s: endS, ...options }),
-  editAudio: (fileId, op, startS, endS) =>
-    request("POST", `/api/files/${fileId}/audio/edit`, { op, start_s: startS, end_s: endS }),
+  // spans as [[start, end], …] — the selections on the waveform, in one job
+  transcribeRanges: (fileId, spans, options = {}) =>
+    request("POST", `/api/files/${fileId}/transcribe-range`, {
+      ranges: spans.map(([startS, endS]) => ({ start_s: startS, end_s: endS })),
+      ...options,
+    }),
+  // What is to be left of the recording, not what goes: the editor collects
+  // its cuts and hands over the result (see backend/verba/services/audio.py).
+  applyAudioCuts: (fileId, keeps) =>
+    request("POST", `/api/files/${fileId}/audio/apply`, {
+      keeps: keeps.map(([startS, endS]) => ({ start_s: startS, end_s: endS })),
+    }),
+  audioOriginalState: (fileId) => request("GET", `/api/files/${fileId}/audio/original`),
+  restoreAudioOriginal: (fileId) => request("POST", `/api/files/${fileId}/audio/restore`),
   // semantic search
   search: (options) => request("POST", "/api/search", options),
   searchAsk: (options) => request("POST", "/api/search/ask", options),

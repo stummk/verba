@@ -336,6 +336,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     add_missing("files", "header_right", "header_right TEXT NOT NULL DEFAULT ''")
     add_missing("files", "target_language", "target_language TEXT NOT NULL DEFAULT ''")
     add_missing("files", "type_id", "type_id INTEGER REFERENCES project_types(id)")
+    # Relative path of the untouched recording, kept aside before the first
+    # cut; empty means the audio is as it was imported (services/audio.py).
+    add_missing("files", "audio_original", "audio_original TEXT NOT NULL DEFAULT ''")
     add_missing("projects", "owner_id", "owner_id INTEGER REFERENCES users(id)")
     add_missing("projects", "visibility", "visibility TEXT NOT NULL DEFAULT 'public'")
     # not part of _SCHEMA: that script runs before this migration, so on a

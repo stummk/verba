@@ -459,20 +459,27 @@ def transcribe_path(
 def handle_transcribe_range_job(
     job: dict[str, Any], cancel: threading.Event, report: Callable[[int, str], None]
 ) -> None:
-    """Transcribe only [start_s, end_s] of a file — as text, not as segments.
+    """Transcribe the selected passages of a file — as text, not as segments.
 
-    The result is published as a `range.text` event and lands nowhere else: the
-    step is there to read a passage the recognition got wrong, and writing it
-    back over the segments would replace exactly the edited text one wanted to
-    compare it against. The whole file is re-transcribed with the `transcribe`
-    job instead.
+    Every passage is published on its own as a `range.text` event and lands
+    nowhere else: the step is there to read what was said in a passage the
+    recognition got wrong, and writing the result back over the segments would
+    replace exactly the edited text one wanted to compare it against. Whoever
+    wants the text kept adds it as a segment from the list. Rebuilding the
+    segments is what the `transcribe` job over the whole file is for.
+
+    Several passages share one job — and therefore one loaded model — and are
+    reported one by one, so the list in the editor fills up as they come in
+    instead of after the last one.
     """
     import tempfile
 
     from . import audio as audio_service
 
     payload = job.get("payload") or {}
-    start_s, end_s = float(payload["start_s"]), float(payload["end_s"])
+    spans = [(float(start), float(end)) for start, end in payload.get("ranges") or []]
+    if not spans:
+        raise RuntimeError("No passage to transcribe")
     file_id = job["file_id"]
     file_row = workspace.get_file(file_id)
     if file_row is None:
@@ -481,42 +488,84 @@ def handle_transcribe_range_job(
     if not audio_path.exists():
         raise RuntimeError(f"Audio file is missing: {audio_path}")
 
-    report(0, f"{file_row['filename']}: extrahiere {format_clock(start_s)}–{format_clock(end_s)}")
+    total_time = sum(end - start for start, end in spans) or 0.01
+    done_time = 0.0
+    recognised = 0
     with tempfile.TemporaryDirectory() as tmp:
-        clip = Path(tmp) / "range.wav"
-        audio_service.extract_range(audio_path, start_s, end_s, clip)
-
-        def run() -> list[str]:
-            model = get_model(model_override=payload.get("model", ""))
-            segments_iter, _info = model.transcribe(
-                str(clip),
-                language=language_for(file_row, payload) or None,
-                beam_size=5,
+        for index, (start_s, end_s) in enumerate(spans):
+            if cancel.is_set():
+                raise JobCancelled()
+            span_label = f"{format_clock(start_s)}–{format_clock(end_s)}"
+            counter = f" ({index + 1}/{len(spans)})" if len(spans) > 1 else ""
+            report(
+                int(done_time * 100 / total_time),
+                f"{file_row['filename']}: extrahiere {span_label}{counter}",
             )
-            collected: list[str] = []
-            for segment in segments_iter:
-                if cancel.is_set():
-                    raise JobCancelled()
-                collected.append(segment.text.strip())
-                percent = min(99, int(segment.end * 100 / max(end_s - start_s, 0.01)))
-                report(percent, f"{file_row['filename']}: {format_clock(segment.end + start_s)}")
-            return collected
+            clip = Path(tmp) / f"range-{index}.wav"
+            audio_service.extract_range(audio_path, start_s, end_s, clip)
+            span_length = max(end_s - start_s, 0.01)
 
-        pieces = _with_cpu_fallback(run, report)
+            def run(
+                clip: Path = clip,
+                offset: float = start_s,
+                length: float = span_length,
+                done: float = done_time,
+                label: str = counter,
+            ) -> list[str]:
+                model = get_model(model_override=payload.get("model", ""))
+                segments_iter, _info = model.transcribe(
+                    str(clip),
+                    language=language_for(file_row, payload) or None,
+                    beam_size=5,
+                )
+                collected: list[str] = []
+                for segment in segments_iter:
+                    if cancel.is_set():
+                        raise JobCancelled()
+                    collected.append(segment.text.strip())
+                    percent = min(99, int((done + min(segment.end, length)) * 100 / total_time))
+                    report(
+                        percent,
+                        f"{file_row['filename']}: {format_clock(segment.end + offset)}{label}",
+                    )
+                return collected
 
-    text = " ".join(piece for piece in pieces if piece).strip()
-    hub.publish(
-        "range.text",
-        {"file_id": file_id, "start_s": start_s, "end_s": end_s, "text": text},
-        project_id=file_row["project_id"],
-        file_id=file_id,
-    )
+            pieces = _with_cpu_fallback(run, report)
+            text = " ".join(piece for piece in pieces if piece).strip()
+            if text:
+                recognised += 1
+            hub.publish(
+                "range.text",
+                {
+                    "file_id": file_id,
+                    "start_s": start_s,
+                    "end_s": end_s,
+                    "text": text,
+                    "index": index,
+                    "total": len(spans),
+                },
+                project_id=file_row["project_id"],
+                file_id=file_id,
+            )
+            clip.unlink(missing_ok=True)  # a long selection is a large wav
+            done_time += span_length
+
     _publish_engine_status("ready")
-    span = f"{format_clock(start_s)}–{format_clock(end_s)}"
-    if text:
-        report(100, f"{file_row['filename']}: Abschnitt {span} transkribiert")
+    if len(spans) == 1:
+        span_label = f"{format_clock(spans[0][0])}–{format_clock(spans[0][1])}"
+        if recognised:
+            report(100, f"{file_row['filename']}: Abschnitt {span_label} transkribiert")
+        else:
+            report(
+                100,
+                f"{file_row['filename']}: im Abschnitt {span_label} wurde kein Text erkannt",
+            )
     else:
-        report(100, f"{file_row['filename']}: im Abschnitt {span} wurde kein Text erkannt")
+        report(
+            100,
+            f"{file_row['filename']}: {recognised} von {len(spans)} Abschnitten "
+            "mit Text transkribiert",
+        )
 
 
 def _run_transcription(

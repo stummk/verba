@@ -589,28 +589,64 @@ transcript and AI texts:
   the confirmation). This is the way out after the language or the model has
   been corrected. Cleanup and translations stay as they are until they are
   created again via "Recreate". The progress runs below the waveform.
-- **Selection** by dragging on the waveform, then:
-  - **Transcribe selection** — only this section is recognised, and the result
-    is **plain text**: it appears below the buttons and goes to the clipboard at
-    the same time. If the browser does not allow the copy by itself (it usually
-    wants a click for that), the *Copy* button next to it does it. **No segments
-    are created** — the existing ones stay untouched. That way one can listen
-    back to what was really said in a passage without overwriting one's own
+- **Selection** by dragging on the waveform. **Several passages** can be
+  selected:
+  - **Shift+drag** adds another passage to the selection; a drag without Shift
+    starts a new one.
+  - The **right mouse button** on a selected passage takes that one back out;
+    the cross clears the whole selection.
+  - Passages that overlap are merged into one — so one can drag on without
+    minding the gaps. Below the waveform stands how many passages are selected
+    and how much time they add up to.
+- **Play plays the selection** — and nothing else: from the first passage on,
+  the gaps in between are skipped, and it stops at the end of the last one. A
+  **click on a selected passage** plays exactly that one. With nothing selected
+  the whole file runs, and with cuts marked (see below) that is how the result
+  can be listened to before it is written.
+- With a selection:
+  - **Transcribe selection** — only the selected passages are recognised, and
+    the result is **plain text**: a list below the buttons, one entry per
+    passage, in the order of the recording and with its start time. For a single
+    passage the text goes to the clipboard as well; if the browser does not
+    allow that by itself (it usually wants a click for it), the *Copy* button on
+    each entry or *Copy everything* at the top does it. **No segments are
+    created** — the existing ones stay untouched. That way one can listen back
+    to what was really said in a passage without overwriting one's own
     correction; for replacing the segments there is "Re-transcribe the whole
-    file". Should the recognised text be worth keeping after all, **Add the
-    text as a segment** — the plus button next to *Copy* — files it as a new
-    segment for exactly that section.
-  - **Add an empty segment for the selection** — the plus button: a segment
-    without text is created for the selected section, ready to type into. It is
-    meant for a passage the recognition skipped. The segment takes its place in
-    the list by its start time, not at the end of it.
-  - **Trim to selection** — keeps only the selected range.
-  - **Remove selection** — cuts the selected range out and joins what is before
-    and after it back together.
-  - Both cut the audio via ffmpeg and **do not change the open file**: the
-    result becomes a *new* file in the same transcript (name suffix `-trim` or
-    `-cut`), without a transcript yet and with the status *pending*. The
-    original and its segments are kept; the new file is transcribed separately.
+    file". Should a recognised text be worth keeping after all, the **plus** in
+    its row files it as a new segment for exactly that passage. The start time
+    in the row plays the passage again.
+  - **Add empty segments for the selection** — the plus button: for every
+    selected passage a segment without text is created, ready to type into, and
+    the cursor lands in the first of them. It is meant for passages the
+    recognition skipped. The segments take their place in the list by their
+    start time, not at the end of it.
+
+**Cutting — the way an audio editor does it.** The recording itself is changed,
+and it is the open file that changes: **no second file** appears per cut. So
+that this does not happen by surprise, cuts are **marked** first and applied in
+one go afterwards:
+
+- **Trim to selection** keeps only the selected passages, **Remove selection**
+  takes them out. Neither changes the file yet — it marks the cut. What would go
+  is **marked red** on the waveform and still audible.
+- Both can be used repeatedly and in any combination; every step works on what
+  the one before it left. Above the segment list stands the balance: how many
+  cuts are marked, how much goes, and how long the recording will be afterwards.
+- **Step back** takes the last cut out again, **Discard** takes out all of them.
+  As long as nothing is applied the file is untouched — and the marks survive an
+  accidental reload of the page.
+- **Apply** writes them into the file after a confirmation, in a single ffmpeg
+  pass. The **segments move with it**: their timestamps are recalculated, and
+  segments lying entirely in what is removed are deleted. The waveform, the
+  duration, the transcript file in the workspace and the search index are up to
+  date afterwards.
+- **The original stays backed up.** Before the first apply, Verba puts the
+  untouched recording aside once — together with the transcript that belonged to
+  it. **Restore the original** (the clock button, which only appears then)
+  brings both back. One copy per edited recording, not per cut; whoever values
+  the disk space more switches the backup off under *Settings → Storage* — an
+  applied cut is then final.
 - The editor's **PDF header** section stores a title, an addition and a
   place/date field per file. The header line then reads `Title (addition)` on
   the left and the place/date on the right: the addition goes in parentheses
@@ -1019,6 +1055,11 @@ message confirms the save.
   says where the move goes, a reminder stays on the start page, and everything
   keeps working in the old location. Transcript folders sitting at their
   default place inside the data directory move along with it.
+- **Keep the original of a cut recording:** when a recording is cut in the
+  editor, Verba puts the untouched file aside once — in the transcript's
+  `.original` folder, together with the transcript that belonged to it. That is
+  exactly what "restore the original" in the editor brings both back from. One
+  copy per edited recording, not per cut. Switched off, an applied cut is final.
 - **Database size:** deleting a transcript frees pages inside the database but
   does not shrink the file — the space is reused by the next write. Once
   enough of it is free, Verba compacts the database on its own: as the

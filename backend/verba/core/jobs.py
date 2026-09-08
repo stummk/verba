@@ -46,7 +46,18 @@ Handler = Callable[[dict[str, Any], threading.Event, Callable[[int, str], None]]
 # (phased batching with a local model, parallel with a remote one).
 LLM_KINDS = {"llm_process", "export_pdf"}
 # Small interactive jobs jump ahead of long-running batch transcriptions.
-DEFAULT_PRIORITIES = {"transcribe_range": 1, "audio_edit": 1}
+DEFAULT_PRIORITIES = {"transcribe_range": 1, "audio_edit": 1, "audio_restore": 1}
+
+# Kinds that must not be run a second time after a crash. Every other job can
+# simply be queued again: transcribing rebuilds, an AI step overwrites, an
+# export rewrites its file. A cut cannot — its payload names positions in the
+# recording *as it was*, so replaying it against a file that may already carry
+# the cut would take out a second, wrong passage.
+NON_REPLAYABLE = ("audio_edit",)
+REPLAY_REFUSED = (
+    "Durch einen Neustart unterbrochen — der Schnitt wurde nicht wiederholt. "
+    "Bitte die Aufnahme prüfen und erneut vormerken."
+)
 
 LANES = ("main", "llm")
 
@@ -137,8 +148,19 @@ class JobQueue:
         self._workers.clear()
 
     def _requeue_interrupted(self) -> None:
-        """Jobs left running by a previous process get queued again."""
+        """Jobs left running by a previous process get queued again.
+
+        Except a kind that must not run twice (NON_REPLAYABLE): one that was
+        already *running* got as far as nobody knows, so it is failed with a
+        reason instead. One that was still queued never started and is safe —
+        its payload still describes the file as it lies there.
+        """
         with db.get_conn() as conn:
+            conn.executemany(
+                "UPDATE jobs SET status = 'failed', error = ?, "
+                "finished_at = datetime('now') WHERE status = 'running' AND kind = ?",
+                [(REPLAY_REFUSED, kind) for kind in NON_REPLAYABLE],
+            )
             conn.execute(
                 "UPDATE jobs SET status = 'queued', progress = 0, message = '' "
                 "WHERE status IN ('queued', 'running')"

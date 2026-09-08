@@ -113,6 +113,52 @@ def _reindex(file_id: int) -> None:
         )
 
 
+def remap_after_cut(file_id: int, keeps: list[tuple[float, float]]) -> int:
+    """Move the segments onto a recording that has just been cut.
+
+    `keeps` are the spans of the *original* recording that survived, so
+    `timeline.map_span` says where each segment lands. A segment whose audio is
+    gone goes with it — there is no text left to attach to a moment that no
+    longer exists. Returns how many were dropped.
+    """
+    from . import timeline
+
+    dropped: list[int] = []
+    moved: list[tuple[float, float, int]] = []
+    for segment in list_segments(file_id):
+        span = timeline.map_span(keeps, segment["start_s"], segment["end_s"])
+        if span is None:
+            dropped.append(segment["id"])
+        else:
+            moved.append((span[0], span[1], segment["id"]))
+    with db.get_conn() as conn:
+        conn.executemany("DELETE FROM segments WHERE id = ?", [(i,) for i in dropped])
+        conn.executemany("UPDATE segments SET start_s = ?, end_s = ? WHERE id = ?", moved)
+    _reindex(file_id)
+    return len(dropped)
+
+
+def replace_all_segments(file_id: int, segments: list[dict[str, Any]]) -> None:
+    """Put a whole transcript back — the snapshot taken before the first cut."""
+    with db.get_conn() as conn:
+        conn.execute("DELETE FROM segments WHERE file_id = ?", (file_id,))
+        conn.executemany(
+            "INSERT INTO segments (file_id, idx, start_s, end_s, text, speaker) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    file_id,
+                    index,
+                    float(segment["start_s"]),
+                    float(segment["end_s"]),
+                    segment.get("text", ""),
+                    segment.get("speaker", ""),
+                )
+                for index, segment in enumerate(segments)
+            ],
+        )
+
+
 def write_transcript_json(file_id: int) -> None:
     """Rewrite the portable JSON copy in <workspace>/transcripts/."""
     file_row = workspace.get_file(file_id)

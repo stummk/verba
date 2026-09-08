@@ -477,14 +477,23 @@ def _delete_generated_file_artifacts(file_row: dict[str, Any]) -> None:
 
 
 def delete_file(file_id: int) -> None:
-    """Remove the DB entry and the workspace copy (never the original source)."""
+    """Remove the DB entry, the workspace copy and what was derived from it.
+
+    Never the file the user imported *from* — only what lives in the workspace,
+    the kept pre-cut original (services/audio.py) included.
+    """
     file_row = get_file(file_id)
     if file_row is None:
         return
     path = file_path(file_row)
     _delete_generated_file_artifacts(file_row)
-    from .vectorstore import remove_file  # local import: avoids a module cycle
+    # local imports: both modules import this one back
+    from .audio import remove_original
+    from .vectorstore import remove_file
 
+    # A recording that was ever cut has its untouched copy lying next to it —
+    # a full second copy, and nothing references it once the row is gone.
+    remove_original(file_row)
     remove_file(file_id)  # search index entries disappear immediately
     with db.get_conn() as conn:
         conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
