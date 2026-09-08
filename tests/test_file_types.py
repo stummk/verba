@@ -19,6 +19,13 @@ from verba.services import pdf, pipeline, project_types, workspace
 NO_CANCEL = threading.Event()
 
 
+@pytest.fixture(autouse=True)
+def browse_root(tmp_path):
+    settings = config.get_settings()
+    settings.general.browse_roots = [str(tmp_path)]
+    config.save_settings(settings)
+
+
 def no_report(_percent: int, _message: str) -> None:
     pass
 
