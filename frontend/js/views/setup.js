@@ -37,7 +37,7 @@ export async function render(view) {
   view.replaceChildren(html`
     <h1>${t("setup.title")}</h1>
     <ol class="wizard-steps" id="wizard-steps"></ol>
-    <div id="wizard-body"></div>
+    <div class="setting-list" id="wizard-body"></div>
     <div class="actions wizard-actions">
       <button type="button" class="text-btn" id="wizard-back">${t("setup.back")}</button>
       <button type="button" id="wizard-next">${t("setup.next")}</button>
@@ -291,7 +291,7 @@ function renderWorkspaceStep(body) {
       <h2>${t("setup.step.workspace")}</h2>
       <p class="muted">${t("setup.dataDirHint")}</p>
       <div class="form-grid">
-        <div>
+        <div class="setting-field">
           ${raw(fieldLabel(
             "wizard-data-dir", t("settings.dataDir"),
             helpText(t("settings.dataDirHint"), t("settings.dataDirRestartHint"))
@@ -303,7 +303,7 @@ function renderWorkspaceStep(body) {
           })}</p>
           <p class="warning-box" id="wizard-data-dir-pending" hidden></p>
         </div>
-        <div>
+        <div class="setting-field">
           ${raw(fieldLabel(
             "wizard-workspaces", t("settings.workspacesDir"),
             helpText(t("setup.workspaceIntro"), t("setup.workspaceContents"))
@@ -339,18 +339,18 @@ async function renderWhisperStep(body) {
       <h2>${t("setup.step.whisper")}</h2>
       <p class="muted">${t("setup.whisperIntro")}</p>
       <div class="form-grid">
-        <div>
+        <div class="setting-field">
           ${raw(fieldLabel("wizard-model", t("settings.model"), t("settings.modelHint")))}
           <input id="wizard-model" value="${settings.whisper.model}" list="wizard-model-list">
           <datalist id="wizard-model-list"></datalist>
           <p class="small" id="wizard-model-fit"></p>
         </div>
-        <div>
+        <div class="setting-field">
           ${raw(fieldLabel("wizard-models-dir", t("settings.modelsDir"), t("setup.modelsDirHint")))}
           <input id="wizard-models-dir" value="${settings.whisper.models_dir}"
                  placeholder="${paths ? paths.models_dir : ""}">
         </div>
-        <div>
+        <div class="setting-field">
           <label for="wizard-device">${t("settings.device")}</label>
           <select id="wizard-device">
             <option value="auto">${t("settings.deviceAuto")}</option>
@@ -358,7 +358,7 @@ async function renderWhisperStep(body) {
             <option value="cpu">${t("settings.deviceCpu")}</option>
           </select>
         </div>
-        <div>
+        <div class="setting-field">
           <label for="wizard-language">${t("settings.language")}</label>
           <select id="wizard-language"></select>
         </div>
@@ -420,7 +420,7 @@ async function renderLlmStep(body) {
         <p class="hint">${t("setup.llmBinaryHint")}</p>
         <div id="wizard-llm-binary"></div>
         <div class="form-grid">
-          <div>
+          <div class="setting-field">
             ${raw(fieldLabel(
               "wizard-llm-dir", t("settings.llmModelsDir"), t("settings.llmModelsDirHint")
             ))}
@@ -431,25 +431,24 @@ async function renderLlmStep(body) {
       </div>
       <div id="wizard-llm-openai" hidden>
         <div class="form-grid">
-          <div>
+          <div class="setting-field">
             <label for="wizard-base-url">${t("settings.baseUrl")}</label>
             <input id="wizard-base-url" value="${settings.llm.base_url}"
                    placeholder="https://api.openai.com/v1">
             <p class="small" id="wizard-endpoint-estimate"></p>
           </div>
-          <div>
+          <div class="setting-field">
             <label for="wizard-api-key">${t("settings.apiKey")}</label>
             <input id="wizard-api-key" type="password" value="${settings.llm.api_key}"
                    autocomplete="off">
           </div>
-          <div>
+          <div class="setting-field">
             <label for="wizard-llm-model">${t("settings.llmModel")}</label>
             <input id="wizard-llm-model"
                    value="${settings.llm.mode === "openai" ? settings.llm.model : ""}"
                    placeholder="gpt-4o-mini">
           </div>
-          <div>
-            <label>&nbsp;</label>
+          <div class="setting-action">
             <button type="button" class="text-btn" id="wizard-llm-test">
               ${t("settings.llmTest")}
             </button>
@@ -528,13 +527,13 @@ async function renderSearchStep(body) {
       <h2>${t("setup.step.search")}</h2>
       <p class="muted">${t("setup.searchIntro")}</p>
       <div class="form-grid">
-        <div>
+        <div class="setting-field">
           <label for="wizard-embedding">${t("settings.embeddingModel")}</label>
           <select id="wizard-embedding"></select>
           <p class="small" id="wizard-embedding-fit"></p>
           <p class="hint" id="wizard-embedding-hint"></p>
         </div>
-        <div>
+        <div class="setting-field">
           ${raw(fieldLabel(
             "wizard-embeddings-dir", t("settings.embeddingsDir"), t("settings.embeddingsDirHint")
           ))}
@@ -589,11 +588,11 @@ async function renderAccessStep(body) {
       <h2>${t("setup.step.access")}</h2>
       <p class="muted">${reenable ? t("users.reenableHint") : t("setup.accessIntro")}</p>
       <div class="form-grid" ${reenable ? "hidden" : ""}>
-        <div>
+        <div class="setting-field">
           <label for="wizard-admin-user">${t("login.username")}</label>
           <input id="wizard-admin-user" autocomplete="username">
         </div>
-        <div>
+        <div class="setting-field">
           ${raw(fieldLabel(
             "wizard-admin-password", t("login.newPassword"), t("setup.accessHint")
           ))}
