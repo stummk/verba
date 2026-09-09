@@ -592,6 +592,14 @@ export async function render(view, _status, params) {
 
   function hopToNextSpan(time) {
     if (!playSpansList || !wavesurfer.isPlaying()) return;
+    // A `timeupdate` that arrives while the audio element is still seeking
+    // reports the position it is jumping away *from*, not the one it was sent
+    // to. Starting a run with the cursor behind the first passage therefore
+    // handed this function the old position, the first passage looked like it
+    // had just ended, and the run began at the second one — which is why with
+    // several selections the first was never heard. A report from a pending
+    // seek says nothing about where playback stands, so it is not one.
+    if (wavesurfer.isSeeking()) return;
     const span = playSpansList[playIndex];
     if (!span || time < span[1]) return;
     const next = playSpansList[playIndex + 1];
