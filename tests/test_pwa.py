@@ -114,7 +114,9 @@ def test_settings_actions_are_icon_buttons():
     source = (FRONTEND / "js" / "views" / "settings.js").read_text(encoding="utf-8")
     # both views (administrator and personal settings) offer the documentation
     assert source.count('class="btn icon-btn" href="#/docs"') == 2
-    assert source.count('iconSvg("help")') == 2
+    # the guide is a document, not a "?" — that glyph now opens an explanation
+    assert source.count('iconSvg("article")') == 2
+    assert 'iconSvg("help")' not in source
     assert 'class="icon-btn" id="apikey-create"' in source
     assert 'iconSvg("add")' in source
     # an icon-only button still names its action for tooltip and screen reader
@@ -123,7 +125,7 @@ def test_settings_actions_are_icon_buttons():
         assert "title=" in block and "aria-label=" in block
 
     icons = (FRONTEND / "js" / "icons.js").read_text(encoding="utf-8")
-    for name in ("help", "add"):
+    for name in ("article", "add", "help"):
         assert f"  {name}:" in icons, f"icon '{name}' is missing"
 
 

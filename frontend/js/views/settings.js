@@ -62,14 +62,15 @@ export async function render(view) {
       <div class="card" id="card-ui">
         <h2>${t("settings.ui")}</h2>
         <div class="form-grid">
-          <div>
+          <div class="setting-field">
             <label for="ui-language">${t("settings.uiLanguage")}</label>
             <select id="ui-language"></select>
           </div>
-          <div class="docs-cell">
+          <div class="setting-field">
+            <label>${t("docs.title")}</label>
             <a class="btn icon-btn" href="#/docs"
                title="${t("settings.docsOpen")}" aria-label="${t("settings.docsOpen")}"
-               >${raw(iconSvg("help"))}</a>
+               >${raw(iconSvg("article"))}</a>
           </div>
         </div>
       </div>
@@ -77,17 +78,17 @@ export async function render(view) {
       <div class="card" id="card-transcribe">
         <h2>${t("settings.whisper")}</h2>
         <div class="form-grid">
-          <div>
+          <div class="setting-field">
             ${raw(fieldLabel("whisper-model", t("settings.model"), t("settings.modelHint")))}
             <input id="whisper-model" value="${settings.whisper.model}" list="model-list">
             <datalist id="model-list"></datalist>
           </div>
-          <div>
+          <div class="setting-field">
             <label for="whisper-models-dir">${t("settings.modelsDir")}</label>
             <input id="whisper-models-dir" value="${settings.whisper.models_dir}"
                    placeholder="${t("settings.modelsDirPlaceholder")}">
           </div>
-          <div>
+          <div class="setting-field">
             <label for="whisper-device">${t("settings.device")}</label>
             <select id="whisper-device">
               <option value="auto">${t("settings.deviceAuto")}</option>
@@ -95,7 +96,7 @@ export async function render(view) {
               <option value="cpu">${t("settings.deviceCpu")}</option>
             </select>
           </div>
-          <div>
+          <div class="setting-field">
             <label for="whisper-compute">${t("settings.compute")}</label>
             <select id="whisper-compute">
               <option value="auto">${t("settings.computeAuto")}</option>
@@ -103,7 +104,7 @@ export async function render(view) {
               <option>float16</option><option>float32</option>
             </select>
           </div>
-          <div>
+          <div class="setting-field">
             <label for="whisper-language">${t("settings.language")}</label>
             <select id="whisper-language"></select>
           </div>
@@ -131,13 +132,15 @@ export async function render(view) {
           <p class="hint">${t("settings.llmOffHint")}</p>
         </div>
 
-        <div id="llm-reasoning-field" hidden>
-          ${raw(fieldLabel("llm-reasoning", t("settings.reasoning"), t("settings.reasoningHint")))}
-          <select id="llm-reasoning">
-            <option value="off">${t("settings.reasoningOff")}</option>
-            <option value="low">${t("settings.reasoningLow")}</option>
-            <option value="auto">${t("settings.reasoningAuto")}</option>
-          </select>
+        <div class="form-grid" id="llm-reasoning-field" hidden>
+          <div class="setting-field">
+            ${raw(fieldLabel("llm-reasoning", t("settings.reasoning"), t("settings.reasoningHint")))}
+            <select id="llm-reasoning">
+              <option value="off">${t("settings.reasoningOff")}</option>
+              <option value="low">${t("settings.reasoningLow")}</option>
+              <option value="auto">${t("settings.reasoningAuto")}</option>
+            </select>
+          </div>
         </div>
 
         <div id="llm-local-section" hidden>
@@ -145,13 +148,13 @@ export async function render(view) {
           <div id="llm-binary"></div>
           <div id="llm-catalog"></div>
           <div class="form-grid">
-            <div>
+            <div class="setting-field">
               ${raw(fieldLabel(
                 "llm-local-model", t("settings.llmLocalModel"), t("settings.llmLocalModelHint")
               ))}
               <select id="llm-local-model"></select>
             </div>
-            <div>
+            <div class="setting-field">
               ${raw(fieldLabel(
                 "llm-models-dir", t("settings.llmModelsDir"), t("settings.llmModelsDirHint")
               ))}
@@ -163,23 +166,22 @@ export async function render(view) {
 
         <div id="llm-openai-section" hidden>
           <div class="form-grid">
-            <div>
+            <div class="setting-field">
               <label for="llm-base-url">${t("settings.baseUrl")}</label>
               <input id="llm-base-url" value="${settings.llm.base_url}"
                      placeholder="https://api.openai.com/v1">
               <p class="small" id="llm-endpoint-estimate"></p>
             </div>
-            <div>
+            <div class="setting-field">
               ${raw(fieldLabel("llm-api-key", t("settings.apiKey"), t("settings.apiKeyHint")))}
               <input id="llm-api-key" type="password" value="${settings.llm.api_key}" autocomplete="off">
             </div>
-            <div>
+            <div class="setting-field">
               <label for="llm-model">${t("settings.llmModel")}</label>
               <input id="llm-model" value="${settings.llm.mode === "openai" ? settings.llm.model : ""}"
                      placeholder="gpt-4o-mini">
             </div>
-            <div>
-              <label>&nbsp;</label>
+            <div class="setting-action">
               <button type="button" class="text-btn" id="llm-test">${t("settings.llmTest")}</button>
               <p class="hint" id="llm-test-result"></p>
             </div>
@@ -195,7 +197,7 @@ export async function render(view) {
         <p class="small" id="search-hardware"></p>
         <div id="search-jobs" hidden></div>
         <div class="form-grid">
-          <div>
+          <div class="setting-field">
             ${raw(fieldLabel(
               "search-embedding-model", t("settings.embeddingModel"),
               t("settings.embeddingModelHint")
@@ -203,7 +205,7 @@ export async function render(view) {
             <select id="search-embedding-model"></select>
             <p class="small" id="search-embedding-fit"></p>
           </div>
-          <div>
+          <div class="setting-field">
             ${raw(fieldLabel(
               "search-embeddings-dir", t("settings.embeddingsDir"), t("settings.embeddingsDirHint")
             ))}
@@ -212,8 +214,7 @@ export async function render(view) {
             <p class="hint" id="search-embedding-cache"></p>
             <p class="error" id="search-embedding-error" hidden></p>
           </div>
-          <div>
-            <label>&nbsp;</label>
+          <div class="setting-action">
             ${raw(labelHelp(
               `<button type="button" class="text-btn" id="search-reindex"
                 >${t("settings.reindex")}</button>`,
@@ -232,19 +233,18 @@ export async function render(view) {
         <div id="apikey-new" class="apikey-new" hidden></div>
         <div id="apikey-list"></div>
         <div class="form-grid">
-          <div>
+          <div class="setting-field">
             <label for="apikey-name">
               ${t("settings.apiKeyName")}<span class="required-mark" aria-hidden="true">*</span>
             </label>
-            <input id="apikey-name" maxlength="100" autocomplete="off"
-                   aria-required="true">
-          </div>
-          <div>
-            <label>&nbsp;</label>
-            <button type="button" class="icon-btn" id="apikey-create" disabled
-                    title="${t("settings.apiKeyCreate")}"
-                    aria-label="${t("settings.apiKeyCreate")}"
-                    >${raw(iconSvg("add"))}</button>
+            <div class="inline-form">
+              <input id="apikey-name" maxlength="100" autocomplete="off"
+                     aria-required="true">
+              <button type="button" class="icon-btn" id="apikey-create" disabled
+                      title="${t("settings.apiKeyCreate")}"
+                      aria-label="${t("settings.apiKeyCreate")}"
+                      >${raw(iconSvg("add"))}</button>
+            </div>
           </div>
         </div>
       </div>
@@ -253,7 +253,7 @@ export async function render(view) {
         <h2>${t("settings.storage")}</h2>
         <div id="storage-jobs" hidden></div>
         <div class="form-grid">
-          <div>
+          <div class="setting-field">
             ${raw(fieldLabel(
               "general-data-dir", t("settings.dataDir"),
               helpText(t("settings.dataDirHint"), t("settings.dataDirRestartHint"))
@@ -262,7 +262,7 @@ export async function render(view) {
             <p class="hint" id="data-dir-hint"></p>
             <p class="warning-box" id="data-dir-pending" hidden></p>
           </div>
-          <div>
+          <div class="setting-field">
             ${raw(fieldLabel(
               "general-workspaces", t("settings.workspacesDir"), t("settings.workspacesMoveHint")
             ))}
@@ -270,27 +270,25 @@ export async function render(view) {
                    placeholder="${t("settings.workspacesDirPlaceholder")}">
             <p class="hint" id="workspaces-hint"></p>
           </div>
-          <div>
+            ${raw(checkLine(
+              "general-audio-backup", t("settings.audioBackup"), t("settings.audioBackupHint")
+            ))}
+          <div class="setting-field">
             ${raw(fieldLabel("server-port", t("settings.port"), t("settings.portHint")))}
             <input id="server-port" type="number" min="1" max="65535" value="${settings.server.port}">
           </div>
-          <div>
+          <div class="setting-field">
             <label for="log-level">${t("settings.logLevel")}</label>
             <select id="log-level">
               <option>DEBUG</option><option>INFO</option><option>WARNING</option><option>ERROR</option>
             </select>
           </div>
-          <div>
+          <div class="setting-field">
             ${raw(fieldLabel(
               "log-retention", t("settings.logRetention"), t("settings.logRetentionHint")
             ))}
             <input id="log-retention" type="number" min="1" max="365"
                    value="${settings.logging.retention_days}">
-          </div>
-          <div>
-            ${raw(checkLine(
-              "general-audio-backup", t("settings.audioBackup"), t("settings.audioBackupHint")
-            ))}
           </div>
         </div>
       </div>
@@ -746,14 +744,15 @@ async function renderPersonalSettings(view, settings) {
       <div class="card">
         <h2>${t("settings.ui")}</h2>
         <div class="form-grid">
-          <div>
+          <div class="setting-field">
             <label for="ui-language">${t("settings.uiLanguage")}</label>
             <select id="ui-language"></select>
           </div>
-          <div class="docs-cell">
+          <div class="setting-field">
+            <label>${t("docs.title")}</label>
             <a class="btn icon-btn" href="#/docs"
                title="${t("settings.docsOpen")}" aria-label="${t("settings.docsOpen")}"
-               >${raw(iconSvg("help"))}</a>
+               >${raw(iconSvg("article"))}</a>
           </div>
         </div>
         <div class="actions">
@@ -804,11 +803,11 @@ async function renderPersonalSettings(view, settings) {
 function mountAccount(host) {
   host.replaceChildren(html`
     <div class="form-grid">
-      <div>
+      <div class="setting-field">
         <label for="account-current">${t("login.currentPassword")}</label>
         <input id="account-current" type="password" autocomplete="current-password">
       </div>
-      <div>
+      <div class="setting-field">
         <label for="account-new">${t("login.newPassword")}</label>
         <input id="account-new" type="password" autocomplete="new-password">
       </div>

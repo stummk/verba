@@ -310,8 +310,6 @@ input:focus, select:focus {
 .required-mark { margin-left: .15rem; color: var(--md-error); }
 .form-grid { display: grid; grid-template-columns: 1fr; column-gap: 1.25rem; }
 @media (min-width: 40em) { .form-grid { grid-template-columns: 1fr 1fr; } }
-/* the guide is only its icon button — it lines up with the field beside it */
-.docs-cell { display: flex; align-items: flex-end; margin-top: .9rem; }
 .inline-form { display: flex; gap: .6rem; }
 .inline-form input { flex: 1; }
 
@@ -1582,6 +1580,40 @@ dialog textarea {
   background: var(--md-primary);
   color: var(--md-on-primary);
   filter: brightness(1.08);
+}
+
+/* ── the settings page reads as a list ───────────────────────────── */
+/* Side by side, two fields that have nothing to do with each other end up
+   next to each other — a checkbox about audio landed beside the log
+   retention — and a card has to be read in a Z. One setting per row instead:
+   the label with its "?" on the left, the control on the right. */
+.settings .form-grid { grid-template-columns: 1fr; }
+.settings .form-grid > * {
+  padding: .6rem 0;
+  border-top: .0625rem solid var(--md-outline-variant);
+}
+.settings .form-grid > *:first-child { border-top: none; }
+/* an action needs no label — the button already says what it does */
+.settings .setting-action { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.settings .setting-action > .hint { margin: 0; }
+
+@media (min-width: 45em) {
+  .settings .form-grid > .setting-field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 24rem);
+    column-gap: 1.5rem;
+    align-items: start;
+  }
+  /* everything the field brings with it — control, current value, warning —
+     belongs under the control, so the left column stays the label alone */
+  .settings .form-grid > .setting-field > * { grid-column: 2; }
+  .settings .form-grid > .setting-field > label,
+  .settings .form-grid > .setting-field > .label-row {
+    grid-column: 1;
+    grid-row: 1;
+    margin: 0;
+    align-self: center;
+  }
 }
 
 /* ── explanations behind a "?" ──────────────────────────── */
