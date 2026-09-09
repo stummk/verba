@@ -9,8 +9,15 @@
 `verbatim` decides whether that second prompt is used at all: with it on —
 the default, and every builtin but the minutes type — the export structures
 the cleaned text and the translations deterministically and reproduces them
-word for word. Only a type that deliberately turns its material into
-something else (minutes with decisions and to-dos) switches it off.
+word for word. It says nothing about the aufbereitung: what the export may do
+with a text and how that text came about are two questions, and a type that
+has its recording rewritten into a document may well want that document in
+the PDF word for word.
+
+`condense` is the other one: with it on, the cleanup prompt runs once over the
+whole recording and writes a document of its own (minutes with decisions and
+to-dos) instead of cleaning the transcript section by section. Off by default,
+because reproducing the material is what a transcript type normally does.
 
 Seven builtin types ship with the app. They are seeded exactly once (tracked
 via the meta table) so that deleting a builtin type sticks across restarts;
@@ -30,6 +37,7 @@ SEED_MARKER = "project_types_seeded"
 OUTPUT_PROMPT_MARKER = "project_types_output_prompts"
 STRUCTURE_MARKER = "project_types_structures"
 VERBATIM_MARKER = "project_types_verbatim"
+CONDENSE_MARKER = "project_types_condense"
 
 # The builtin output prompts embed the block contract; it is expanded into the
 # stored prompt so nothing about the export stays hidden from the user.
@@ -42,6 +50,7 @@ BUILTIN_TYPES: list[dict[str, Any]] = [
         "name": "Song",
         "structure": "stanzas",
         "verbatim": True,
+        "condense": False,
         "system_prompt": (
             "You are editing a Song transcription. Preserve line breaks and recognizable "
             "repetitions (choruses). Structure the text into verses and choruses, correct "
@@ -60,6 +69,7 @@ BUILTIN_TYPES: list[dict[str, Any]] = [
         "name": "Interview/Dialogue",
         "structure": "dialogue",
         "verbatim": True,
+        "condense": False,
         "system_prompt": (
             "You are editing an Interview or dialogue transcription. Assign spoken "
             "contributions to speakers (Speaker 1, Speaker 2, ... or recognized names), "
@@ -78,6 +88,7 @@ BUILTIN_TYPES: list[dict[str, Any]] = [
         "name": "Speech",
         "structure": "paragraphs",
         "verbatim": True,
+        "condense": False,
         "system_prompt": (
             "You are editing a speech transcription. Divide the text into meaningful "
             "paragraphs, correct grammar and punctuation, and remove filler words. Keep "
@@ -94,6 +105,7 @@ BUILTIN_TYPES: list[dict[str, Any]] = [
         "name": "Meeting Protocol",
         "structure": "paragraphs",
         "verbatim": False,
+        "condense": True,
         "system_prompt": (
             "You create meeting minutes from a conversation transcription. Summarize the "
             "discussion objectively, list decisions separately, and extract all tasks into "
@@ -114,6 +126,7 @@ BUILTIN_TYPES: list[dict[str, Any]] = [
         "name": "Poem",
         "structure": "stanzas",
         "verbatim": True,
+        "condense": False,
         "system_prompt": (
             "You are editing a poem transcription. Restore the stanza and verse structure, "
             "preserving rhythm, rhyme, and line breaks. Correct only unambiguous mishearings "
@@ -131,6 +144,7 @@ BUILTIN_TYPES: list[dict[str, Any]] = [
         "name": "Roleplay",
         "structure": "script",
         "verbatim": True,
+        "condense": False,
         "system_prompt": (
             "You are editing a roleplay or play transcription. Turn the text into a script: "
             "put character names before each spoken contribution and italicize stage "
@@ -167,6 +181,7 @@ TYPE_FIELDS = (
     "type_structure",
     "type_keep_sections",
     "type_verbatim",
+    "type_condense",
 )
 
 
@@ -190,13 +205,25 @@ def is_verbatim(project: dict[str, Any]) -> bool:
     every type that does not deliberately turn its material into something
     else, for a project without a type at all, and for a row that predates
     the field — reproducing the text is what the default promises. It decides
-    two things: whether the PDF export lets the LLM structure the text
-    (`pdf.build_document`), and whether the aufbereitung writes one document
-    over the whole recording instead of cleaning up chunk by chunk
-    (`pipeline.cleanup_segments`).
+    one thing: whether the PDF export lets the LLM structure the text
+    (`pdf.build_document`). How that text came about is `condenses()`.
     """
     value = project.get("type_verbatim")
     return True if value is None else bool(value)
+
+
+def condenses(project: dict[str, Any]) -> bool:
+    """Whether the type's aufbereitung writes a document of its own.
+
+    Read from a project or file row (`type_condense`, joined by `workspace`).
+    Off for a type that reproduces its material — which is the default, for a
+    row without a type and for one that predates the field: the cleanup then
+    runs section by section and every sentence comes back
+    (`pipeline.cleanup_segments`). On for a type that turns the recording into
+    something else, whose prompt runs once over the whole of it
+    (`overview.reduce_document`).
+    """
+    return bool(project.get("type_condense"))
 
 
 def default_output_prompt() -> str:
@@ -244,10 +271,10 @@ def seed_builtin_types() -> None:
 
 
 _BUILTIN_COLUMNS = (
-    "key, name, structure, keep_sections, verbatim, system_prompt, output_prompt, builtin"
+    "key, name, structure, keep_sections, verbatim, condense, system_prompt, output_prompt, builtin"
 )
 _INSERT_BUILTIN = (
-    f"INSERT OR IGNORE INTO project_types ({_BUILTIN_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, 1)"
+    f"INSERT OR IGNORE INTO project_types ({_BUILTIN_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)"
 )
 
 
@@ -260,6 +287,7 @@ def _builtin_row(key: str, name: str, entry: dict[str, Any]) -> tuple[Any, ...]:
         entry["structure"],
         int(bool(entry.get("keep_sections"))),
         int(bool(entry.get("verbatim", True))),
+        int(bool(entry.get("condense"))),
         entry["system_prompt"],
         entry["output_prompt"],
     )
@@ -271,6 +299,7 @@ _BACKFILL_FIELDS = (
     ("output_prompt", OUTPUT_PROMPT_MARKER, ""),
     ("structure", STRUCTURE_MARKER, "paragraphs"),
     ("verbatim", VERBATIM_MARKER, 1),
+    ("condense", CONDENSE_MARKER, 0),
 )
 
 
@@ -298,11 +327,12 @@ def restore_builtin_types() -> list[dict[str, Any]]:
     with db.get_conn() as conn:
         for entry in builtin_types():
             conn.execute(
-                f"INSERT INTO project_types ({_BUILTIN_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, 1) "
+                f"INSERT INTO project_types ({_BUILTIN_COLUMNS}) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1) "
                 "ON CONFLICT(key) DO UPDATE SET "
                 "name = excluded.name, structure = excluded.structure, "
                 "keep_sections = excluded.keep_sections, "
-                "verbatim = excluded.verbatim, "
+                "verbatim = excluded.verbatim, condense = excluded.condense, "
                 "system_prompt = excluded.system_prompt, "
                 "output_prompt = excluded.output_prompt, builtin = 1",
                 _builtin_row(entry["key"], entry["name"], entry),
@@ -357,6 +387,7 @@ def create_type(
     structure: str = "",
     keep_sections: bool = False,
     verbatim: bool = True,
+    condense: bool = False,
 ) -> dict[str, Any]:
     """Create a type; without an output prompt it starts from the default so
     the user has something to adapt rather than an empty field."""
@@ -367,14 +398,15 @@ def create_type(
         key = _unique_key(conn, slugify(name))
         cursor = conn.execute(
             "INSERT INTO project_types "
-            "(key, name, structure, keep_sections, verbatim, system_prompt, output_prompt, "
-            "builtin) VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
+            "(key, name, structure, keep_sections, verbatim, condense, system_prompt, "
+            "output_prompt, builtin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
             (
                 key,
                 name,
                 normalize_structure(structure),
                 int(keep_sections),
                 int(verbatim),
+                int(condense),
                 system_prompt,
                 output_prompt or default_output_prompt(),
             ),
@@ -391,6 +423,7 @@ def update_type(
     structure: str = "",
     keep_sections: bool = False,
     verbatim: bool = True,
+    condense: bool = False,
 ) -> dict[str, Any] | None:
     """Update a type. An emptied output prompt stays empty — the export then
     falls back to the default, which is a valid choice."""
@@ -399,12 +432,13 @@ def update_type(
     with db.get_conn() as conn:
         cursor = conn.execute(
             "UPDATE project_types SET name = ?, structure = ?, keep_sections = ?, "
-            "verbatim = ?, system_prompt = ?, output_prompt = ? WHERE id = ?",
+            "verbatim = ?, condense = ?, system_prompt = ?, output_prompt = ? WHERE id = ?",
             (
                 name,
                 normalize_structure(structure),
                 int(keep_sections),
                 int(verbatim),
+                int(condense),
                 system_prompt,
                 output_prompt,
                 type_id,

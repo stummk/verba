@@ -268,26 +268,34 @@ gliedert:
 Damit kann auch ein selbst angelegter Typ auf die Sprecher-Segmente
 zugreifen — das war vorher fest an die Standardtypen gebunden.
 
-Dazu kommt **Text unverändert übernehmen**, bei jedem Typ außer dem Protokoll
-eingeschaltet. Damit gliedert der PDF-Export den bereinigten Text und die
-Übersetzungen selbst — ohne KI-Schritt. Jeder Satz landet unverändert und in
-seiner Reihenfolge im PDF, Absätze bleiben, wo der Text sie setzt, und es
-entstehen keine Überschriften, die der Text nicht enthält. Der
+Dazu kommt **Export übernimmt den Text unverändert**, bei jedem Typ außer dem
+Protokoll eingeschaltet. Damit gliedert der PDF-Export den aufbereiteten Text
+und die Übersetzungen selbst — ohne KI-Schritt. Jeder Satz landet unverändert
+und in seiner Reihenfolge im PDF, Absätze bleiben, wo der Text sie setzt, und
+es entstehen keine Überschriften, die der Text nicht enthält. Der
 Ausgabeformat-Prompt wird dann nicht verwendet.
 
-Ohne diese Option darf die KI den Text nach dem Ausgabeformat-Prompt umbauen.
-Das braucht nur ein Typ, der aus seinem Material etwas anderes macht — das
-**Protokoll** etwa, das aus dem Gespräch eine Zusammenfassung mit Beschlüssen
-und To-dos formt. Wer den Export dabei erwischt, dass er Sätze weglässt oder
-umschreibt, schaltet die Option ein.
+Ohne diese Option darf die KI den Text **beim Export** nach dem
+Ausgabeformat-Prompt umbauen. Das braucht nur ein Typ, der erst im Export aus
+seinem Material etwas anderes macht. Wer den Export dabei erwischt, dass er
+Sätze weglässt oder umschreibt, schaltet die Option ein. Was die
+KI-Aufbereitung mit dem Transkript tut, entscheidet sie nicht.
 
-Die Option entscheidet außerdem, **wie die KI-Aufbereitung mit langen
-Aufnahmen umgeht**: Ein Typ, der den Text unverändert übernimmt, wird Abschnitt
-für Abschnitt bereinigt — es soll ja jeder Satz zurückkommen. Ein Typ ohne
-diese Option bekommt seinen Bereinigungsprompt genau **einmal für die ganze
-Aufnahme**, damit ein Protokoll mit einem Titel, einer Beschlussliste und einer
-To-do-Liste entsteht und nicht je Abschnitt ein eigenes. Wie Verba dafür die
-ganze Aufnahme im Blick behält, steht im Abschnitt „KI-Aufbereitung".
+Das entscheidet die Option darunter: **Aufbereitung schreibt ein eigenes
+Dokument**, bei allen Standardtypen außer dem **Protokoll** aus. Ist sie aus,
+bereinigt die KI Abschnitt für Abschnitt — Rechtschreibung, Zeichensetzung,
+Füllwörter und Falschstarts —, jeder Satz kommt zurück, und der
+Bereinigungsprompt beschreibt der KI dabei nur, was für ein Text vor ihr liegt.
+Ist sie an, ist der Bereinigungsprompt die **Anweisung** und läuft genau
+**einmal über die ganze Aufnahme**: So entsteht ein Protokoll mit einem Titel,
+einer Beschlussliste und einer To-do-Liste und nicht je Abschnitt ein eigenes.
+Wie Verba dafür die ganze Aufnahme im Blick behält, steht im Abschnitt
+„KI-Aufbereitung".
+
+Die beiden Optionen sind **unabhängig**: Ein Typ kann aus der Aufnahme ein
+eigenes Dokument schreiben lassen und dieses Dokument trotzdem Wort für Wort
+ins PDF bringen — das ist die übliche Wahl, wenn die Aufbereitung arbeiten
+soll, der Export aber nichts mehr anfassen darf.
 
 Dazu kommt **Abschnitte nicht über Seiten trennen**. Beim Export eines ganzen
 Transkripts folgt sonst eine Datei der anderen auf derselben Seite, und ein
@@ -340,8 +348,9 @@ Transkript folgt, und gefüllt, sobald sie einen eigenen Typ nennt. Ein Klick
 globalen Typ, jeder andere Eintrag setzt ihren eigenen.
 
 Der Typ der Datei entscheidet danach alles, was der Typ entscheidet: den
-Bereinigungsprompt der KI-Aufbereitung, ob der Text unverändert übernommen
-wird, die Gliederung des PDF-Exports und den Seitenumbruch im Sammel-Export.
+Bereinigungsprompt der KI-Aufbereitung und wie er läuft, ob der Export den
+Text unverändert übernimmt, die Gliederung des PDF-Exports und den
+Seitenumbruch im Sammel-Export.
 Ein Sammel-PDF kann so ein Lied in Strophen und ein Interview mit Sprechern
 enthalten — jede Datei in ihrer eigenen Form. In der Suche filtert der
 Typfilter nach dem Typ, der für die Datei gilt.
@@ -486,8 +495,10 @@ transkribierten Dateien im Drei-Punkte-Menü der Karte der Eintrag
 **KI-Aufbereitung (alle)**:
 
 - **Bereinigen** entfernt Füllwörter und Falschstarts, korrigiert Zeichensetzung
-  und offensichtliche Hörfehler — der Transkripttyp fließt als Kontext ein
-  (z.B. wird ein „Protokoll" zusammengefasst und mit To-do-Liste versehen)
+  und offensichtliche Hörfehler — der Transkripttyp fließt als Kontext ein, und
+  jeder Satz kommt zurück. Aus der Aufnahme etwas anderes macht erst ein Typ mit
+  **Aufbereitung schreibt ein eigenes Dokument** (das „Protokoll" etwa eine
+  Zusammenfassung mit Beschlüssen und To-do-Liste)
 - **Übersetzen** überträgt den bereinigten Text (oder das Roh-Transkript) in
   nahezu jede Sprache — zur Auswahl stehen alle rund 100 Sprachen, die auch
   Whisper kennt. Die Übersetzung übernimmt dabei **Sprachebene und Fachgebiet
@@ -530,7 +541,8 @@ zwei Aufgaben:
   denselben Abschnitt noch einmal ganz ohne Orientierung — und bricht den
   Schritt mit einer Meldung ab, statt eine gekürzte Fassung zu speichern
 - Bei Transkripttypen, die aus dem Material **etwas anderes machen** (Typ mit
-  abgeschaltetem „Wörtlich", z. B. „Protokoll"), läuft der Prompt des Typs
+  „Aufbereitung schreibt ein eigenes Dokument", z. B. „Protokoll"), läuft der
+  Prompt des Typs
   **einmal über die ganze Aufnahme** statt einmal pro Abschnitt. So entsteht
   ein Protokoll mit einem Titel, einer Beschlussliste und einer To-do-Liste —
   und nicht je Abschnitt ein eigenes Protokoll mit eigenem Titel
@@ -945,7 +957,7 @@ zu exportieren; im kombinierten Modus werden einfach nur die vorhandenen
 Übersetzungen angehängt.
 
 Der Export läuft zweistufig, und wie die erste Stufe arbeitet, entscheidet
-der Transkripttyp mit **Text unverändert übernehmen** (siehe
+der Transkripttyp mit **Export übernimmt den Text unverändert** (siehe
 „Transkripttypen"). Ist die Option an — bei jedem Standardtyp außer dem
 Protokoll —, gliedert Verba den bereinigten Text und die Übersetzungen
 selbst: Wort für Wort, in der Reihenfolge des Textes, ohne KI. Ist sie aus,

@@ -60,6 +60,11 @@ CREATE TABLE IF NOT EXISTS project_types (
     -- 1: the export reproduces the cleaned text and the translations word
     -- for word — structured deterministically, without the LLM stage
     verbatim      INTEGER NOT NULL DEFAULT 1,
+    -- 1: the aufbereitung runs the type's cleanup prompt once over the whole
+    -- recording and writes a document of its own instead of cleaning the
+    -- transcript section by section (services/pipeline.py). Independent of
+    -- `verbatim`, which only says what the export may do with the result.
+    condense      INTEGER NOT NULL DEFAULT 0,
     builtin       INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -326,6 +331,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
     add_missing("project_types", "structure", "structure TEXT NOT NULL DEFAULT 'paragraphs'")
     add_missing("project_types", "keep_sections", "keep_sections INTEGER NOT NULL DEFAULT 0")
     add_missing("project_types", "verbatim", "verbatim INTEGER NOT NULL DEFAULT 1")
+    add_missing("project_types", "condense", "condense INTEGER NOT NULL DEFAULT 0")
+    # How the aufbereitung runs used to be read off `verbatim`, which now only
+    # governs the export: a type that was not verbatim wrote a document of its
+    # own over the whole recording, and keeps doing so.
+    if not get_meta(conn, "project_types_condense_from_verbatim"):
+        conn.execute("UPDATE project_types SET condense = 1 WHERE verbatim = 0")
+        set_meta(conn, "project_types_condense_from_verbatim", "1")
     add_missing("projects", "type_id", "type_id INTEGER REFERENCES project_types(id)")
     add_missing("projects", "auto_process", "auto_process INTEGER NOT NULL DEFAULT 0")
     add_missing("projects", "auto_language", "auto_language TEXT NOT NULL DEFAULT ''")

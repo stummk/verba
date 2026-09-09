@@ -12,6 +12,7 @@ let types = [];
 let selected = null; // a type object, "new", or null
 let defaults = {
   output_prompt: "", structure: "paragraphs", structures: ["paragraphs"], verbatim: true,
+  condense: false,
 };
 // both prompts of the type being edited, so switching the dropdown keeps
 // unsaved edits of the other one
@@ -21,6 +22,7 @@ let draft = {
   structure: "paragraphs",
   keep_sections: false,
   verbatim: true,
+  condense: false,
 };
 let promptKind = "system_prompt";
 
@@ -81,6 +83,7 @@ function select(target) {
     structure: (isNew ? defaults.structure : target?.structure) || defaults.structure,
     keep_sections: isNew ? false : Boolean(target?.keep_sections),
     verbatim: isNew ? defaults.verbatim !== false : Boolean(target?.verbatim),
+    condense: isNew ? Boolean(defaults.condense) : Boolean(target?.condense),
   };
   renderList();
   renderDetail();
@@ -136,6 +139,10 @@ function renderDetail() {
     </label>
     <p class="hint">${t("types.verbatimHint")}</p>
     <label class="checkline">
+      <input type="checkbox" id="type-condense"> ${t("types.condense")}
+    </label>
+    <p class="hint">${t("types.condenseHint")}</p>
+    <label class="checkline">
       <input type="checkbox" id="type-keep-sections"> ${t("types.keepSections")}
     </label>
     <p class="hint">${t("types.keepSectionsHint")}</p>
@@ -176,6 +183,15 @@ function renderDetail() {
   verbatim.onchange = () => {
     draft.verbatim = verbatim.checked;
     showPrompt(); // the output prompt is unused while the text stays verbatim
+  };
+
+  // what the aufbereitung does with the transcript; the export choice above
+  // says nothing about it, and this one nothing about the export
+  const condense = el("type-condense");
+  condense.checked = draft.condense;
+  condense.onchange = () => {
+    draft.condense = condense.checked;
+    showPrompt(); // the cleanup prompt is an instruction only for a document
   };
 
   const kindSelect = el("type-prompt-kind");
@@ -219,6 +235,7 @@ function renderDetail() {
       structure: draft.structure,
       keep_sections: draft.keep_sections,
       verbatim: draft.verbatim,
+      condense: draft.condense,
     };
     if (!name) {
       el("type-name").focus();
@@ -258,7 +275,7 @@ function showPrompt() {
   textarea.placeholder = isOutput ? defaults.output_prompt : "";
   el("type-prompt-hint").textContent = isOutput
     ? (draft.verbatim ? t("types.promptOutputUnused") : t("types.promptOutputHint"))
-    : t("types.promptHint");
+    : (draft.condense ? t("types.promptHintDocument") : t("types.promptHintChunks"));
   el("type-prompt-default").hidden = !isOutput;
 }
 

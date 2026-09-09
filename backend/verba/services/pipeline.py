@@ -14,10 +14,14 @@ know is the recording it belongs to, and that matters in two different ways
   overview as orientation, so names, terms and spellings stay the same across
   chunk boundaries.
 - A transcript type that turns its material into something else
-  (`project_types.verbatim` off: minutes, a summary) must not run per chunk at
+  (`project_types.condense` on: minutes, a summary) must not run per chunk at
   all — the same instruction would produce one document per chunk, four
   titles for a file that was split into four. Its instruction runs once, over
   the digests of the whole recording.
+
+Which of the two a type is has nothing to do with what its PDF export may do
+(`project_types.verbatim`): a recording rewritten into minutes can still be
+exported word for word.
 """
 
 from __future__ import annotations
@@ -397,7 +401,7 @@ def _refuse_empty(result: str, step: str) -> None:
         raise RuntimeError(f"{step} ohne Ergebnis — das LLM hat keinen Text geliefert")
 
 
-# ── the promise of a verbatim type ───────────────────────────────────
+# ── the promise of a reproducing type ───────────────────────────────
 #
 # A song, a poem, a speech, a roleplay: the cleanup corrects spelling and
 # drops filler words, and that is all it may do. Whether it did is not left to
@@ -411,7 +415,8 @@ MIN_KEPT_SHARE = 0.5
 SUMMARIZED_MESSAGE = (
     "Das Modell hat Abschnitt {index}/{total} zusammengefasst statt ihn zu bereinigen — "
     "bei diesem Transkripttyp muss der Text vollständig zurückkommen. Bitte ein anderes "
-    "Modell verwenden oder „Text unverändert übernehmen“ prüfen"
+    "Modell verwenden, oder im Transkripttyp „Aufbereitung schreibt ein eigenes Dokument“ "
+    "einschalten, wenn genau das gewollt ist"
 )
 
 
@@ -437,7 +442,7 @@ def cleanup_segments(
     report: Callable[[int, str], None],
     progress_range: tuple[int, int] = (0, 100),
     *,
-    verbatim: bool = True,
+    condense: bool = False,
     glossary: str = "",
     limit: SizeLimit | None = None,
 ) -> str:
@@ -447,8 +452,10 @@ def cleanup_segments(
     here condenses. `glossary` is what the whole recording is called and how
     it spells its names (`overview.Overview.as_glossary`), which is all a step
     that has to reproduce its material may be shown; the caller decides
-    whether that reading is worth its calls. `verbatim` says whether the type
-    promises to reproduce, and only governs the guard below.
+    whether that reading is worth its calls. `condense` says that the type
+    turns its material into something else — it switches the guard below off,
+    for the caller that ends up here although the type would rather have
+    written a document of its own.
     """
     chunks = chunking.chunk_segments(segments)
     bare_prompt = CLEANUP_SYSTEM_PROMPT
@@ -467,7 +474,7 @@ def cleanup_segments(
         pieces = chat_pieces(
             system_prompt, chunk.own_text, model_override, chunk.context_text, limit
         )
-        if verbatim and not _keeps_the_text(chunk.own_text, "\n".join(pieces)):
+        if not condense and not _keeps_the_text(chunk.own_text, "\n".join(pieces)):
             # Asked again without the orientation, which is the likeliest
             # reason a model shortened its section towards the whole — so only
             # where there was one. A type that condenses on purpose is never
@@ -532,7 +539,7 @@ def run_cleanup(
     cancel: threading.Event,
     report: Callable[[int, str], None],
     progress_range: tuple[int, int] = (0, 100),
-    verbatim: bool = True,
+    condense: bool = False,
     whole: overview.Overview | None = None,
 ) -> tuple[str, overview.Overview]:
     """The cleanup step for one file, and the reading it was done with.
@@ -540,7 +547,8 @@ def run_cleanup(
     Which way it runs is decided here, where the transcript type is known: a
     type that reproduces its material is cleaned chunk by chunk, a type that
     writes something of its own has its instruction run once over the whole
-    recording.
+    recording. What the export then does with the result is a separate
+    question (`project_types.is_verbatim`) and none of this step's business.
     """
     segments = transcripts.list_segments(file_id)
     if not segments:
@@ -554,7 +562,7 @@ def run_cleanup(
         whole = whole_text_overview(
             file_id, type_prompt, model_override, cancel, report, reading, limit, segments
         )
-    if not verbatim and whole.digests:
+    if condense and whole.digests:
         result = overview.reduce_document(
             whole.digests, type_prompt, model_override, cancel, report, working, limit
         )
@@ -566,7 +574,7 @@ def run_cleanup(
             cancel,
             report,
             working,
-            verbatim=verbatim,
+            condense=condense,
             glossary=whole.as_glossary(),
             limit=limit,
         )
@@ -634,7 +642,7 @@ def handle_llm_process_job(
     type_prompt = type_row.get("type_prompt") or ""
     # whether this type reproduces its material or writes something of its
     # own decides how the cleanup runs; a file without a type reproduces
-    verbatim = project_types.is_verbatim(type_row)
+    condense = project_types.condenses(type_row)
 
     total_steps = len(steps)
     cleaned: str | None = None
@@ -647,7 +655,7 @@ def handle_llm_process_job(
         hi = 100 * (step_index + 1) // total_steps
         if step == "cleanup":
             cleaned, whole = run_cleanup(
-                file_id, type_prompt, model_override, cancel, report, (lo, hi), verbatim, whole
+                file_id, type_prompt, model_override, cancel, report, (lo, hi), condense, whole
             )
         elif step == "translate":
             target = payload.get("target_language") or DEFAULT_TARGET_LANGUAGE

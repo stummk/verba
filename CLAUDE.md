@@ -97,10 +97,13 @@ python -m ruff format --check backend/ tests/ run.py
     is where the type is known: a type that reproduces its material goes
     chunk-local through `cleanup_segments` (which never condenses and never
     reads the whole recording itself) with the overview's title and spellings
-    as a glossary — never the summary —, a type with `verbatim` off has its
+    as a glossary — never the summary —, a type with `condense` on has its
     prompt run once over the whole recording via `overview.reduce_document`,
-    so one title and one list of decisions instead of one per chunk. For a
-    verbatim type the promise does not rest on the prompt:
+    so one title and one list of decisions instead of one per chunk. Which of
+    the two runs is `condense`, never `verbatim`: what the export may do with
+    a text and how that text came about are two questions, so a type may have
+    its recording rewritten and still be exported word for word. For a
+    reproducing type the promise does not rest on the prompt:
     `_keeps_the_text()` measures how much of a section survived its answer,
     asks again without the glossary where there was one, and then fails the
     step rather than storing a summary),
@@ -108,7 +111,7 @@ python -m ruff format --check backend/ tests/ run.py
     (map), neighbouring digests condensed until they fit one call (fold),
     then a single call for what the document has only once (reduce) — the
     title/summary/terms the chunk-local steps orient themselves by, or the
-    finished document of a non-verbatim type. No call is ever given more than
+    finished document of a condensing type. No call is ever given more than
     a chunk's worth, cached per file in `file_overviews` and dropped when the
     segments change; `ensure()` keeps the digests but describes them again
     when that one call had failed, so a bad answer costs no title for good.
@@ -116,9 +119,11 @@ python -m ruff format --check backend/ tests/ run.py
     which takes it only where neither the name scheme nor a tag stated one),
     chunking (segment boundaries + overlap), metadata (tags/file name),
     project_types (7 default types with cleanup prompt, output-format
-    prompt, layout and `verbatim` — `is_verbatim()` lives here because both
-    the export and the pipeline branch on it; seeding + per-field backfill
-    via meta table),
+    prompt, layout and two independent switches — `verbatim` (`is_verbatim()`)
+    for what the export may do, `condense` (`condenses()`) for how the
+    aufbereitung runs; seeding + per-field backfill via meta table, and
+    `condense` is carried over from `verbatim` once in `db._migrate` so an
+    installation keeps the way its types worked),
     pdf (two-stage
     PDF export: deterministic or LLM structuring → deterministic
     fpdf2 renderer; the type's layout (paragraphs/stanzas/dialogue/script)

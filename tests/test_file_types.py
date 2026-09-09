@@ -57,7 +57,13 @@ def test_a_file_without_a_type_follows_its_project():
 
 def test_a_files_own_type_wins_over_its_projects():
     project = {"type_id": 3, "type_key": "song", "type_name": "Song", "type_verbatim": 1}
-    file_row = {"type_id": 7, "type_key": "protocol", "type_name": "Protokoll", "type_verbatim": 0}
+    file_row = {
+        "type_id": 7,
+        "type_key": "protocol",
+        "type_name": "Protokoll",
+        "type_verbatim": 0,
+        "type_condense": 1,
+    }
     resolved = project_types.for_file(project, file_row)
     assert resolved["type_name"] == "Protokoll"
     assert project_types.is_verbatim(resolved) is False
@@ -237,17 +243,17 @@ def test_whether_the_cleanup_reproduces_the_text_is_the_files_choice(
         cancel,
         report,
         progress_range=(0, 100),
-        verbatim=True,
+        condense=False,
         whole=None,
     ):
-        seen.append(verbatim)
+        seen.append(condense)
         return "Text.", pipeline.overview.Overview()
 
     monkeypatch.setattr(pipeline, "run_cleanup", spy)
     pipeline.handle_llm_process_job(
         {"payload": {"file_id": file_row["id"], "steps": ["cleanup"]}}, NO_CANCEL, no_report
     )
-    assert seen == [False]  # the protocol type, not the song the project names
+    assert seen == [True]  # the protocol type, not the song the project names
 
 
 def test_a_compilation_lays_out_every_file_by_its_own_type(data_env, tmp_path):

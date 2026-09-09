@@ -259,26 +259,33 @@ without AI:
 This means a type you created yourself can use the speaker segments too —
 which used to be tied to the built-in types.
 
-There is also **Reproduce the text unchanged**, on for every type but the
-minutes one. The PDF export then structures the cleaned text and the
+There is also **The export reproduces the text unchanged**, on for every type
+but the minutes one. The PDF export then structures the processed text and the
 translations by itself — without an AI step. Every sentence reaches the PDF
 unchanged and in its original order, paragraphs stay where the text puts
 them, and no heading appears that the text does not carry. The output-format
 prompt is then unused.
 
-Without this option the AI may restructure the text according to the
-output-format prompt. Only a type that turns its material into something else
-needs that — **Meeting Protocol**, for instance, which forms a summary with
-decisions and to-dos out of the conversation. If an export is caught dropping
-or rewording sentences, switch the option on.
+Without this option the AI may rebuild the text **for the export** according
+to the output-format prompt. Only a type needs that which turns its material
+into something else at export time. If an export is caught dropping or
+rewording sentences, switch the option on. What the AI processing does with
+the transcript is not this option's business.
 
-The option also decides **how the AI step handles long recordings**: a type
-that reproduces its text unchanged is cleaned up section by section — every
-sentence has to come back. A type without the option gets its cleanup prompt
-exactly **once for the whole recording**, so that minutes come out with one
-title, one list of decisions and one to-do list instead of one set per
-section. How Verba keeps the whole recording in view for that is described
-under "AI processing".
+That is what the option below decides: **The AI processing writes a document of
+its own**, off for every built-in type but **Meeting Protocol**. With it off,
+the AI cleans section by section — spelling, punctuation, filler words and
+false starts —, every sentence comes back, and the cleanup prompt only tells
+the AI what kind of text it is looking at. With it on, the cleanup prompt is
+the **instruction** and runs exactly **once over the whole recording**: that is
+how minutes come out with one title, one list of decisions and one to-do list
+instead of one set per section. How Verba keeps the whole recording in view for
+that is described under "AI processing".
+
+The two options are **independent**: a type may have a document of its own
+written from the recording and still have that document reach the PDF word for
+word — which is the usual choice when the processing should work but the export
+must not touch anything any more.
 
 Next to it sits **Do not split sections across pages**. When a whole
 transcript is exported, one file otherwise follows the next on the same page,
@@ -329,7 +336,8 @@ the picker: **From the transcript** puts it back under the global type, any
 other entry sets its own.
 
 The file's type then decides everything a type decides: the cleanup prompt of
-the AI processing, whether the text is reproduced unchanged, the layout of the
+the AI processing and how it runs, whether the export reproduces the text
+unchanged, the layout of the
 PDF export and the page break in a compilation export. One compilation PDF can
 therefore hold a song in stanzas and an interview with speakers — every file
 in its own shape. In the search, the type filter matches the type that applies
@@ -469,8 +477,10 @@ an **AI processing** entry in the three-dot menu of their card, and step 2 of
 the action card gains **AI processing (all)**:
 
 - **Cleanup** removes filler words and false starts, fixes punctuation and
-  obvious mishearings — the transcript type flows in as context (a "revelation"
-  is only minimally corrected, "minutes" get a summary and a to-do list)
+  obvious mishearings — the transcript type flows in as context, and every
+  sentence comes back. Turning the recording into something else takes a type
+  with **The AI processing writes a document of its own** ("minutes" then get a
+  summary with decisions and a to-do list)
 - **Translate** renders the cleaned text (or the raw transcript) into nearly
   any language — all ~100 languages Whisper knows are available as targets. The
   translation carries the **register and subject matter of the original** over:
@@ -510,7 +520,8 @@ the model's context window. That overview serves two purposes:
   same section again without any orientation — and ends the step with a
   message rather than storing a shortened version
 - For transcript types that turn the material into **something else** (a type
-  with "verbatim" switched off, e.g. "Meeting Protocol"), the type's prompt
+  with "The AI processing writes a document of its own", e.g. "Meeting
+  Protocol"), the type's prompt
   runs **once over the whole recording** instead of once per section. That
   yields minutes with one title, one list of decisions and one to-do list —
   instead of one separate set per section
@@ -904,7 +915,8 @@ makes the job fail with a message instead of quietly exporting the original; in
 combined mode only the translations that exist are appended.
 
 The export runs in two stages, and how the first one works is the transcript
-type's choice via **Reproduce the text unchanged** (see "Transcript types").
+type's choice via **The export reproduces the text unchanged** (see
+"Transcript types").
 With the option on — every builtin type but the minutes one — Verba structures
 the cleaned text and the translations by itself: word for word, in the order
 of the text, without AI. With it off the AI structures the text according to

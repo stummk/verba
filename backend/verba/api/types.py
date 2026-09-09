@@ -26,6 +26,10 @@ class TypeRequest(BaseModel):
     # the export reproduces the text word for word instead of letting the LLM
     # restructure it — on unless the type deliberately transforms its material
     verbatim: bool = True
+    # the aufbereitung runs the cleanup prompt once over the whole recording
+    # and writes a document of its own instead of cleaning section by section;
+    # independent of `verbatim`, which speaks only for the export
+    condense: bool = False
 
 
 @router.get("")
@@ -41,6 +45,7 @@ def default_prompts() -> dict:
         "structure": DEFAULT_STRUCTURE,
         "structures": list(STRUCTURES),
         "verbatim": True,
+        "condense": False,
     }
 
 
@@ -53,6 +58,7 @@ def create_type(body: TypeRequest, user: dict = AdminUser) -> dict:
         body.structure,
         body.keep_sections,
         body.verbatim,
+        body.condense,
     )
 
 
@@ -66,6 +72,7 @@ def update_type(type_id: int, body: TypeRequest, user: dict = AdminUser) -> dict
         body.structure,
         body.keep_sections,
         body.verbatim,
+        body.condense,
     )
     if updated is None:
         raise HTTPException(status_code=404, detail="Transcript type not found")

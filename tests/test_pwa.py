@@ -168,6 +168,18 @@ def test_the_type_form_offers_the_verbatim_switch():
     assert 't("types.promptOutputUnused")' in source
 
 
+def test_the_type_form_offers_the_cleanup_mode_of_its_own():
+    """What the aufbereitung does is a second choice, next to the export one:
+    a type may have its recording rewritten and still be exported verbatim."""
+    source = (FRONTEND / "js" / "views" / "types.js").read_text(encoding="utf-8")
+    assert 'id="type-condense"' in source
+    assert 't("types.condense")' in source and 't("types.condenseHint")' in source
+    assert "condense: draft.condense" in source
+    # and the cleanup prompt says which of the two roles it currently has
+    assert 't("types.promptHintDocument")' in source
+    assert 't("types.promptHintChunks")' in source
+
+
 def test_only_a_linux_server_sees_the_system_package_button():
     """The row lives in the card but stays hidden until the backend says so."""
     source = (FRONTEND / "js" / "views" / "settings.js").read_text(encoding="utf-8")
