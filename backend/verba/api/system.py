@@ -8,7 +8,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from .. import __version__, config, datamove, lifecycle, setup_check
-from ..services import osupdate, updates
+from ..services import cudalibs, osupdate, updates
 from .deps import AdminUser
 
 router = APIRouter(prefix="/api/system", tags=["system"])
@@ -67,6 +67,26 @@ def run_setup(body: SetupRunRequest, user: dict = AdminUser) -> dict:
         kwargs={"include_optional": body.include_optional},
         daemon=True,
         name="setup-runner",
+    )
+    thread.start()
+    return {"started": True}
+
+
+@router.post("/cuda-libs")
+def install_cuda_libs(user: dict = AdminUser) -> dict:
+    """Install the CUDA libraries for the GPU; progress arrives via WebSocket.
+
+    The one component an installation usually acquires *after* the first run:
+    the GPU was there all along, only the libraries CTranslate2 needs were
+    not. Reported through the same setup progress as the wizard's own steps.
+    """
+    if setup_check.progress.running:
+        return {"started": False, "reason": "Es läuft bereits eine Installation."}
+    state = cudalibs.state(refresh=True)
+    if not state["installable"]:
+        return {"started": False, "reason": state["detail"] or "Nicht erforderlich."}
+    thread = threading.Thread(
+        target=setup_check.run_cuda_libs, daemon=True, name="cuda-libs-runner"
     )
     thread.start()
     return {"started": True}

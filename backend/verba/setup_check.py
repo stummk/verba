@@ -1,7 +1,8 @@
 """First-run system checks and automatic installation of missing components.
 
-Two kinds of installable components:
+Three kinds of installable components:
 - ffmpeg: downloaded as a static build into <data>/tools (if not on PATH)
+- the CUDA libraries the transcription needs on a GPU machine (services/cudalibs.py)
 - Python feature groups: installed via pip into the running environment
 
 All install steps report progress through the EventHub so the setup wizard
@@ -39,7 +40,7 @@ import httpx
 
 from . import config, procutil
 from .events import hub
-from .services import hardware
+from .services import cudalibs, hardware
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +223,24 @@ def check_gpu() -> CheckResult:
     )
 
 
+def check_cuda() -> CheckResult:
+    """The CUDA libraries the transcription needs on a GPU — see services/cudalibs.py.
+
+    Only ever a row on a machine this applies to: without an NVIDIA GPU, or
+    with the transcription set to the CPU, an unticked row would name a
+    component nobody here is missing.
+    """
+    state = cudalibs.state()
+    return CheckResult(
+        id="cuda",
+        label=cudalibs.LABEL,
+        ok=state["ok"],
+        required=False,  # the transcription still runs, just on the CPU
+        installable=state["installable"],
+        detail=state["detail"],
+    )
+
+
 def _module_installed(name: str) -> bool:
     """Whether a top-level module can be located.
 
@@ -300,11 +319,16 @@ def system_info() -> dict[str, Any]:
             "vram_free_mb": hw["vram_free_mb"],
         },
         "ffmpeg": check_ffmpeg().ok,
+        # the settings page offers the installation of what is missing here
+        "cuda": cudalibs.state(),
     }
 
 
 def _all_checks() -> list[CheckResult]:
-    return [check_python(), check_ffmpeg(), check_gpu(), *check_groups()]
+    checks = [check_python(), check_ffmpeg(), check_gpu()]
+    if cudalibs.applies():
+        checks.append(check_cuda())
+    return [*checks, *check_groups()]
 
 
 def system_status() -> dict[str, Any]:
@@ -572,11 +596,41 @@ def install_group(group: FeatureGroup) -> None:
     _emit(step, 100, f"{group.label} installiert und geprüft.")
 
 
+def install_cuda_libs() -> None:
+    """pip-install cuBLAS/cuDNN so the transcription can use the GPU.
+
+    A pip failure is a failure. Libraries that install and *still* leave the
+    GPU unusable are not: that is a driver or a container problem, the
+    transcription keeps working on the CPU, and the checklist says what it
+    found. Aborting the whole setup over it would be wrong.
+    """
+    step = cudalibs.LABEL
+    _emit(
+        step, 0, f"Installiere {step}: {', '.join(cudalibs.WHEELS)} ({cudalibs.DOWNLOAD_SIZE}) ..."
+    )
+    _pip_install(cudalibs.WHEELS, step)
+    _emit(step, 90, "Prüfe die CUDA-Bibliotheken ...")
+    cudalibs.mark_installed()
+    state = cudalibs.state(refresh=True)
+    if state["ok"]:
+        _emit(step, 100, "CUDA-Bibliotheken installiert — die Transkription kann die GPU nutzen.")
+    else:
+        _emit(step, 100, f"CUDA-Bibliotheken installiert. {state['detail']}")
+
+
 def _pending_steps(include_optional: bool) -> list[tuple[str, Callable[[], Any]]]:
     """Everything this setup run has to do, in order — one bar slice each."""
     steps: list[tuple[str, Callable[[], Any]]] = []
     if not check_ffmpeg().ok:
         steps.append(("ffmpeg", install_ffmpeg))
+    # optional like the semantic search is optional: a gigabyte of CUDA
+    # libraries is not something to fetch behind a user who asked for the
+    # essentials only. `applies()` has already ruled out every machine that
+    # would have no use for them.
+    if include_optional and cudalibs.applies():
+        cuda = check_cuda()
+        if not cuda.ok and cuda.installable:
+            steps.append((cudalibs.LABEL, install_cuda_libs))
     for group in FEATURE_GROUPS:
         if not (group.required or include_optional):
             continue
@@ -585,8 +639,18 @@ def _pending_steps(include_optional: bool) -> list[tuple[str, Callable[[], Any]]
     return steps
 
 
-def run_setup(include_optional: bool = True) -> None:
-    """Run all pending installations sequentially (call from a worker thread)."""
+def _execute(
+    steps: list[tuple[str, Callable[[], Any]]],
+    *,
+    done_message: str,
+    on_success: Callable[[], None] | None = None,
+) -> None:
+    """Run installation steps sequentially (call from a worker thread).
+
+    One lock for every kind of run: the wizard's full pass and a single
+    component installed from the settings page use the same progress state, so
+    two of them at once would report over each other.
+    """
     if not _setup_lock.acquire(blocking=False):
         return
     progress.running = True
@@ -594,7 +658,6 @@ def run_setup(include_optional: bool = True) -> None:
     progress.log.clear()
     progress.percent = 0
     progress.step_index = 0
-    steps = _pending_steps(include_optional)
     progress.total_steps = max(len(steps), 1)
     _refresh_checks()
     try:
@@ -605,11 +668,10 @@ def run_setup(include_optional: bool = True) -> None:
             progress.step_index = index + 1
             _refresh_checks()
 
-        settings = config.get_settings()
-        settings.setup.completed = True
-        config.save_settings(settings)
+        if on_success is not None:
+            on_success()
         progress.step_index = progress.total_steps
-        _emit("done", 100, "Alle Komponenten installiert und geprüft. Einrichtung abgeschlossen.")
+        _emit("done", 100, done_message)
     except Exception as exc:
         logger.exception("setup failed")
         progress.error = str(exc)
@@ -620,3 +682,31 @@ def run_setup(include_optional: bool = True) -> None:
         progress.running = False
         _refresh_checks()  # publishes the final state, including the checklist
         _setup_lock.release()
+
+
+def run_setup(include_optional: bool = True) -> None:
+    """Run all pending installations sequentially (call from a worker thread)."""
+    _execute(
+        _pending_steps(include_optional),
+        done_message="Alle Komponenten installiert und geprüft. Einrichtung abgeschlossen.",
+        on_success=_mark_setup_completed,
+    )
+
+
+def _mark_setup_completed() -> None:
+    settings = config.get_settings()
+    settings.setup.completed = True
+    config.save_settings(settings)
+
+
+def run_cuda_libs() -> None:
+    """Install only the CUDA libraries — the button next to the GPU row.
+
+    Deliberately does not touch `setup.completed`: an existing installation
+    adding GPU support later has not just run the first-run wizard, and an
+    installation that never ran it must keep being reminded.
+    """
+    _execute(
+        [(cudalibs.LABEL, install_cuda_libs)],
+        done_message=f"{cudalibs.LABEL}: Installation abgeschlossen.",
+    )

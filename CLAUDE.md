@@ -54,7 +54,9 @@ python -m ruff format --check backend/ tests/ run.py
   - `procutil.py` — every subprocess spawn goes through here: a child console
     program would otherwise flash its own window on a Windows build that has
     no console (nvidia-smi, ffmpeg, pip, llama-server)
-  - `setup_check.py` — first-run checks + automatic installation (ffmpeg, pip groups)
+  - `setup_check.py` — first-run checks + automatic installation (ffmpeg, the
+    CUDA libraries via `services/cudalibs.py`, pip groups); a single component
+    can be installed on its own (`run_cuda_libs`) without ticking the wizard off
   - `events.py` — EventHub: WebSocket broadcast to the UI (`publish()` is threadsafe);
     an event about a transcript passes `project_id`/`file_id` and then only reaches
     clients that may see it — otherwise the status line names foreign files
@@ -81,7 +83,17 @@ python -m ruff format --check backend/ tests/ run.py
     hardware (the single RAM/VRAM probe — `setup_check`, whisper and llamacpp all
     read it; per-model memory verdicts `ok`/`tight`/`no` in German for local
     engines only, plus the OOM classifier that turns an allocation failure into
-    a message and a CPU retry), whisper (model discovery,
+    a message and a CPU retry),
+    cudalibs (the CUDA libraries CTranslate2 links against but no wheel
+    brings — cuBLAS 12 and cuDNN 9: its own installable component next to
+    ffmpeg, offered only where it helps (NVIDIA GPU, transcription not set to
+    CPU) and never as an answer to a GPU whose driver does not answer, which
+    `cuInit` asks about because a container without `/dev/nvidia-uvm` still
+    lets `nvidia-smi` list the card. Installing them is half the job:
+    `preload()` loads the pip wheels' libraries with RTLD_GLOBAL — no loader
+    searches `site-packages/nvidia/*/lib` — so the fix works without a
+    restart, which is what `generation()` tells whisper), whisper (model
+    discovery,
     CPU fallback for broken CUDA and for a full VRAM, preflight refusal of a
     model that fits nowhere, range transcription), transcripts
     (segment CRUD + workspace JSON sync), audio (ffmpeg cutting), media (duration probe),

@@ -795,6 +795,25 @@ Empfehlung noch einmal für den Rechner als Ganzes; im Einrichtungsassistenten
 - Ist der Arbeitsspeicher voll, endet der Auftrag mit einer Meldung, die die
   freien und die benötigten Gigabyte nennt.
 
+**Die GPU wirklich nutzen (CUDA).** Eine erkannte Grafikkarte allein genügt
+nicht: Whisper rechnet über CTranslate2, und das verlangt zwei
+NVIDIA-Bibliotheken, die kein Python-Paket mitbringt — cuBLAS 12 und cuDNN 9.
+Fehlen sie, läuft die Transkription auf der CPU, obwohl in den Einstellungen
+die GPU gewählt ist.
+
+- Verba prüft das und zeigt das Ergebnis unter **Einstellungen → System** in
+  der Zeile **GPU-Beschleunigung (CUDA)**; im Einrichtungsassistenten steht
+  dieselbe Zeile in der Komponentenliste.
+- Fehlen die Bibliotheken, installiert der Assistent sie mit; auf einer
+  bestehenden Installation genügt der Knopf neben dieser Zeile. Der Download
+  ist etwa 1 GB groß, wird nur auf Rechnern mit NVIDIA-Grafikkarte angeboten,
+  deren Transkription nicht auf „CPU" steht, und wirkt ohne Neustart.
+- Antwortet die Grafikkarte selbst nicht — die Zeile sagt das —, hilft kein
+  Download, dann fehlt der Treiber. In einem Container (Proxmox LXC, Docker)
+  sind es meist die Geräte `/dev/nvidia-uvm` und `/dev/nvidia-uvm-tools`, die
+  nicht durchgereicht werden; `nvidia-smi` zeigt die Karte trotzdem an. Die
+  Treiberversion im Container muss außerdem zu der des Hosts passen.
+
 **Ein eigenes Modellverzeichnis** (z. B. eine bestehende Sammlung unter
 `M:\Modelle\whisper`) wird unter **Einstellungen → Transkription** eingetragen
 und greift sofort, ohne Neustart: Verba liest das Verzeichnis bei jedem Aufruf

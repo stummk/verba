@@ -324,6 +324,18 @@ export async function render(view) {
           <p class="small muted" id="os-log-title" hidden>${t("osUpdate.logTitle")}</p>
           <div class="setup-log" id="os-log" hidden></div>
         </div>
+        <div id="cuda-section" hidden>
+          <div class="model-row" id="cuda-row">
+            <span class="model-name">${t("cuda.title")}</span>
+            <span class="spacer"></span>
+            <button type="button" class="icon-btn" id="cuda-install" hidden
+                    title="${t("cuda.install")}" aria-label="${t("cuda.install")}"
+                    >${raw(iconSvg("download"))}</button>
+          </div>
+          <p class="hint" id="cuda-status"></p>
+          <p class="small muted" id="cuda-log-title" hidden>${t("cuda.logTitle")}</p>
+          <div class="setup-log" id="cuda-log" hidden></div>
+        </div>
         <dl class="info-list" id="system-info"></dl>
       </div>
 
@@ -483,6 +495,27 @@ export async function render(view) {
     }
   };
 
+  // the GPU libraries: the one component an installation usually acquires
+  // after the first run, so it gets its own button instead of sending the
+  // administrator back through the wizard
+  el("cuda-install").onclick = async () => {
+    const button = el("cuda-install");
+    button.disabled = true;
+    el("cuda-status").textContent = t("cuda.running");
+    el("cuda-log-title").hidden = false;
+    el("cuda-log").hidden = false;
+    try {
+      const result = await api.installCudaLibs();
+      if (!result.started) {
+        toast(result.reason);
+        await refreshSystemInfo();
+      }
+    } catch (error) {
+      toast(error.message);
+      await refreshSystemInfo();
+    }
+  };
+
   // reindex and workspace move run in the background — show them where they
   // were started instead of only in the top bar
   const searchJobs = jobCardHost(el("search-jobs"), {
@@ -513,6 +546,17 @@ export async function render(view) {
       showUpdateProgress(info);
       if (info.state === "error") toast(t("update.failed", { detail: info.detail }));
       if (info.state !== "running") await refreshUpdate();
+    }),
+    // installing the CUDA libraries is a pip run like the setup's own: the
+    // same progress events, shown next to the button that started it
+    on("setup.progress", async (info) => {
+      const log = el("cuda-log");
+      if (!log) return; // the view moved on
+      log.textContent = (info.log ?? []).join("\n");
+      log.scrollTop = log.scrollHeight;
+      if (info.running) return;
+      if (info.error) toast(t("cuda.failed", { detail: info.error }));
+      await refreshSystemInfo();
     }),
     // the server updates its own packages: apt says what it does, line by line
     on("system.upgrade", async (run) => {
@@ -1326,6 +1370,8 @@ async function refreshSystemInfo() {
     ["ffmpeg", info.ffmpeg ? t("models.installed") : t("system.missing")],
   ];
 
+  renderCudaSection(info.cuda);
+
   host.replaceChildren(...rows.map(([label, value]) => {
     const row = document.createElement("div");
     row.className = "info-row";
@@ -1335,6 +1381,26 @@ async function refreshSystemInfo() {
     );
     return row;
   }));
+}
+
+/**
+ * The GPU acceleration row: only shown where it means anything — an NVIDIA
+ * GPU that the transcription is allowed to use. Three states, because they
+ * lead to three different actions: ready (nothing to do), libraries missing
+ * (one click installs them) and a GPU whose driver does not answer, where no
+ * download helps and the container's device nodes are the place to look.
+ */
+function renderCudaSection(state) {
+  const section = el("cuda-section");
+  if (!section) return;
+  section.hidden = !state?.applies;
+  if (!state?.applies) return;
+  const button = el("cuda-install");
+  button.hidden = !state.installable;
+  button.disabled = false;
+  if (state.ok) el("cuda-status").textContent = t("cuda.ready");
+  else if (!state.driver) el("cuda-status").textContent = t("cuda.noDriver");
+  else el("cuda-status").textContent = t("cuda.missing");
 }
 
 // Called by the router when another view takes over.

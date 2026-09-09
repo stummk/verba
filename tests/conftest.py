@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from verba import config
-from verba.services import download
+from verba.services import cudalibs, download
 
 
 @pytest.fixture(autouse=True)
@@ -22,6 +22,21 @@ def isolated_data_dir(tmp_path, monkeypatch):
     config.reset_cache()
     yield
     config.reset_cache()
+
+
+@pytest.fixture(autouse=True)
+def no_cuda_libraries(monkeypatch):
+    """No test ever reaches the CUDA library installation.
+
+    It is a gigabyte of pip downloads, and whether it is pending depends on
+    the machine the tests run on: a developer with an NVIDIA GPU would
+    otherwise have the setup tests fetch cuDNN. The tests that are about this
+    component patch `applies` themselves — a later patch wins over this one.
+    """
+    monkeypatch.setattr(cudalibs, "applies", lambda: False)
+    cudalibs.invalidate()
+    yield
+    cudalibs.invalidate()
 
 
 @pytest.fixture()

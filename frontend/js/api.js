@@ -104,6 +104,7 @@ export const api = {
   runSetup: (includeOptional = true) =>
     request("POST", "/api/system/setup/run", { include_optional: includeOptional }),
   completeSetup: () => request("POST", "/api/system/setup/complete"),
+  installCudaLibs: () => request("POST", "/api/system/cuda-libs"),
   getSettings: () => request("GET", "/api/settings"),
   updateSettings: (settings) => request("PUT", "/api/settings", settings),
   getPaths: () => request("GET", "/api/settings/paths"),

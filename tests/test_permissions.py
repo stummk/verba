@@ -215,6 +215,7 @@ ADMIN_ONLY = [
     ("get", "/api/settings/paths", None),
     ("get", "/api/system/info", None),
     ("post", "/api/system/setup/run", {"include_optional": False}),
+    ("post", "/api/system/cuda-libs", None),
     ("post", "/api/system/shutdown", None),
     ("get", "/api/apikeys", None),
     ("post", "/api/apikeys", {"name": "k"}),

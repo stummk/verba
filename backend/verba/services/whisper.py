@@ -8,9 +8,10 @@
   for that model: a model too large for the VRAM skips the GPU attempt, a model
   too large for everything is refused with a German message instead of letting
   the backend abort the process.
-- If loading on CUDA fails (missing cuBLAS/cuDNN is common on Windows) or the
-  GPU memory runs out, the service falls back to CPU/int8 and reports that via
-  the status monitor.
+- If loading on CUDA fails or the GPU memory runs out, the service falls back
+  to CPU/int8 and reports that via the status monitor. The libraries CUDA
+  needs are installed and made loadable by services/cudalibs.py — the fallback
+  is what happens when they are missing, so installing them lifts it.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ from typing import Any
 from .. import config, db
 from ..core.jobs import JobCancelled
 from ..events import hub
-from . import hardware, transcripts, workspace
+from . import cudalibs, hardware, transcripts, workspace
 from .media import format_clock, probe_duration
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,24 @@ _model: Any = None
 _model_key: tuple[str, str, str, str] | None = None  # name, device, compute, models dir
 _active_device: str = ""
 _cuda_broken = False  # set when CUDA libs or the VRAM turn out unusable at runtime
+_cuda_generation = -1  # the cudalibs installation `_cuda_broken` was decided against
+
+
+def _cuda_available() -> bool:
+    """Whether the GPU is still worth trying.
+
+    A CUDA failure is remembered for the rest of the process: retrying a
+    missing cuDNN on every single file would cost a failed load per file. That
+    memory is only valid as long as the CUDA libraries are the same ones,
+    though — installing them (services/cudalibs.py) is exactly the fix, and it
+    must not need a restart to take effect.
+    """
+    global _cuda_broken, _cuda_generation
+    generation = cudalibs.generation()
+    if generation != _cuda_generation:
+        _cuda_generation = generation
+        _cuda_broken = False
+    return not _cuda_broken
 
 
 def _is_cuda_lib_error(exc: Exception) -> bool:
@@ -214,7 +233,15 @@ def get_model(model_override: str = "") -> Any:
     global _model, _model_key, _active_device
     settings = config.get_settings().whisper
     model_name = model_override or settings.model
-    device = "cpu" if _cuda_broken and settings.device in ("auto", "cuda") else settings.device
+    device = settings.device
+    if device in ("auto", "cuda"):
+        if _cuda_available():
+            # before faster_whisper is imported: CTranslate2 dlopens cuBLAS and
+            # cuDNN by soname, and the pip-installed ones lie where no loader
+            # looks
+            cudalibs.preload()
+        else:
+            device = "cpu"
     compute = settings.compute_type
     if device == "cpu" and compute == "auto":
         compute = "int8"

@@ -758,6 +758,24 @@ model field.
 - If the RAM is full, the job ends with a message naming the free and the
   required gigabytes.
 
+**Actually using the GPU (CUDA).** A detected graphics card is not enough on
+its own: Whisper computes through CTranslate2, which needs two NVIDIA
+libraries that no Python package brings along — cuBLAS 12 and cuDNN 9. Without
+them the transcription runs on the CPU even though the settings say GPU.
+
+- Verba checks this and shows the result under **Settings → System** in the
+  row **GPU acceleration (CUDA)**; the setup wizard lists the same row among
+  its components.
+- If the libraries are missing, the wizard installs them; on an existing
+  installation the button next to that row is enough. The download is about
+  1 GB, is only offered on machines with an NVIDIA card whose transcription is
+  not set to "CPU", and takes effect without a restart.
+- If the card itself does not answer — the row says so — no download helps,
+  the driver is what is missing. In a container (Proxmox LXC, Docker) it is
+  usually the devices `/dev/nvidia-uvm` and `/dev/nvidia-uvm-tools` that are
+  not passed through; `nvidia-smi` still lists the card. The driver version
+  inside the container also has to match the host's.
+
 **A model directory of your own** (e.g. an existing collection under
 `M:\Modelle\whisper`) is entered under **Settings → Transcription** and takes
 effect immediately, without a restart: Verba reads the directory from disk on
