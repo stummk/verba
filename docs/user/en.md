@@ -126,6 +126,44 @@ Installing packages needs the rights for it: the service runs as root or may
 use `sudo` without a password. Without that the button stays inactive and the
 line below names the reason.
 
+**Enabling the button (for the system administrator).** With the shipped unit
+`deploy/verba.service` it is inactive out of the box, and deliberately so.
+Having *installed* Verba as root does not mean it *runs* as root:
+`deploy/install.sh` creates the system user `verba`, and three of the unit's
+lines deny the service root in every direction — `User=verba`,
+`NoNewPrivileges=true` (`sudo` is setuid, so this switches it off) and
+`ProtectSystem=full` (`/usr` and `/etc` are read-only, so dpkg would not get
+through even as root).
+
+Two steps on the server enable it. First, `sudo` without a password for the
+service user, narrowly limited to `apt-get` and to `true` — Verba probes the
+rights with `sudo -n true` without doing anything, so that has to be allowed as
+well:
+
+```bash
+printf 'verba ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/bin/true, /bin/true\n' \
+    | sudo tee /etc/sudoers.d/verba-apt >/dev/null
+sudo chmod 440 /etc/sudoers.d/verba-apt
+sudo visudo -c
+```
+
+Second, relax the two hardening lines that stand in apt's way, via `sudo
+systemctl edit verba`:
+
+```
+[Service]
+NoNewPrivileges=false
+ProtectSystem=no
+```
+
+After `sudo systemctl restart verba` the button is active; the page asks for
+the state on every visit. If it stays inactive, `sudo -u verba sudo -n true`
+(exit code 0?) says whether the sudoers rule applies, and `systemctl show verba
+-p NoNewPrivileges -p ProtectSystem` whether the override arrived.
+
+Leaving the button inactive is a valid choice: `apt upgrade` over SSH does the
+same thing, and Verba then needs no more rights than it otherwise has.
+
 ## First-run setup {#first-run}
 
 The first-run setup walks through everything Verba needs, in six steps:

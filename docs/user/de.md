@@ -131,6 +131,44 @@ Installieren darf nur, wer darf: der Dienst läuft als root oder darf `sudo`
 ohne Passwort benutzen. Fehlt das, bleibt der Knopf inaktiv und die Zeile
 darunter nennt den Grund.
 
+**Den Knopf freischalten (für den Systemadministrator).** Mit der
+mitgelieferten Unit `deploy/verba.service` ist er ab Werk inaktiv, und das mit
+Absicht. Dass Verba *als root installiert* wurde, heißt nicht, dass es als root
+*läuft*: `deploy/install.sh` legt den Systembenutzer `verba` an, und drei Zeilen
+der Unit verwehren dem Dienst root in jede Richtung — `User=verba`,
+`NoNewPrivileges=true` (`sudo` ist setuid, das schaltet es ab) und
+`ProtectSystem=full` (`/usr` und `/etc` sind schreibgeschützt, dpkg käme also
+auch als root nicht durch).
+
+Zwei Schritte auf dem Server schalten ihn frei. Erstens `sudo` ohne Passwort für
+den Dienstbenutzer, eng begrenzt auf `apt-get` und auf `true` — mit `sudo -n
+true` prüft Verba die Rechte, ohne etwas zu tun, deshalb muss auch das erlaubt
+sein:
+
+```bash
+printf 'verba ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/bin/true, /bin/true\n' \
+    | sudo tee /etc/sudoers.d/verba-apt >/dev/null
+sudo chmod 440 /etc/sudoers.d/verba-apt
+sudo visudo -c
+```
+
+Zweitens die beiden Härtungszeilen lockern, die apt im Weg stehen — über `sudo
+systemctl edit verba`:
+
+```
+[Service]
+NoNewPrivileges=false
+ProtectSystem=no
+```
+
+Nach `sudo systemctl restart verba` ist der Knopf aktiv; die Seite fragt den
+Zustand bei jedem Aufruf neu ab. Bleibt er inaktiv, sagt `sudo -u verba sudo -n
+true` (Rückgabewert 0?), ob die sudoers-Regel greift, und `systemctl show verba
+-p NoNewPrivileges -p ProtectSystem`, ob das Override angekommen ist.
+
+Den Knopf inaktiv zu lassen ist eine gültige Entscheidung: `apt upgrade` über
+SSH tut dasselbe, und Verba braucht dafür nicht mehr Rechte als sonst.
+
 ## Ersteinrichtung {#first-run}
 
 Die Ersteinrichtung führt in sechs Schritten durch alles, was Verba braucht:

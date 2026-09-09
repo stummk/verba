@@ -126,6 +126,45 @@ Verba — это **PWA**: браузер может «установить» п�
 `sudo` без пароля. Без этого кнопка остаётся неактивной, а строка под ней
 называет причину.
 
+**Как включить кнопку (для системного администратора).** С поставляемым
+unit-файлом `deploy/verba.service` она изначально неактивна, и это сделано
+намеренно. То, что Verba *установлена* под root, не означает, что она под root
+*работает*: `deploy/install.sh` создаёт системного пользователя `verba`, и три
+строки unit-файла закрывают службе путь к root со всех сторон — `User=verba`,
+`NoNewPrivileges=true` (`sudo` — setuid-программа, и эта строка её отключает) и
+`ProtectSystem=full` (`/usr` и `/etc` доступны только для чтения, поэтому dpkg
+не справился бы и под root).
+
+Включают её два шага на сервере. Первый — `sudo` без пароля для служебного
+пользователя, строго ограниченный `apt-get` и `true`: права Verba проверяет
+командой `sudo -n true`, ничего при этом не выполняя, поэтому её тоже нужно
+разрешить:
+
+```bash
+printf 'verba ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/bin/true, /bin/true\n' \
+    | sudo tee /etc/sudoers.d/verba-apt >/dev/null
+sudo chmod 440 /etc/sudoers.d/verba-apt
+sudo visudo -c
+```
+
+Второй — ослабить две строки защиты, мешающие apt, через `sudo systemctl edit
+verba`:
+
+```
+[Service]
+NoNewPrivileges=false
+ProtectSystem=no
+```
+
+После `sudo systemctl restart verba` кнопка активна; страница запрашивает
+состояние при каждом открытии. Если она осталась неактивной, `sudo -u verba
+sudo -n true` (код возврата 0?) покажет, действует ли правило sudoers, а
+`systemctl show verba -p NoNewPrivileges -p ProtectSystem` — дошло ли
+переопределение.
+
+Оставить кнопку неактивной — тоже допустимое решение: `apt upgrade` по SSH
+делает то же самое, и Verba при этом не нужно больше прав, чем обычно.
+
 ## Первичная настройка {#first-run}
 
 Первичная настройка проходит в шесть шагов и охватывает всё, что нужно Verba:

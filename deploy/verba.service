@@ -47,5 +47,31 @@ PrivateTmp=true
 ProtectSystem=full
 ReadWritePaths=/opt/verba
 
+# Settings -> Updates offers a button that updates the machine's own packages
+# (apt-get update/upgrade). With this unit as it stands it is inactive, and
+# deliberately so: the service runs as "verba", and three of the lines above
+# deny it root in every direction — User=verba, NoNewPrivileges=true (sudo is
+# setuid, so this switches it off) and ProtectSystem=full (/usr and /etc are
+# read-only, so dpkg would not get through even as root). Installing Verba as
+# root does not change any of that.
+#
+# To offer the button, allow the service user apt-get and `true` — Verba probes
+# the rights with `sudo -n true`, so that has to be allowed as well:
+#
+#   printf 'verba ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/bin/true, /bin/true\n' \
+#       | sudo tee /etc/sudoers.d/verba-apt >/dev/null
+#   sudo chmod 440 /etc/sudoers.d/verba-apt
+#   sudo visudo -c
+#
+# and relax the two hardening lines that stand in apt's way, via
+# `sudo systemctl edit verba`:
+#
+#   [Service]
+#   NoNewPrivileges=false
+#   ProtectSystem=no
+#
+# Leaving it inactive is a valid choice: `apt upgrade` over SSH does the same
+# thing, and Verba then needs no more rights than it otherwise has.
+
 [Install]
 WantedBy=multi-user.target
