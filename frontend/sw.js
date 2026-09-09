@@ -1,7 +1,7 @@
 // Service worker: cache the complete app shell, never cache API or WebSocket.
 // The shell list is checked by tests/test_pwa.py — new frontend files must be
 // added here so the app keeps working offline.
-const CACHE = "verba-shell-v6";
+const CACHE = "verba-shell-v7";
 const SHELL = [
   "/",
   "/styles.css",
@@ -18,6 +18,7 @@ const SHELL = [
   "/js/export-dialog.js",
   "/js/file-steps.js",
   "/js/hardware.js",
+  "/js/help.js",
   "/js/i18n.js",
   "/js/icons.js",
   "/js/jobs.js",

@@ -7,6 +7,7 @@ import { el, esc, formatDuration, html, raw, toast } from "../dom.js";
 import { closeExportDialog, openExportDialog } from "../export-dialog.js";
 import { stepBadges } from "../file-steps.js";
 import { iconButton, iconSvg } from "../icons.js";
+import { labelHelp } from "../help.js";
 import { t } from "../i18n.js";
 import { jobCardHost, jobLine, jobStepLabel } from "../jobs.js";
 import { languageChip, setChipLanguage } from "../language-chip.js";
@@ -794,10 +795,12 @@ export async function render(view, _status, params) {
         <div class="modal-backdrop">
           <div class="modal">
             <div class="modal-head">
-              <strong>${t("ai.title")}</strong>
+              ${raw(labelHelp(
+                `<strong>${t("ai.title")}</strong>`,
+                fileId ? t("ai.introFile") : t("ai.introProject"), "inline-row"
+              ))}
               <button class="text-btn small-btn" id="modal-close">${t("common.close")}</button>
             </div>
-            <p class="small muted">${fileId ? t("ai.introFile") : t("ai.introProject")}</p>
             <label class="checkline">
               <input type="checkbox" id="ai-cleanup" checked> ${t("ai.cleanup")}
             </label>

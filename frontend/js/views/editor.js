@@ -7,9 +7,10 @@ import WaveSurfer from "/vendor/wavesurfer.esm.js";
 import RegionsPlugin from "/vendor/wavesurfer.regions.esm.js";
 import { api } from "../api.js";
 import { confirmAction, confirmDelete } from "../confirm.js";
-import { el, formatDuration, html, toast } from "../dom.js";
+import { el, formatDuration, html, raw, toast } from "../dom.js";
 import { closeExportDialog, openExportDialog } from "../export-dialog.js";
 import { iconButton, iconSvg, setIcon } from "../icons.js";
+import { labelHelp } from "../help.js";
 import { currentLanguage, t } from "../i18n.js";
 import { languageChip, setChipLanguage } from "../language-chip.js";
 import { languageName } from "../languages.js";
@@ -130,7 +131,9 @@ export async function render(view, _status, params) {
     </div>
 
     <div class="card file-header-editor">
-      <h2>${t("editor.pdfHeader")}</h2>
+      ${raw(labelHelp(
+        `<h2>${t("editor.pdfHeader")}</h2>`, t("editor.pdfHeaderHint"), "inline-row"
+      ))}
       <div class="form-grid header-fields">
         <label>${t("editor.pdfHeaderLeft")}
           <input id="header-left" value="${file.header_left ?? ""}" maxlength="500">
@@ -142,7 +145,6 @@ export async function render(view, _status, params) {
           <input id="header-right" value="${file.header_right ?? ""}" maxlength="500">
         </label>
       </div>
-      <p class="hint">${t("editor.pdfHeaderHint")}</p>
     </div>
 
     <div class="card timeline-card">

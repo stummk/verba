@@ -145,14 +145,14 @@ def test_the_system_card_offers_the_update_next_to_the_version():
     assert 'id="update-log"' in source and 'id="update-bar"' in source
     assert 'on("update.progress"' in source
     # and the automatic check is a switch, not a fact of life
-    assert 'id="update-auto"' in source
+    assert 'checkLine("update-auto"' in source
     assert 'updates: { check_enabled: el("update-auto").checked }' in source
 
 
 def test_the_type_form_offers_the_page_break_per_section():
     """A layout choice of the type, next to the structure it belongs to."""
     source = (FRONTEND / "js" / "views" / "types.js").read_text(encoding="utf-8")
-    assert 'id="type-keep-sections"' in source
+    assert 'checkLine("type-keep-sections"' in source
     assert 't("types.keepSections")' in source and 't("types.keepSectionsHint")' in source
     # and it is part of what a type saves
     assert "keep_sections: draft.keep_sections" in source
@@ -161,7 +161,7 @@ def test_the_type_form_offers_the_page_break_per_section():
 def test_the_type_form_offers_the_verbatim_switch():
     """Whether the export may restructure the text is a choice of the type."""
     source = (FRONTEND / "js" / "views" / "types.js").read_text(encoding="utf-8")
-    assert 'id="type-verbatim"' in source
+    assert 'checkLine("type-verbatim"' in source
     assert 't("types.verbatim")' in source and 't("types.verbatimHint")' in source
     assert "verbatim: draft.verbatim" in source
     # a verbatim type never reaches the output prompt — the hint has to say so
@@ -172,7 +172,7 @@ def test_the_type_form_offers_the_cleanup_mode_of_its_own():
     """What the aufbereitung does is a second choice, next to the export one:
     a type may have its recording rewritten and still be exported verbatim."""
     source = (FRONTEND / "js" / "views" / "types.js").read_text(encoding="utf-8")
-    assert 'id="type-condense"' in source
+    assert 'checkLine("type-condense"' in source
     assert 't("types.condense")' in source and 't("types.condenseHint")' in source
     assert "condense: draft.condense" in source
     # and the cleanup prompt says which of the two roles it currently has
@@ -194,7 +194,7 @@ def test_only_a_linux_server_sees_the_system_package_button():
     assert 'id="os-log"' in source
     assert 'on("system.upgrade"' in source
     # dist-upgrade and autoremove may remove packages: a switch, and off
-    assert 'id="os-full"' in source
+    assert 'checkLine("os-full"' in source
     assert 'api.startOsUpdate(el("os-full").checked)' in source
     assert 'checked ? t("osUpdate.runFull") : t("osUpdate.run")' in source
 
@@ -309,3 +309,46 @@ def test_the_step_badges_keep_their_place_while_the_stop_button_comes_and_goes()
     # the last block is the one that lays the column out (the first only places it)
     actions = css.rsplit(".file-card-actions {", 1)[1].split("}", 1)[0]
     assert "min-width:" in actions, "the stop button's slot stays reserved"
+
+
+def test_descriptions_hang_on_a_question_mark_instead_of_filling_the_form():
+    """An explanation belongs to its label, not between the fields.
+
+    The texts are unchanged — they moved into the bubble that `js/help.js`
+    opens on hover, focus or a tap, so a settings card shows fields again
+    instead of three screens of prose.
+    """
+    help_js = (FRONTEND / "js" / "help.js").read_text(encoding="utf-8")
+    # the "?" carries its text and names itself for tooltip and screen reader
+    assert 'class="help-btn"' in help_js and "data-help=" in help_js
+    assert 't("common.help")' in help_js
+    assert 'iconSvg("help")' in help_js
+    # one bubble for the whole app, on the body: no card can clip it
+    assert 'className = "help-bubble"' in help_js
+    assert 'setAttribute("role", "tooltip")' in help_js
+    assert "document.body.appendChild(bubble)" in help_js
+    # a finger has no hover, so the tap has to open it as well
+    assert '"pointerover"' in help_js and '"click"' in help_js and '"focusin"' in help_js
+
+    styles = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    assert ".help-btn" in styles and ".help-bubble" in styles and ".label-row" in styles
+
+    # the descriptions the screens complained about are gone from the markup
+    for view, keys in {
+        "settings.js": (
+            "settings.audioBackupHint",
+            "settings.embeddingModelHint",
+            "settings.embeddingsDirHint",
+            "settings.dataDirHint",
+        ),
+        "types.js": (
+            "types.structureHint",
+            "types.verbatimHint",
+            "types.condenseHint",
+            "types.keepSectionsHint",
+        ),
+    }.items():
+        source = (FRONTEND / "js" / "views" / view).read_text(encoding="utf-8")
+        for key in keys:
+            assert f'<p class="hint">${{t("{key}")}}</p>' not in source, key
+            assert f't("{key}")' in source, key

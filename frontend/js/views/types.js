@@ -3,8 +3,9 @@
 
 import { api } from "../api.js";
 import { confirmDelete } from "../confirm.js";
-import { el, html, toast } from "../dom.js";
+import { el, html, raw, toast } from "../dom.js";
 import { iconButton } from "../icons.js";
+import { checkLine, fieldLabel, labelHelp } from "../help.js";
 import { t } from "../i18n.js";
 
 let fabHandler = null;
@@ -31,8 +32,7 @@ export async function render(view) {
   defaults = await api.typeDefaults().catch(() => defaults);
 
   view.replaceChildren(html`
-    <h1>${t("types.title")}</h1>
-    <p class="muted small">${t("types.intro")}</p>
+    ${raw(labelHelp(`<h1>${t("types.title")}</h1>`, t("types.intro"), "title-row"))}
     <div class="types-layout" id="types-layout">
       <div class="card types-list-pane">
         <div id="types-list"></div>
@@ -131,21 +131,11 @@ function renderDetail() {
     </div>
     <label for="type-name">${t("types.name")}</label>
     <input id="type-name" maxlength="100" autocomplete="off">
-    <label for="type-structure">${t("types.structure")}</label>
+    ${raw(fieldLabel("type-structure", t("types.structure"), t("types.structureHint")))}
     <select id="type-structure"></select>
-    <p class="hint">${t("types.structureHint")}</p>
-    <label class="checkline">
-      <input type="checkbox" id="type-verbatim"> ${t("types.verbatim")}
-    </label>
-    <p class="hint">${t("types.verbatimHint")}</p>
-    <label class="checkline">
-      <input type="checkbox" id="type-condense"> ${t("types.condense")}
-    </label>
-    <p class="hint">${t("types.condenseHint")}</p>
-    <label class="checkline">
-      <input type="checkbox" id="type-keep-sections"> ${t("types.keepSections")}
-    </label>
-    <p class="hint">${t("types.keepSectionsHint")}</p>
+    ${raw(checkLine("type-verbatim", t("types.verbatim"), t("types.verbatimHint")))}
+    ${raw(checkLine("type-condense", t("types.condense"), t("types.condenseHint")))}
+    ${raw(checkLine("type-keep-sections", t("types.keepSections"), t("types.keepSectionsHint")))}
     <label for="type-prompt-kind">${t("types.promptKind")}</label>
     <select id="type-prompt-kind">
       <option value="system_prompt">${t("types.promptCleanup")}</option>

@@ -15,6 +15,7 @@
   "common.cancel": "Cancel",
   "common.delete": "Delete",
   "common.close": "Close",
+  "common.help": "Show explanation",
   "confirm.deleteTitle": "Really delete?",
   "common.retry": "Try again",
   "picker.language": "Choose a language",

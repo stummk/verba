@@ -5,8 +5,9 @@
 
 import { marked } from "/vendor/marked.esm.js";
 import { api } from "../api.js";
-import { el, html, toast } from "../dom.js";
+import { el, html, raw, toast } from "../dom.js";
 import { iconSvg } from "../icons.js";
+import { labelHelp } from "../help.js";
 import { currentLanguage, t } from "../i18n.js";
 import { renderMarkdown } from "../markdown.js";
 
@@ -45,8 +46,7 @@ export async function render(view) {
   view.replaceChildren(html`
     <p><a href="#/settings" class="muted small">${t("docs.back")}</a></p>
     <div class="card docs-ask" id="docs-ask" hidden>
-      <h2>${t("docs.askTitle")}</h2>
-      <p class="muted small">${t("docs.askIntro")}</p>
+      ${raw(labelHelp(`<h2>${t("docs.askTitle")}</h2>`, t("docs.askIntro"), "head-row"))}
       <textarea id="docs-question" rows="2" maxlength="1000"
                 placeholder="${t("docs.askPlaceholder")}"></textarea>
       <div class="actions">

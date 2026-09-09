@@ -9,9 +9,10 @@
 // so instead of quietly doing nothing.
 
 import { api } from "../api.js";
-import { el, html, toast } from "../dom.js";
+import { el, html, raw, toast } from "../dom.js";
 import { fillEmbeddingSelect } from "../embeddings.js";
 import { applyFitHint, endpointEstimate, isLocalEndpoint } from "../hardware.js";
+import { fieldLabel, helpText } from "../help.js";
 import { t } from "../i18n.js";
 import { mountLlamaInstaller } from "../llamainstall.js";
 import { fillLanguageSelect } from "../languages.js";
@@ -291,27 +292,29 @@ function renderWorkspaceStep(body) {
       <p class="muted">${t("setup.dataDirHint")}</p>
       <div class="form-grid">
         <div>
-          <label for="wizard-data-dir">${t("settings.dataDir")}</label>
+          ${raw(fieldLabel(
+            "wizard-data-dir", t("settings.dataDir"),
+            helpText(t("settings.dataDirHint"), t("settings.dataDirRestartHint"))
+          ))}
           <input id="wizard-data-dir" value="${settings.general.data_dir}"
                  placeholder="${paths ? paths.data_default : ""}">
           <p class="hint">${t("settings.dataDirCurrent", {
             path: paths ? paths.data_dir : "…",
           })}</p>
-          <p class="hint">${t("settings.dataDirHint")}</p>
-          <p class="hint">${t("settings.dataDirRestartHint")}</p>
           <p class="warning-box" id="wizard-data-dir-pending" hidden></p>
         </div>
         <div>
-          <label for="wizard-workspaces">${t("settings.workspacesDir")}</label>
+          ${raw(fieldLabel(
+            "wizard-workspaces", t("settings.workspacesDir"),
+            helpText(t("setup.workspaceIntro"), t("setup.workspaceContents"))
+          ))}
           <input id="wizard-workspaces" value="${settings.general.workspaces_dir}"
                  placeholder="${paths ? paths.workspaces_default : ""}">
-          <p class="hint">${t("setup.workspaceIntro")}</p>
           <p class="hint">${t("setup.workspaceHint", {
             path: paths ? paths.workspaces_dir : "…",
           })}</p>
         </div>
       </div>
-      <p class="hint">${t("setup.workspaceContents")}</p>
     </div>
   `);
   showPendingMove();
@@ -337,17 +340,15 @@ async function renderWhisperStep(body) {
       <p class="muted">${t("setup.whisperIntro")}</p>
       <div class="form-grid">
         <div>
-          <label for="wizard-model">${t("settings.model")}</label>
+          ${raw(fieldLabel("wizard-model", t("settings.model"), t("settings.modelHint")))}
           <input id="wizard-model" value="${settings.whisper.model}" list="wizard-model-list">
           <datalist id="wizard-model-list"></datalist>
-          <p class="hint">${t("settings.modelHint")}</p>
           <p class="small" id="wizard-model-fit"></p>
         </div>
         <div>
-          <label for="wizard-models-dir">${t("settings.modelsDir")}</label>
+          ${raw(fieldLabel("wizard-models-dir", t("settings.modelsDir"), t("setup.modelsDirHint")))}
           <input id="wizard-models-dir" value="${settings.whisper.models_dir}"
                  placeholder="${paths ? paths.models_dir : ""}">
-          <p class="hint">${t("setup.modelsDirHint")}</p>
         </div>
         <div>
           <label for="wizard-device">${t("settings.device")}</label>
@@ -420,10 +421,11 @@ async function renderLlmStep(body) {
         <div id="wizard-llm-binary"></div>
         <div class="form-grid">
           <div>
-            <label for="wizard-llm-dir">${t("settings.llmModelsDir")}</label>
+            ${raw(fieldLabel(
+              "wizard-llm-dir", t("settings.llmModelsDir"), t("settings.llmModelsDirHint")
+            ))}
             <input id="wizard-llm-dir" value="${settings.llm.models_dir ?? ""}"
                    placeholder="${paths ? paths.llm_models_default : ""}">
-            <p class="hint">${t("settings.llmModelsDirHint")}</p>
           </div>
         </div>
       </div>
@@ -533,10 +535,11 @@ async function renderSearchStep(body) {
           <p class="hint" id="wizard-embedding-hint"></p>
         </div>
         <div>
-          <label for="wizard-embeddings-dir">${t("settings.embeddingsDir")}</label>
+          ${raw(fieldLabel(
+            "wizard-embeddings-dir", t("settings.embeddingsDir"), t("settings.embeddingsDirHint")
+          ))}
           <input id="wizard-embeddings-dir" value="${settings.search?.embeddings_dir ?? ""}"
                  placeholder="${paths ? paths.embeddings_default : ""}">
-          <p class="hint">${t("settings.embeddingsDirHint")}</p>
         </div>
       </div>
       <p class="hint" id="wizard-search-note"></p>
@@ -591,11 +594,12 @@ async function renderAccessStep(body) {
           <input id="wizard-admin-user" autocomplete="username">
         </div>
         <div>
-          <label for="wizard-admin-password">${t("login.newPassword")}</label>
+          ${raw(fieldLabel(
+            "wizard-admin-password", t("login.newPassword"), t("setup.accessHint")
+          ))}
           <input id="wizard-admin-password" type="password" autocomplete="new-password">
         </div>
       </div>
-      <p class="hint" ${reenable ? "hidden" : ""}>${t("setup.accessHint")}</p>
       <div class="actions">
         <button type="button" class="btn primary" id="wizard-admin-create">
           ${reenable ? t("users.reenable") : t("users.enable")}

@@ -1584,6 +1584,59 @@ dialog textarea {
   filter: brightness(1.08);
 }
 
+/* ── explanations behind a "?" ──────────────────────────── */
+/* A description belongs to its label, not between the fields: the row keeps
+   the two together and the bubble (js/help.js) opens on hover, focus or tap. */
+.label-row {
+  display: flex;
+  align-items: center;
+  gap: .15rem;
+}
+/* the row takes over the spacing its child brought with it */
+.label-row > * { margin: 0; }
+.label-row.field-row { margin: .9rem 0 .3rem; }
+.label-row.check-row { margin: 0; }
+.label-row.head-row { margin: 0 0 .6rem; }
+.label-row.head-row.sub { margin: 1.25rem 0 .6rem; }
+.label-row.title-row { margin: .75rem 0 1rem; }
+/* an action explains itself next to the button, not under it */
+.label-row.inline-row { margin: 0; }
+.help-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--md-on-surface-variant);
+  box-shadow: none;
+  opacity: .7;
+}
+.help-btn:hover, .help-btn:focus-visible {
+  background: var(--md-surface-container-high);
+  box-shadow: none;
+  filter: none;
+  opacity: 1;
+}
+.help-btn svg { display: block; width: 1.05rem; height: 1.05rem; }
+.help-bubble {
+  position: fixed;
+  z-index: 90;
+  max-width: min(24rem, calc(100vw - 1.2rem));
+  padding: .6rem .8rem;
+  border-radius: var(--shape-sm);
+  background: var(--md-inverse-surface);
+  color: var(--md-inverse-on-surface);
+  font-size: .8rem;
+  line-height: 1.5;
+  box-shadow: var(--elev-3);
+  /* two explanations about one field arrive as one text, a blank line apart */
+  white-space: pre-line;
+}
+
 /* ── first-run wizard: six steps, each skippable ──────────────────── */
 .wizard-steps {
   display: flex;

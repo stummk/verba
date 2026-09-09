@@ -1098,6 +1098,13 @@ the selected section. **Save** appears only in the sections that hold
 settings, and only becomes clickable once something has changed; a short
 message confirms the save.
 
+Explanations no longer sit under the fields: a **?** follows the label.
+Hover it, tap it or reach it with the keyboard to see the text; a click
+elsewhere or Esc hides it again. It works the same everywhere in Verba —
+the transcript types, the editor and the dialogs included. What stays
+visible is only what changes: the current path, a status, the verdict for
+this machine.
+
 - **Interface:** language (German, English, Russian), documentation — the
   guide appears there as sections with an icon, each one collapsible. With a
   language model configured, **Ask about the guide** sits above it: type a

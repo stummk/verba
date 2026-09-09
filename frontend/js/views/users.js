@@ -6,8 +6,9 @@
 
 import { api } from "../api.js";
 import { confirmDelete } from "../confirm.js";
-import { el, esc, html, toast } from "../dom.js";
+import { el, esc, html, raw, toast } from "../dom.js";
 import { iconButton } from "../icons.js";
+import { fieldLabel, labelHelp } from "../help.js";
 import { t } from "../i18n.js";
 
 let state = { enabled: false, me: null, users: [], defaultVisibility: "private" };
@@ -31,8 +32,9 @@ export async function render(view) {
     <h1>${t("users.title")}</h1>
     <div class="card" id="users-access"></div>
     <div class="card" id="users-list-card" hidden>
-      <h2>${t("users.accounts")}</h2>
-      <p class="muted small">${t("users.accountsIntro")}</p>
+      ${raw(labelHelp(
+        `<h2>${t("users.accounts")}</h2>`, t("users.accountsIntro"), "head-row"
+      ))}
       <div id="users-list"></div>
       <div class="actions">
         <button type="button" class="btn primary" id="user-new">${t("users.create")}</button>
@@ -56,13 +58,14 @@ function renderAccess() {
       <p class="badge-ok">${t("users.accessOn")}</p>
       <div class="form-grid">
         <div>
-          <label for="default-visibility">${t("users.defaultVisibility")}</label>
+          ${raw(fieldLabel(
+            "default-visibility", t("users.defaultVisibility"), t("users.defaultVisibilityHint")
+          ))}
           <select id="default-visibility">
             <option value="private">${t("visibility.private")}</option>
             <option value="shared">${t("visibility.shared")}</option>
             <option value="public">${t("visibility.public")}</option>
           </select>
-          <p class="hint">${t("users.defaultVisibilityHint")}</p>
         </div>
       </div>
       <div class="actions">
@@ -188,18 +191,18 @@ function dialogMarkup(user) {
              ${editing ? "disabled" : "required"}>
       <label for="user-display">${esc(t("users.displayName"))}</label>
       <input id="user-display" value="${esc(user?.display_name ?? "")}">
-      <label for="user-role">${esc(t("users.role"))}</label>
+      ${fieldLabel("user-role", t("users.role"), t("users.roleHint"))}
       <select id="user-role">
         <option value="user">${esc(t("users.roleUser"))}</option>
         <option value="admin">${esc(t("users.roleAdmin"))}</option>
       </select>
-      <p class="hint">${esc(t("users.roleHint"))}</p>
-      <label for="user-password">
-        ${esc(editing ? t("users.newStartPassword") : t("users.startPassword"))}
-      </label>
+      ${fieldLabel(
+        "user-password",
+        editing ? t("users.newStartPassword") : t("users.startPassword"),
+        t("users.startPasswordHint")
+      )}
       <input id="user-password" type="password" autocomplete="new-password"
              ${editing ? "" : "required"}>
-      <p class="hint">${esc(t("users.startPasswordHint"))}</p>
       <p class="error" id="user-error" hidden></p>
       <div class="actions">
         <button type="button" class="text-btn" id="user-cancel">${esc(t("common.cancel"))}</button>

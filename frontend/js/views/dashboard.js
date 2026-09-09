@@ -3,6 +3,7 @@
 import { api } from "../api.js";
 import { dragScroll, el, esc, html, raw, toast } from "../dom.js";
 import { iconButton } from "../icons.js";
+import { fieldLabel } from "../help.js";
 import { t } from "../i18n.js";
 import { isActive } from "../jobs.js";
 import { on } from "../ws.js";
@@ -54,13 +55,14 @@ export async function render(view, systemStatus) {
           ${raw(types.map((type) => `<option value="${type.id}">${esc(type.name)}</option>`).join(""))}
         </select>
         <div id="create-visibility-field" hidden>
-          <label for="project-visibility">${t("visibility.label")}</label>
+          ${raw(fieldLabel(
+            "project-visibility", t("visibility.label"), t("visibility.createHint")
+          ))}
           <select id="project-visibility">
             <option value="private">${t("visibility.private")}</option>
             <option value="shared">${t("visibility.shared")}</option>
             <option value="public">${t("visibility.public")}</option>
           </select>
-          <p class="hint">${t("visibility.createHint")}</p>
         </div>
         <div class="actions">
           <button type="submit">${t("dashboard.create")}</button>
@@ -92,9 +94,8 @@ export async function render(view, systemStatus) {
         </div>
         <p class="hint" id="visibility-hint"></p>
         <div id="visibility-people" hidden>
-          <label for="visibility-users">${t("visibility.people")}</label>
+          ${raw(fieldLabel("visibility-users", t("visibility.people"), t("visibility.peopleHint")))}
           <select id="visibility-users" multiple size="6"></select>
-          <p class="hint">${t("visibility.peopleHint")}</p>
         </div>
         <div class="actions">
           <button type="submit">${t("common.save")}</button>

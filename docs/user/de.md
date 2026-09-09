@@ -1147,6 +1147,13 @@ steht die Bereichsliste als Seitenleiste neben dem gewählten Bereich.
 wird erst anklickbar, sobald sich etwas geändert hat; nach dem Speichern
 bestätigt eine kurze Meldung.
 
+Erklärungen stehen nicht mehr unter den Feldern: Hinter der Beschriftung
+sitzt ein **?**. Mit der Maus darüberfahren, antippen oder mit der Tastatur
+anspringen zeigt den Text; ein Klick daneben oder Esc blendet ihn wieder aus.
+Das ist überall in Verba so — auch bei den Transkripttypen, im Editor und in
+den Dialogen. Sichtbar bleibt nur, was sich ändert: der aktuelle Pfad, ein
+Status, die Einschätzung für diesen Rechner.
+
 - **Oberfläche:** Sprache (Deutsch, Englisch, Russisch), Dokumentation —
   das Handbuch erscheint dort in Abschnitten mit Symbol, jeder Abschnitt lässt
   sich auf- und zuklappen. Mit konfiguriertem Sprachmodell steht darüber

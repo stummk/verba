@@ -5,7 +5,8 @@
 // end of <body> so it survives neither view's re-render.
 
 import { api } from "./api.js";
-import { el, html, toast } from "./dom.js";
+import { el, html, raw, toast } from "./dom.js";
+import { labelHelp } from "./help.js";
 import { t } from "./i18n.js";
 import { fillLanguageSelect } from "./languages.js";
 
@@ -48,13 +49,14 @@ export function openExportDialog({
     <div class="modal-backdrop">
       <div class="modal">
         <div class="modal-head">
-          <strong>${t("export.title")}</strong>
+          ${raw(labelHelp(
+            `<strong>${t("export.title")}</strong>`, t("export.hint"), "inline-row"
+          ))}
           <button class="text-btn small-btn" id="modal-close">${t("common.close")}</button>
         </div>
         <p class="small muted">${intro}</p>
         <label for="export-language">${t("export.language")}</label>
         <select id="export-language"></select>
-        <p class="hint">${t("export.hint")}</p>
         <div class="actions">
           <button id="export-start">${t("export.start")}</button>
         </div>
