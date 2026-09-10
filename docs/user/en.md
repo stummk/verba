@@ -1140,8 +1140,11 @@ Explanations no longer sit under the fields: a **?** follows the label.
 Hover it, tap it or reach it with the keyboard to see the text; a click
 elsewhere or Esc hides it again. It works the same everywhere in Verba —
 the transcript types, the editor and the dialogs included. What stays
-visible is only what changes: the current path, a status, the verdict for
-this machine.
+visible is only what changes: the current path, the verdict for this
+machine. The state of a row sits behind the **?** next to its name as well —
+whether a new version is waiting, why the GPU libraries are missing, what
+the system update last did. A run in progress stays in sight regardless:
+its progress bar and its log are below the row as before.
 
 - **Interface:** language (German, English, Russian), documentation — the
   guide appears there as sections with an icon, each one collapsible. With a

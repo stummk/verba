@@ -33,6 +33,46 @@ export function helpIcon(text) {
 }
 
 /**
+ * A "?" whose text the view fills in later.
+ *
+ * An explanation is known when the markup is written; what a row has to say
+ * about itself — the state of an update, of the GPU libraries — is not. So
+ * the button is rendered empty and hidden, and `setHelp()` gives it its text
+ * as soon as the backend has answered. Nothing to say means no "?" at all.
+ *
+ * @param {string} id id of the button, for `setHelp()`
+ * @returns {string} the button markup
+ */
+export function helpSlot(id) {
+  return (
+    `<button type="button" class="help-btn" id="${esc(id)}" hidden` +
+    ` aria-label="${esc(t("common.help"))}" aria-expanded="false">` +
+    `${iconSvg("help")}</button>`
+  );
+}
+
+/**
+ * Put a text behind a "?" that was rendered by `helpSlot()`.
+ *
+ * An open bubble is rewritten in place: the text under the pointer must be
+ * the one that is true now, not the one that was true when it opened.
+ *
+ * @param {HTMLElement|null} button the slot, or nothing (the view moved on)
+ * @param {string} text the explanation, plain text — empty hides the "?"
+ */
+export function setHelp(button, text) {
+  if (!button) return;
+  button.dataset.help = text ?? "";
+  button.hidden = !button.dataset.help;
+  if (current !== button) return;
+  if (button.hidden) hide();
+  else {
+    bubble.textContent = button.dataset.help;
+    place(button);
+  }
+}
+
+/**
  * Several explanations about one field — one bubble, a blank line apart.
  *
  * @param {...string} parts the texts, empty ones are dropped

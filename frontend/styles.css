@@ -947,6 +947,9 @@ code { overflow-wrap: anywhere; }
 }
 .model-row:last-child { border-bottom: none; }
 .model-name { font-family: ui-monospace, Consolas, monospace; font-size: .85rem; }
+/* a row's "?" belongs to the name in front of it, so it sits as close to it
+   as it does next to a label — not a whole row gap away */
+.model-row .help-btn { margin-left: -.6rem; }
 
 /* ── modal / bottom sheet ────────────────────────────────────────── */
 .modal-backdrop {

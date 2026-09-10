@@ -5,7 +5,7 @@ import { confirmDelete } from "../confirm.js";
 import { el, html, raw, toast } from "../dom.js";
 import { fillEmbeddingSelect } from "../embeddings.js";
 import { applyFitHint, endpointEstimate, fitBadge, hardwareLine, isLocalEndpoint } from "../hardware.js";
-import { checkLine, fieldLabel, helpText, labelHelp } from "../help.js";
+import { checkLine, fieldLabel, helpSlot, helpText, labelHelp, setHelp } from "../help.js";
 import { iconButton, iconSvg } from "../icons.js";
 import { SUPPORTED_LANGUAGES, currentLanguage, t } from "../i18n.js";
 import { jobCardHost } from "../jobs.js";
@@ -300,6 +300,7 @@ export async function render(view) {
         ${raw(labelHelp(`<h2>${t("settings.system")}</h2>`, t("system.intro"), "head-row"))}
         <div class="model-row" id="update-row">
           <span class="model-name" id="update-current">Verba</span>
+          ${raw(helpSlot("update-help"))}
           <span class="spacer"></span>
           <button type="button" class="icon-btn" id="update-check"
                   title="${t("update.check")}" aria-label="${t("update.check")}"
@@ -308,7 +309,6 @@ export async function render(view) {
                   title="${t("update.upToDate")}" aria-label="${t("update.upToDate")}"
                   >${raw(iconSvg("download"))}</button>
         </div>
-        <p class="hint" id="update-status"></p>
         <div class="setup-log" id="update-notes" hidden></div>
         <div class="progressbar" id="update-bar" hidden><div></div></div>
         <p class="small muted" id="update-log-title" hidden>${t("update.logTitle")}</p>
@@ -317,12 +317,12 @@ export async function render(view) {
         <div id="os-section" hidden>
           <div class="model-row" id="os-row">
             <span class="model-name">${t("osUpdate.title")}</span>
+            ${raw(helpSlot("os-help"))}
             <span class="spacer"></span>
             <button type="button" class="icon-btn" id="os-run" disabled
                     title="${t("osUpdate.run")}" aria-label="${t("osUpdate.run")}"
                     >${raw(iconSvg("upgrade"))}</button>
           </div>
-          <p class="hint" id="os-status"></p>
           ${raw(checkLine("os-full", t("osUpdate.full"), t("osUpdate.fullHint")))}
           <p class="small muted" id="os-log-title" hidden>${t("osUpdate.logTitle")}</p>
           <div class="setup-log" id="os-log" hidden></div>
@@ -330,12 +330,12 @@ export async function render(view) {
         <div id="cuda-section" hidden>
           <div class="model-row" id="cuda-row">
             <span class="model-name">${t("cuda.title")}</span>
+            ${raw(helpSlot("cuda-help"))}
             <span class="spacer"></span>
             <button type="button" class="icon-btn" id="cuda-install" hidden
                     title="${t("cuda.install")}" aria-label="${t("cuda.install")}"
                     >${raw(iconSvg("download"))}</button>
           </div>
-          <p class="hint" id="cuda-status"></p>
           <p class="small muted" id="cuda-log-title" hidden>${t("cuda.logTitle")}</p>
           <div class="setup-log" id="cuda-log" hidden></div>
         </div>
@@ -462,7 +462,7 @@ export async function render(view) {
   el("update-auto").checked = settings.updates?.check_enabled ?? true;
   el("general-audio-backup").checked = settings.general?.audio_backup ?? true;
   el("update-check").onclick = async () => {
-    el("update-status").textContent = t("update.checking");
+    setHelp(el("update-help"), t("update.checking"));
     await refreshUpdate(true);
   };
   el("update-install").onclick = async () => {
@@ -492,7 +492,7 @@ export async function render(view) {
     button.classList.remove("filled");
     // the choice for this run has been sent — it must not look changeable
     el("os-full").disabled = true;
-    el("os-status").textContent = t("osUpdate.running");
+    setHelp(el("os-help"), t("osUpdate.running"));
     try {
       const result = await api.startOsUpdate(el("os-full").checked);
       if (!result.started) {
@@ -511,7 +511,7 @@ export async function render(view) {
   el("cuda-install").onclick = async () => {
     const button = el("cuda-install");
     button.disabled = true;
-    el("cuda-status").textContent = t("cuda.running");
+    setHelp(el("cuda-help"), t("cuda.running"));
     el("cuda-log-title").hidden = false;
     el("cuda-log").hidden = false;
     try {
@@ -1280,7 +1280,7 @@ async function refreshUpdate(refresh = false) {
   try {
     info = await api.updateInfo(refresh);
   } catch (error) {
-    el("update-status").textContent = t("update.checkFailed", { detail: error.message });
+    setHelp(el("update-help"), t("update.checkFailed", { detail: error.message }));
     return;
   }
   if (!el("update-row")) return; // the request outlived the view
@@ -1297,14 +1297,14 @@ async function refreshUpdate(refresh = false) {
   button.setAttribute("aria-label", action);
   button.classList.toggle("filled", !button.disabled);
 
-  const status = el("update-status");
-  if (info.error) status.textContent = t("update.checkFailed", { detail: info.error });
+  let status = "";
+  if (info.error) status = t("update.checkFailed", { detail: info.error });
   // the reason a kind of installation cannot update itself comes from the
   // backend, which words it for the user
-  else if (!info.supported) status.textContent = info.reason;
-  else if (info.available) status.textContent = t("update.availableHint", { version: info.latest });
-  else if (info.checked) status.textContent = t("update.upToDateHint");
-  else status.textContent = "";
+  else if (!info.supported) status = info.reason;
+  else if (info.available) status = t("update.availableHint", { version: info.latest });
+  else if (info.checked) status = t("update.upToDateHint");
+  setHelp(el("update-help"), status);
 
   const notes = el("update-notes");
   notes.hidden = !(info.available && info.notes);
@@ -1354,13 +1354,14 @@ async function refreshOsUpdate() {
   nameOsAction();
 
   const run = info.run ?? {};
-  const status = el("os-status");
-  if (run.running) status.textContent = t("osUpdate.running");
-  else if (run.error) status.textContent = t("osUpdate.failed", { detail: run.error });
-  else if (run.reboot) status.textContent = t("osUpdate.reboot");
-  else if (run.finished_at) status.textContent = t("osUpdate.done");
+  let status;
+  if (run.running) status = t("osUpdate.running");
+  else if (run.error) status = t("osUpdate.failed", { detail: run.error });
+  else if (run.reboot) status = t("osUpdate.reboot");
+  else if (run.finished_at) status = t("osUpdate.done");
   // why the button is off comes from the backend, which words it for the user
-  else status.textContent = info.reason || t("osUpdate.hint");
+  else status = info.reason || t("osUpdate.hint");
+  setHelp(el("os-help"), status);
 
   showOsProgress(run);
 }
@@ -1584,9 +1585,11 @@ function renderCudaSection(state) {
   const button = el("cuda-install");
   button.hidden = !state.installable;
   button.disabled = false;
-  if (state.ok) el("cuda-status").textContent = t("cuda.ready");
-  else if (!state.driver) el("cuda-status").textContent = t("cuda.noDriver");
-  else el("cuda-status").textContent = t("cuda.missing");
+  let status;
+  if (state.ok) status = t("cuda.ready");
+  else if (!state.driver) status = t("cuda.noDriver");
+  else status = t("cuda.missing");
+  setHelp(el("cuda-help"), status);
 }
 
 // Called by the router when another view takes over.

@@ -1191,8 +1191,12 @@ Erklärungen stehen nicht mehr unter den Feldern: Hinter der Beschriftung
 sitzt ein **?**. Mit der Maus darüberfahren, antippen oder mit der Tastatur
 anspringen zeigt den Text; ein Klick daneben oder Esc blendet ihn wieder aus.
 Das ist überall in Verba so — auch bei den Transkripttypen, im Editor und in
-den Dialogen. Sichtbar bleibt nur, was sich ändert: der aktuelle Pfad, ein
-Status, die Einschätzung für diesen Rechner.
+den Dialogen. Sichtbar bleibt nur, was sich ändert: der aktuelle Pfad, die
+Einschätzung für diesen Rechner. Auch der Zustand einer Zeile steht hinter
+dem **?** neben ihrem Namen — ob eine neue Version bereitliegt, warum die
+GPU-Bibliotheken fehlen, was die Systemaktualisierung zuletzt getan hat. Ein
+laufender Vorgang bleibt trotzdem zu sehen: Fortschrittsbalken und Protokoll
+stehen wie bisher unter der Zeile.
 
 - **Oberfläche:** Sprache (Deutsch, Englisch, Russisch), Dokumentation —
   das Handbuch erscheint dort in Abschnitten mit Symbol, jeder Abschnitt lässt
