@@ -1,6 +1,7 @@
 """Frontend consistency: the service worker shell covers every frontend file,
-every i18n key used in JS exists in all three catalogs, and styling never
-uses fixed px units (rem/em/relative only)."""
+every view stops once its navigation was overtaken, every i18n key used in JS
+exists in all three catalogs, and styling never uses fixed px units
+(rem/em/relative only)."""
 
 from __future__ import annotations
 
@@ -30,6 +31,23 @@ def test_service_worker_shell_covers_all_frontend_files():
     stale = shell - expected
     assert not missing, f"Fehlt in sw.js SHELL: {sorted(missing)}"
     assert not stale, f"In sw.js SHELL, aber nicht auf der Platte: {sorted(stale)}"
+
+
+def test_views_stop_when_their_navigation_was_overtaken():
+    """Every view renders asynchronously and writes into the one #view element
+    itself, so the router cannot keep an overtaken render from painting over
+    the view that replaced it — the view has to stop by itself: take
+    viewGuard() (frontend/js/navigation.js) before the first await and ask it
+    afterwards."""
+    for file in sorted((FRONTEND / "js" / "views").glob("*.js")):
+        source = file.read_text(encoding="utf-8")
+        if "export async function render" not in source:
+            continue  # a view without awaits cannot be overtaken
+        match = re.search(r"const (\w+) = viewGuard\(\);", source)
+        assert match, f"{file.name}: render() nimmt kein viewGuard()"
+        assert f"!{match.group(1)}()" in source, (
+            f"{file.name}: viewGuard() genommen, aber nie geprüft"
+        )
 
 
 def test_service_worker_never_caches_api_paths():

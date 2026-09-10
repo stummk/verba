@@ -17,6 +17,7 @@ import { t } from "../i18n.js";
 import { mountLlamaInstaller } from "../llamainstall.js";
 import { fillLanguageSelect } from "../languages.js";
 import { on } from "../ws.js";
+import { viewGuard } from "../navigation.js";
 
 const STEPS = ["install", "workspace", "whisper", "llm", "search", "access"];
 
@@ -28,11 +29,13 @@ let settings = null;
 let paths = null;
 
 export async function render(view) {
+  const stillCurrent = viewGuard();
   stepIndex = 0; // entering the wizard always starts at the beginning
   installRunning = false; // a running install is picked up from the status below
   const status = await api.systemStatus();
   settings = await api.getSettings();
   paths = await api.getPaths().catch(() => null);
+  if (!stillCurrent()) return; // the next view already owns the page
 
   view.replaceChildren(html`
     <h1>${t("setup.title")}</h1>

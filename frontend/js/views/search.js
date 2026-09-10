@@ -11,6 +11,7 @@ import { el, esc, formatDuration, html, raw, toast } from "../dom.js";
 import { t } from "../i18n.js";
 import { fillLanguageSelect } from "../languages.js";
 import { renderMarkdown } from "../markdown.js";
+import { viewGuard } from "../navigation.js";
 
 // An excerpt is 1–3 lines: enough context around a match to recognise it,
 // short enough that a file with many hits still fits on one screen.
@@ -19,7 +20,9 @@ const SNIPPET_CONTEXT_CHARS = 55;
 const SNIPPET_MAX_WINDOWS = 3;
 
 export async function render(view) {
+  const stillCurrent = viewGuard();
   const status = await api.searchStatus().catch(() => null);
+  if (!stillCurrent()) return; // the next view already owns the page
 
   if (!status?.available) {
     view.replaceChildren(html`
@@ -37,6 +40,7 @@ export async function render(view) {
     api.listProjects().catch(() => []),
     api.listTypes().catch(() => []),
   ]);
+  if (!stillCurrent()) return;
 
   view.replaceChildren(html`
     <h1>${t("search.title")}</h1>

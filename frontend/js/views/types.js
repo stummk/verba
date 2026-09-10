@@ -7,6 +7,7 @@ import { el, html, raw, toast } from "../dom.js";
 import { iconButton } from "../icons.js";
 import { checkLine, fieldLabel, labelHelp } from "../help.js";
 import { t } from "../i18n.js";
+import { viewGuard } from "../navigation.js";
 
 let fabHandler = null;
 let types = [];
@@ -28,8 +29,12 @@ let draft = {
 let promptKind = "system_prompt";
 
 export async function render(view) {
-  types = await api.listTypes();
-  defaults = await api.typeDefaults().catch(() => defaults);
+  const stillCurrent = viewGuard();
+  const list = await api.listTypes();
+  const typeDefaults = await api.typeDefaults().catch(() => defaults);
+  if (!stillCurrent()) return; // the next view already owns the page
+  types = list;
+  defaults = typeDefaults;
 
   view.replaceChildren(html`
     ${raw(labelHelp(`<h1>${t("types.title")}</h1>`, t("types.intro"), "title-row"))}

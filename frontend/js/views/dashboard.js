@@ -6,6 +6,7 @@ import { iconButton } from "../icons.js";
 import { fieldLabel } from "../help.js";
 import { t } from "../i18n.js";
 import { isActive } from "../jobs.js";
+import { viewGuard } from "../navigation.js";
 import { on } from "../ws.js";
 
 let fabHandler = null;
@@ -22,17 +23,20 @@ let access = { enabled: false, user: null, directory: [] };
 let syncVisibilityDialog = () => {};
 
 export async function render(view, systemStatus) {
+  const stillCurrent = viewGuard();
   const [projects, types, jobs, authState] = await Promise.all([
     api.listProjects(),
     api.listTypes(),
     api.listJobs(true).catch(() => []),
     api.authState().catch(() => ({ enabled: false, user: null })),
   ]);
+  const directory = authState.enabled ? await api.userDirectory().catch(() => []) : [];
+  if (!stillCurrent()) return; // the next view already owns the page
   access = {
     enabled: authState.enabled,
     user: authState.user,
     defaultVisibility: authState.default_visibility ?? "private",
-    directory: authState.enabled ? await api.userDirectory().catch(() => []) : [],
+    directory,
   };
   const ready = systemStatus?.ready ?? true;
   const activeJobs = new Map(jobs.filter(isActive).map((job) => [job.id, job]));

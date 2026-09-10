@@ -11,6 +11,7 @@ import { SUPPORTED_LANGUAGES, currentLanguage, t } from "../i18n.js";
 import { jobCardHost } from "../jobs.js";
 import { fillLanguageSelect } from "../languages.js";
 import { mountLlamaInstaller } from "../llamainstall.js";
+import { viewGuard } from "../navigation.js";
 import { on } from "../ws.js";
 
 let unsubscribe = null;
@@ -36,7 +37,9 @@ export async function render(view) {
     sessionStorage.removeItem(SAVED_FLAG);
     toast(t("settings.saved"));
   }
+  const stillCurrent = viewGuard();
   let settings = await api.getSettings();
+  if (!stillCurrent()) return; // the next view already owns the page
   // A normal user gets nothing to configure beyond their own account: the
   // reduced payload the backend sends has no whisper/paths/keys sections at
   // all, so the administrative form below could not even be built from it.
@@ -728,6 +731,7 @@ export async function render(view) {
   for (const section of sections) {
     if (section.status === "rejected") console.error("settings section failed:", section.reason);
   }
+  if (!stillCurrent()) return;
   // the loaders filled selects — that is the baseline, unless the user was
   // quicker than they were
   if (!touched) markPristine();

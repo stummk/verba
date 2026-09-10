@@ -9,6 +9,7 @@ import { el, html, raw, toast } from "../dom.js";
 import { iconSvg } from "../icons.js";
 import { labelHelp } from "../help.js";
 import { currentLanguage, t } from "../i18n.js";
+import { viewGuard } from "../navigation.js";
 import { renderMarkdown } from "../markdown.js";
 
 // The "{#slug}" marker on every "## " heading in docs/user/*.md is the same in
@@ -33,13 +34,16 @@ const SECTION_ICONS = {
 };
 
 export async function render(view) {
+  const stillCurrent = viewGuard();
   let docs;
   try {
     docs = await api.getDocs(currentLanguage());
   } catch (error) {
+    if (!stillCurrent()) return;
     view.replaceChildren(html`<div class="card">${t("docs.missing")} (${error.message})</div>`);
     return;
   }
+  if (!stillCurrent()) return; // the next view already owns the page
 
   const { intro, sections } = splitSections(docs.content);
 

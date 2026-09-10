@@ -16,6 +16,7 @@ import { languageChip, setChipLanguage } from "../language-chip.js";
 import { languageName } from "../languages.js";
 import * as tl from "../timeline.js";
 import { on } from "../ws.js";
+import { viewGuard } from "../navigation.js";
 
 const AUTOSAVE_DELAY = 700;
 const SELECTION_COLOR = "rgba(80, 120, 255, 0.18)";
@@ -85,6 +86,7 @@ function savePendingCuts(fileId, keeps, duration) {
 }
 
 export async function render(view, _status, params) {
+  const stillCurrent = viewGuard();
   const fileId = Number(params[0]);
   // deep link from search results: #/editor/<fileId>/<seconds> jumps and plays
   const startAt = params[1] !== undefined ? Number(params[1]) : null;
@@ -105,9 +107,11 @@ export async function render(view, _status, params) {
       api.getProject(data.file.project_id).catch(() => null),
     ]);
   } catch (error) {
+    if (!stillCurrent()) return;
     view.replaceChildren(html`<div class="card">${error.message}</div>`);
     return;
   }
+  if (!stillCurrent()) return; // the next view already owns the page
   const file = data.file;
   // a dialogue layout builds its PDF from the segments (it needs the speakers),
   // every other layout prefers the cleaned text — the hint below says which

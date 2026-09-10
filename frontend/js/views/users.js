@@ -10,19 +10,23 @@ import { el, esc, html, raw, toast } from "../dom.js";
 import { iconButton } from "../icons.js";
 import { fieldLabel, labelHelp } from "../help.js";
 import { t } from "../i18n.js";
+import { viewGuard } from "../navigation.js";
 
 let state = { enabled: false, me: null, users: [], defaultVisibility: "private" };
 
 export async function render(view) {
+  const stillCurrent = viewGuard();
   const [authState, settings] = await Promise.all([
     api.authState(),
     api.getSettings().catch(() => null),
   ]);
+  const accounts = authState.enabled ? await api.listUsers().catch(() => []) : [];
+  if (!stillCurrent()) return; // the next view already owns the page
   state = {
     enabled: authState.enabled,
     hasUsers: authState.has_users,
     me: authState.user,
-    users: authState.enabled ? await api.listUsers().catch(() => []) : [],
+    users: accounts,
     defaultVisibility: settings?.auth?.default_visibility ?? "private",
     settings,
   };
