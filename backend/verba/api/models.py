@@ -21,6 +21,11 @@ class DownloadRequest(BaseModel):
     name: str
 
 
+class SetupRequest(BaseModel):
+    #: install again over an existing installation (to reach the GPU)
+    force: bool = False
+
+
 @router.get("")
 def list_models() -> dict:
     return whisper.list_models()
@@ -57,11 +62,17 @@ def llm_status() -> dict:
 
 
 @router.post("/llm/setup", status_code=202)
-def install_llm_binary(user: dict = AdminUser) -> dict:
-    """Install the llama.cpp server in the background."""
-    if llamacpp.server_binary() is not None:
+def install_llm_binary(body: SetupRequest | None = None, user: dict = AdminUser) -> dict:
+    """Install the llama.cpp server in the background.
+
+    `force` walks the installation ladder again over an existing installation
+    — the way a build that computes on the processor is replaced by one that
+    uses the graphics card, without deleting anything by hand first.
+    """
+    force = bool(body and body.force)
+    if llamacpp.server_binary() is not None and not force:
         return {"started": False, "installed": True}
-    if not llamacpp.start_binary_install():
+    if not llamacpp.start_binary_install(force=force):
         raise HTTPException(status_code=409, detail="Installation is already running")
     return {"started": True}
 

@@ -112,7 +112,16 @@ python -m ruff format --check backend/ tests/ run.py
     attempt takes its directory with it, so `server_binary()` stays
     unambiguous, and `backend.json` records what was accepted for the status.
     A rung that raises is a failed attempt, never the end of the ladder, or a
-    full disk would cost the 17 MB CPU build over the 600 MB CUDA one),
+    full disk would cost the 17 MB CPU build over the 600 MB CUDA one.
+    The ladder never runs over an existing installation: `install_binary(force=True)`
+    is the deliberate replacement of a build that computes on the processor,
+    and it is not destructive — the old installation stays until
+    `_accept_install` has a proven replacement, so a release that cannot be
+    reached leaves the machine with the llama.cpp it had. And
+    `ensure_backend_recorded()` measures an installation that predates the
+    marker once — a certain answer is written down, an uncertain one only
+    remembered for this process, so one timed-out probe cannot brand a
+    working CUDA build "unknown" for good),
     llamabuild (compiling llama.cpp with CUDA on the machine: its own tool
     table for the package installer, `CMAKE_CUDA_ARCHITECTURES=native`, and a
     compiler count bounded by RAM rather than cores — `-j$(nproc)` with nvcc

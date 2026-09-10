@@ -261,6 +261,8 @@
   "llmModels.backendCpu": "CPU",
   "llmModels.backendOnCpu": "Эта сборка не использует видеокарту — языковая модель считает в оперативной памяти.",
   "llmModels.backendUnverified": "Сборка для GPU, которую не удалось опросить — достигает ли она карты, неизвестно.",
+  "llmModels.backendUnknown": "неизвестно",
+  "llmModels.installGpuBuild": "Установить сборку для GPU",
   "llmModels.stopServer": "Остановить сервер",
   "llmModels.recommended": "Рекомендуется для этой системы",
   "type.pick": "Выбрать тип транскрипта",

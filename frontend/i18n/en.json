@@ -261,6 +261,8 @@
   "llmModels.backendCpu": "CPU",
   "llmModels.backendOnCpu": "This build does not use the graphics card — the language model computes in main memory.",
   "llmModels.backendUnverified": "A GPU build that could not be questioned — whether it reaches the card is unknown.",
+  "llmModels.backendUnknown": "unknown",
+  "llmModels.installGpuBuild": "Install the GPU build",
   "llmModels.stopServer": "Stop server",
   "llmModels.recommended": "Recommended for this system",
   "type.pick": "Choose transcript type",

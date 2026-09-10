@@ -126,6 +126,11 @@ _install_state: dict[str, Any] = {
 }
 
 
+#: An installation whose backend was measured rather than recorded, remembered
+#: for this process: (binary, verdict). See `ensure_backend_recorded`.
+_measured_backend: tuple[Path, dict[str, Any]] | None = None
+
+
 # ── paths ─────────────────────────────────────────────────────────────
 
 
@@ -525,7 +530,7 @@ def _install_event(percent: int, message: str, state: str = "running") -> None:
     )
 
 
-def start_binary_install() -> bool:
+def start_binary_install(force: bool = False) -> bool:
     """Install the llama.cpp binary in a background thread (API entry point)."""
     with _download_lock:
         if "llama.cpp" in _downloads_running:
@@ -535,7 +540,7 @@ def start_binary_install() -> bool:
 
     def run() -> None:
         try:
-            install_binary()
+            install_binary(force=force)
         except Exception as exc:
             logger.exception("llama.cpp installation failed")
             _install_event(0, download.error_message(exc), state="error")
@@ -548,7 +553,7 @@ def start_binary_install() -> bool:
     return True
 
 
-def install_binary(report: Any = None) -> str:
+def install_binary(report: Any = None, force: bool = False) -> str:
     """Install llama.cpp so that it uses the GPU wherever the machine has one.
 
     Not one download but a ladder, walked until a build is *proven* to see the
@@ -566,9 +571,19 @@ def install_binary(report: Any = None) -> str:
             report(percent, message)
 
     existing = server_binary()
-    if existing is not None:
+    if existing is not None and not force:
         emit(100, f"llama.cpp ist bereits installiert: {existing}", state="done")
         return str(existing)
+    if existing is not None:
+        # Asked for again on purpose — usually to replace a build that computes
+        # on the processor. The old installation is deliberately *not* removed
+        # here: a release that cannot be reached, a download that fails, a
+        # build that does not run — every one of those would otherwise leave
+        # this machine with no llama.cpp at all. `_accept_install` drops it
+        # once a replacement has proven itself; until then it stays and works.
+        # Only the running server has to let go, so its files can be replaced.
+        emit(0, "Ersetze die vorhandene Installation ...")
+        stop_server()
 
     emit(0, f"System: {platform.system()} {platform.machine()}")
     emit(0, "Suche aktuelles llama.cpp-Release ...")
@@ -737,6 +752,8 @@ def _accept_install(
                 shutil.rmtree(entry, ignore_errors=True)
     except OSError:  # nothing to clean up is not a failure
         pass
+    global _measured_backend
+    _measured_backend = None
     # a fresh GPU build that could not be asked is trusted; see _probe_devices
     _record_backend(candidate.key, devices, gpu=candidate.gpu)
     where = f" — Grafikkarte: {devices[0]}" if devices else ""
@@ -749,7 +766,9 @@ def _backend_marker() -> Path:
     return binary_dir() / "backend.json"
 
 
-def _record_backend(key: str, devices: list[str] | None, *, gpu: bool) -> dict[str, Any]:
+def _record_backend(
+    key: str, devices: list[str] | None, *, gpu: bool, persist: bool = True
+) -> dict[str, Any]:
     """Write down which build is installed and what it saw; returns that.
 
     `gpu` is what to believe when the devices could not be asked at all: a
@@ -762,10 +781,11 @@ def _record_backend(key: str, devices: list[str] | None, *, gpu: bool) -> dict[s
         "verified": devices is not None,
         "devices": devices or [],
     }
-    try:
-        _backend_marker().write_text(json.dumps(backend, ensure_ascii=False), encoding="utf-8")
-    except OSError as exc:  # the installation is fine, only the note is not
-        logger.warning("could not record the llama.cpp backend: %s", exc)
+    if persist:
+        try:
+            _backend_marker().write_text(json.dumps(backend, ensure_ascii=False), encoding="utf-8")
+        except OSError as exc:  # the installation is fine, only the note is not
+            logger.warning("could not record the llama.cpp backend: %s", exc)
     return backend
 
 
@@ -781,6 +801,63 @@ def installed_backend() -> dict[str, Any]:
     except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def _backend_from_devices(devices: list[str]) -> str:
+    for device in devices:
+        for prefix, key in _GPU_BACKENDS.items():
+            if device.startswith(prefix):
+                return key
+    return ""
+
+
+def ensure_backend_recorded() -> dict[str, Any]:
+    """The installed build's backend, measured once where it was never recorded.
+
+    An installation from before this was written down is the interesting case:
+    the binary is there and nobody — including its owner — knows whether it
+    ever reaches the graphics card. So it is asked, the answer is stored, and
+    the status can say "CPU" out loud instead of only "installed". One process
+    spawn, once, not on every poll.
+    """
+    global _measured_backend
+    known = installed_backend()
+    if known:
+        return known
+    binary = server_binary()
+    if binary is None:
+        return {}
+    if _measured_backend is not None and _measured_backend[0] == binary:
+        return dict(_measured_backend[1])
+    devices = _probe_devices(binary)
+    key = _backend_from_devices(devices or [])
+    # A binary that could not be asked at all must not be written down as the
+    # answer: one timed-out probe would brand a working CUDA installation as
+    # "unknown" for good, with a reinstall the only way out. So an uncertain
+    # verdict lives in this process only — the next start asks again — while
+    # the certain one is stored and never re-probed. Either way it is measured
+    # once, not once per status poll, which a failed write used to cost.
+    backend = _record_backend(
+        key or ("unknown" if devices is None else "cpu"),
+        devices,
+        gpu=False,
+        persist=devices is not None,
+    )
+    _measured_backend = (binary, backend)
+    return backend
+
+
+def _backend_status(hw: dict[str, Any]) -> dict[str, Any]:
+    """The installed build, plus whether replacing it with a GPU one is worth it.
+
+    `upgradable` is a decision, not a fact, and it is made here rather than in
+    the UI: this is the only place that knows both what is installed and what
+    the machine has. The frontend only has to ask whether to show the offer.
+    """
+    backend = ensure_backend_recorded()
+    if not backend:
+        return backend
+    return {**backend, "upgradable": hardware.has_gpu(hw) and not backend["gpu"]}
 
 
 def _extract_archive(archive: Path, dest: Path) -> None:
@@ -1349,7 +1426,7 @@ def status() -> dict[str, Any]:
         # which build is installed and whether it reached the GPU: the one
         # thing a user cannot see from the outside (see install_binary). An
         # installation older than this bookkeeping is measured once here.
-        "backend": installed_backend(),
+        "backend": _backend_status(hw),
         "install": install_state(),
         "server_running": _server_process is not None and _server_process.poll() is None,
         "active_model": _server_model,

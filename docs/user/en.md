@@ -852,6 +852,17 @@ GCC 11, so Debian 12, Ubuntu 22.04 or newer), the message says that too —
 instead of failing later during the first AI step. If a download is cut off —
 models are several GB — Verba continues it where it stopped.
 
+**Already installed without GPU support?** The ladder only runs when nothing
+is installed — an existing installation is never replaced behind your back.
+Verba does measure it once, though: the first time the settings are opened the
+installed `llama-server` is asked which devices it sees, and the answer then
+sits as a badge next to "installed". If it says `CPU` while there is a card in
+the machine, **"Install the GPU build"** appears next to it: one click walks
+the ladder again. The existing installation stays in place until a
+replacement has proven itself — if the attempt fails, because the server
+cannot reach the network for instance, what ran before keeps running. The
+downloaded language models are left untouched either way.
+
 **An endpoint on your own machine.** If the base URL points at `localhost` or
 `127.0.0.1` (typical for Ollama or LM Studio), an **estimate** appears below the
 field: how much memory is free here right now and which model size is realistic

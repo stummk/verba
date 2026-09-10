@@ -82,6 +82,7 @@ export function mountLlamaInstaller(host, options = {}) {
       "cuda-source": t("llmModels.backendCudaSource"),
       vulkan: t("llmModels.backendVulkan"),
       cpu: t("llmModels.backendCpu"),
+      unknown: t("llmModels.backendUnknown"),
     };
     let title = t("llmModels.backendOnCpu");
     if (backend.devices?.length) title = backend.devices.join("\n");
@@ -119,6 +120,15 @@ export function mountLlamaInstaller(host, options = {}) {
       binaryRow.append(badge(t("models.installed")));
       const backend = backendBadge(status.backend);
       if (backend) binaryRow.append(backend);
+      // The ladder never runs over an existing installation on its own, so
+      // this is how it is asked for. Whether it is worth offering is the
+      // backend's judgement (`upgradable`) — it knows both the machine and
+      // the build that is installed.
+      if (status.backend?.upgradable) {
+        binaryRow.append(
+          actionButton(t("llmModels.installGpuBuild"), () => api.llmSetup(true)),
+        );
+      }
     } else {
       const install = actionButton(t("llmModels.installBinary"), () => api.llmSetup());
       install.disabled = Boolean(status?.install?.running);

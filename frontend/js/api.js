@@ -140,7 +140,7 @@ export const api = {
   downloadModel: (name) => request("POST", "/api/models/download", { name }),
   deleteModel: (name) => request("DELETE", `/api/models?name=${encodeURIComponent(name)}`),
   llmStatus: () => request("GET", "/api/models/llm"),
-  llmSetup: () => request("POST", "/api/models/llm/setup"),
+  llmSetup: (force = false) => request("POST", "/api/models/llm/setup", { force }),
   llmDownload: (name) => request("POST", "/api/models/llm/download", { name }),
   llmDeleteModel: (name) => request("DELETE", `/api/models/llm?name=${encodeURIComponent(name)}`),
   llmStopServer: () => request("POST", "/api/models/llm/stop"),

@@ -893,6 +893,17 @@ Ubuntu 22.04 oder neuer), sagt die Meldung auch das — statt erst beim ersten
 KI-Schritt zu scheitern. Bricht die Verbindung während eines Downloads ab —
 Modelle sind mehrere GB groß —, setzt Verba ihn an der Abbruchstelle fort.
 
+**Schon ohne GPU installiert?** Die Leiter läuft nur, wenn nichts installiert
+ist — eine bestehende Installation wird nie im Hintergrund ersetzt. Verba
+misst sie aber einmal nach: Beim ersten Aufruf der Einstellungen wird der
+installierte `llama-server` gefragt, welche Geräte er sieht, und das Ergebnis
+steht danach als Abzeichen neben „installiert". Steht dort `CPU`, obwohl eine
+Karte im Rechner ist, erscheint daneben **„GPU-Build nachinstallieren"**: ein
+Klick geht die Leiter neu durch. Die bestehende Installation bleibt dabei
+bestehen, bis ein Ersatz sich bewährt hat — schlägt der Versuch fehl, etwa
+weil der Server nicht ins Netz kommt, läuft weiter, was vorher lief. Die
+heruntergeladenen Sprachmodelle bleiben ohnehin unangetastet.
+
 **Endpunkt auf dem eigenen Rechner.** Zeigt die Base URL auf `localhost` bzw.
 `127.0.0.1` (typisch für Ollama oder LM Studio), erscheint unter dem Feld eine
 **Einschätzung**: wie viel Speicher hier gerade frei ist und welche Modellgröße

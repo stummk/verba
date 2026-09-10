@@ -405,3 +405,184 @@ def test_an_announcement_across_two_lines_is_unknown_not_absent(monkeypatch, tmp
     """The whole output matched, no single line did — that is not "no card"."""
     answering(monkeypatch, stderr="ggml_vulkan: found 1\nVulkan devices available\n")
     assert llamacpp._probe_devices(tmp_path / "llama-server") is None
+
+
+# ── an installation that is already there ─────────────────────────────
+
+
+def test_an_existing_installation_is_left_alone(ladder, monkeypatch, tmp_path):
+    """Without `force` the ladder never runs over what is installed."""
+    binary = tmp_path / "llama" / "cpu" / "llama-server"
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.write_bytes(b"ELF")
+    monkeypatch.setattr(llamacpp, "_try_candidate", lambda *a: pytest.fail("installed again"))
+
+    assert llamacpp.install_binary() == str(binary)
+
+
+def test_a_forced_reinstall_replaces_only_once_it_succeeded(ladder, monkeypatch, tmp_path):
+    stale = tmp_path / "llama" / "legacy" / "llama-server"
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    stale.write_bytes(b"ELF old")
+    monkeypatch.setattr(llamacpp, "stop_server", lambda: None)
+    llamacpp._install_state.update(running=False, percent=0, detail="", error="", log=[])
+
+    def fake_candidate(candidate, asset, release, emit, base, span):
+        directory = llamacpp.binary_dir() / candidate.key
+        directory.mkdir(parents=True, exist_ok=True)
+        binary = directory / "llama-server"
+        binary.write_bytes(b"ELF new")
+        return llamacpp._Attempt(binary, ["Vulkan0: NVIDIA"] if candidate.gpu else [])
+
+    monkeypatch.setattr(llamacpp, "_try_candidate", fake_candidate)
+
+    llamacpp.install_binary(force=True)
+
+    assert not stale.parent.exists(), "the old installation goes when the new one is accepted"
+    assert llamacpp.installed_backend()["backend"] == "vulkan"
+
+
+def test_a_failed_release_lookup_keeps_the_old_installation(ladder, monkeypatch, tmp_path):
+    """A forced reinstall must not be destructive before it can deliver.
+
+    The container has no way out to GitHub; the admin clicks the offer. The
+    working CPU build has to survive that.
+    """
+    stale = tmp_path / "llama" / "cpu" / "llama-server"
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    stale.write_bytes(b"ELF old")
+    monkeypatch.setattr(llamacpp, "stop_server", lambda: None)
+
+    def no_network():
+        raise RuntimeError("Fuer dieses System gibt es kein llama.cpp-Release")
+
+    monkeypatch.setattr(llamacpp, "resolve_release", no_network)
+
+    with pytest.raises(RuntimeError):
+        llamacpp.install_binary(force=True)
+
+    assert stale.exists(), "the installation that worked is still there"
+
+
+def test_the_endpoint_reinstalls_only_when_asked(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(llamacpp, "binary_dir", lambda: tmp_path / "llama")
+    binary = tmp_path / "llama" / "cpu" / "llama-server.exe"
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.write_bytes(b"MZ")
+    monkeypatch.setattr(llamacpp, "server_binary", lambda: binary)
+    forced: list[bool] = []
+    monkeypatch.setattr(llamacpp, "start_binary_install", lambda force=False: forced.append(force))
+
+    assert client.post("/api/models/llm/setup").json() == {"started": False, "installed": True}
+    assert forced == []
+
+    client.post("/api/models/llm/setup", json={"force": True})
+    assert forced == [True]
+
+
+# ── measuring an installation nobody recorded ─────────────────────────
+
+
+def test_an_older_installation_is_measured_once(monkeypatch, tmp_path):
+    """Installed before any of this was written down: ask the binary itself."""
+    monkeypatch.setattr(llamacpp, "binary_dir", lambda: tmp_path / "llama")
+    binary = tmp_path / "llama" / "build" / "llama-server"
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.write_bytes(b"ELF")
+    monkeypatch.setattr(llamacpp, "server_binary", lambda: binary)
+    probes: list[int] = []
+
+    def probe(_binary):
+        probes.append(1)
+        return []
+
+    monkeypatch.setattr(llamacpp, "_probe_devices", probe)
+
+    first = llamacpp.ensure_backend_recorded()
+    second = llamacpp.ensure_backend_recorded()
+
+    assert first["backend"] == "cpu"
+    assert first["gpu"] is False
+    assert second == first
+    assert len(probes) == 1, "the answer is written down, not asked again per poll"
+
+
+def test_the_backend_of_an_older_installation_comes_from_the_device(monkeypatch, tmp_path):
+    monkeypatch.setattr(llamacpp, "binary_dir", lambda: tmp_path / "llama")
+    binary = tmp_path / "llama" / "build" / "llama-server"
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.write_bytes(b"ELF")
+    monkeypatch.setattr(llamacpp, "server_binary", lambda: binary)
+    monkeypatch.setattr(llamacpp, "_probe_devices", lambda b: ["CUDA0: NVIDIA RTX A500"])
+
+    recorded = llamacpp.ensure_backend_recorded()
+
+    assert recorded["backend"] == "cuda"
+    assert recorded["gpu"] is True
+
+
+def test_nothing_is_recorded_without_an_installation(monkeypatch, tmp_path):
+    monkeypatch.setattr(llamacpp, "binary_dir", lambda: tmp_path / "llama")
+    monkeypatch.setattr(llamacpp, "server_binary", lambda: None)
+    assert llamacpp.ensure_backend_recorded() == {}
+
+
+def test_a_probe_that_could_not_ask_is_not_written_down(monkeypatch, tmp_path):
+    """One timed-out probe must not brand a CUDA build "unknown" for good."""
+    monkeypatch.setattr(llamacpp, "binary_dir", lambda: tmp_path / "llama")
+    binary = tmp_path / "llama" / "build" / llamacpp._server_exe()
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.write_bytes(b"x")
+    monkeypatch.setattr(llamacpp, "_measured_backend", None)
+    monkeypatch.setattr(llamacpp, "_probe_devices", lambda b: None)
+
+    first = llamacpp.ensure_backend_recorded()
+
+    assert first["backend"] == "unknown"
+    assert not llamacpp._backend_marker().exists(), "an uncertain answer is not persisted"
+    # ... but it is remembered, so a poll does not spawn a probe per request
+    monkeypatch.setattr(llamacpp, "_probe_devices", lambda b: pytest.fail("asked twice"))
+    assert llamacpp.ensure_backend_recorded() == first
+
+
+def test_a_certain_answer_is_written_down(monkeypatch, tmp_path):
+    monkeypatch.setattr(llamacpp, "binary_dir", lambda: tmp_path / "llama")
+    binary = tmp_path / "llama" / "build" / llamacpp._server_exe()
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.write_bytes(b"x")
+    monkeypatch.setattr(llamacpp, "_measured_backend", None)
+    monkeypatch.setattr(llamacpp, "_probe_devices", lambda b: ["CUDA0: NVIDIA"])
+
+    llamacpp.ensure_backend_recorded()
+
+    assert llamacpp._backend_marker().exists()
+    assert llamacpp.installed_backend()["backend"] == "cuda"
+
+
+def test_the_status_offers_the_upgrade_where_it_would_help(client, monkeypatch, tmp_path):
+    """The decision is the backend's, so the status carries it, not its inputs."""
+    monkeypatch.setattr(llamacpp, "binary_dir", lambda: tmp_path / "llama")
+    monkeypatch.setattr(llamacpp.hardware, "has_gpu", lambda *a, **k: True)
+    binary = tmp_path / "llama" / "cpu" / llamacpp._server_exe()
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.write_bytes(b"x")
+    monkeypatch.setattr(llamacpp, "_probe_devices", lambda b: [])
+
+    backend = client.get("/api/models/llm").json()["backend"]
+
+    assert backend["backend"] == "cpu"
+    assert backend["upgradable"] is True
+
+
+def test_nothing_to_upgrade_when_the_card_is_already_used(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(llamacpp, "binary_dir", lambda: tmp_path / "llama")
+    monkeypatch.setattr(llamacpp.hardware, "has_gpu", lambda *a, **k: True)
+    binary = tmp_path / "llama" / "cuda" / llamacpp._server_exe()
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.write_bytes(b"x")
+    monkeypatch.setattr(llamacpp, "_probe_devices", lambda b: ["CUDA0: NVIDIA"])
+
+    backend = client.get("/api/models/llm").json()["backend"]
+
+    assert backend["gpu"] is True
+    assert backend["upgradable"] is False
