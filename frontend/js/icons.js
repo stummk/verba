@@ -29,6 +29,13 @@ const PATHS = {
     + "M13 5h9v2h-9zM13 10h9v2h-9zM13 15h6v2h-6z",
   copy:
     "M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z",
+  // transcribing a whole recording: the waveform on the left turning into the
+  // lines of text on the right. Its counterpart `speechToText` starts from a
+  // microphone and means one passage one has just listened to — the two sit
+  // next to each other in the editor, so they must not look alike.
+  audioToText:
+    "M2 9h2v6H2zM5.5 4h2v16h-2zM9 7h2v10H9z"
+    + "M13 5h9v2h-9zM13 10h9v2h-9zM13 15h6v2h-6z",
   // the way back to how a recording was imported — not the same as "undo",
   // which is the text editor's, so a clock with an arrow rather than the arrow
   restore:

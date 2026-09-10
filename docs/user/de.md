@@ -389,7 +389,10 @@ runden Schritt-Symbolen rechts am Kartenrand. Dass die Symbole eine Zeile
 tiefer stehen, hat einen Grund: in der Ecke über ihnen kommt und geht der
 Stopp-Knopf, und die Symbole sollen dabei nicht hin- und herspringen.
 **Ein Klick auf die Karte öffnet den Editor**; alles andere auf der Karte
-(Kästchen, Sprachchip, Stopp-Knopf, Menü) tut nur das, was es sagt.
+(Kästchen, Sprachchip, Stopp-Knopf, Menü) tut nur das, was es sagt. Die
+**rechte Maustaste** irgendwo auf der Karte öffnet dasselbe Menü dort, wo der
+Zeiger steht — in einer langen Liste ist das ein gutes Stück näher als die
+Ecke.
 
 **Mehrere Dateien auf einmal.** Jede Karte trägt links oben ein
 Kästchen, die Zeile *Alle auswählen* über der Liste wählt alle aus. Sobald etwas
@@ -419,16 +422,18 @@ nennt den Schritt und, wenn er läuft, Prozent und Teilschritt —
 z. B. `Aufbereitung — 40 % · Bereinigung 2/5` oder
 `Transkription — wartet (Position 3)`.
 
-**Die Aktionen stehen im Drei-Punkte-Menü** rechts auf der Karte, jede mit
-Symbol und Text: *Transkribieren* bzw. *Erneut*, *KI-Aufbereitung*,
+**Die Aktionen stehen im Drei-Punkte-Menü** rechts auf der Karte — und im
+Menü der rechten Maustaste, das dieselbe Liste zeigt —, jede mit
+Symbol und Text: *Transkribieren*, *KI-Aufbereitung*,
 *Im Editor öffnen*, *Als PDF exportieren*, *Löschen*. Läuft ein Schritt, steht
 daneben ein **Stopp-Knopf** direkt auf der Karte — abbrechen ist das eine,
 was dann dringend ist.
 
 ## Transkribieren {#transcribe}
 
-- **Einzelne Datei:** *Transkribieren* im Drei-Punkte-Menü der Karte (fertige
-  Dateien bieten dort stattdessen *Erneut* für einen zweiten Lauf)
+- **Einzelne Datei:** *Transkribieren* im Drei-Punkte-Menü der Karte — bei
+  einer bereits fertigen Datei ist das der zweite Lauf, der ihre Segmente
+  ersetzt
 - **Alles:** „Alle transkribieren" in Schritt 2 der Aktionskarte — der Knopf
   nimmt sich die noch offenen Dateien. Sind schon alle transkribiert, bietet er
   einen zweiten Lauf über die ganze Liste an und fragt vorher nach, denn dabei
@@ -662,8 +667,8 @@ transkribierten Datei öffnet den Editor — einen
   Sprache aus dem Dateinamen (`20260731_ru_de_…` heißt Russisch).
   Zusammen mit der Rechtschreibprüfung heißt das: Nach dem Umstellen prüft der
   Browser Segmente und bereinigten Text sofort in der neuen Sprache.
-- **Ganze Datei neu transkribieren** — die Schaltfläche mit dem Kreispfeil,
-  ohne Auswahl bedienbar: Die Datei wird komplett neu erkannt und **alle
+- **Ganze Datei neu transkribieren** — die Schaltfläche mit der Wellenform,
+  aus der Textzeilen werden, ohne Auswahl bedienbar: Die Datei wird komplett neu erkannt und **alle
   Segmente werden ersetzt**, samt eigener Änderungen an Text und Sprechern
   (deshalb die Rückfrage). Das ist der Weg, nachdem die Sprache oder das Modell
   korrigiert wurde. Bereinigung und Übersetzungen bleiben stehen, bis sie über
@@ -673,8 +678,11 @@ transkribierten Datei öffnet den Editor — einen
   Abschnitte** auswählen:
   - **Shift+Ziehen** nimmt einen weiteren Abschnitt zur Auswahl hinzu; ein Ziehen
     ohne Shift beginnt eine neue Auswahl.
-  - Die **rechte Maustaste** auf einem ausgewählten Abschnitt nimmt genau diesen
-    wieder heraus; das Kreuz hebt die ganze Auswahl auf.
+  - Die **rechte Maustaste** öffnet dort, wo der Zeiger steht, ein Menü mit
+    genau den Aktionen, die die Werkzeugleiste gerade anbietet. Sind mehrere
+    Abschnitte ausgewählt, kommen zwei dazu, die nur für den Abschnitt unter
+    dem Zeiger gelten: ihn allein abspielen und *Diesen Abschnitt abwählen*.
+    Das Kreuz hebt die ganze Auswahl auf.
   - Überlappende Abschnitte werden zu einem zusammengefasst — man kann also
     dazuziehen, ohne auf Lücken zu achten. Unter der Wellenform steht, wie viele
     Abschnitte ausgewählt sind und wie viel Zeit sie zusammen ausmachen.
@@ -703,6 +711,23 @@ transkribierten Datei öffnet den Editor — einen
     Gedacht für Stellen, die die Erkennung übersprungen hat. Die Segmente reihen
     sich nach ihrer Anfangszeit an der richtigen Stelle in die Liste ein, nicht
     an deren Ende.
+
+**Tastenkürzel.** Jede dieser Schaltflächen hat eine Taste, und die Taste
+steht in ihrem Tooltip. Sie gelten, solange der Schreibcursor nicht in einem
+Textfeld steht — beim Tippen gehört jede Taste dem Text — und sie tun genau
+das, was die Schaltfläche gerade tut: Was ausgegraut ist, reagiert auch auf
+die Taste nicht.
+
+| Taste | Aktion |
+| --- | --- |
+| Leertaste | Abspielen / Pause |
+| `R` | Ganze Datei neu transkribieren |
+| `T` | Auswahl transkribieren |
+| `N` | Leere Segmente für die Auswahl anlegen |
+| `K` | Auf Auswahl kürzen (vormerken) |
+| `X` | Auswahl entfernen (vormerken) |
+| `Z` | Schritt zurück (letzte Vormerkung) |
+| `Esc` | Auswahl aufheben |
 
 **Schneiden — wie in einem Audio-Editor.** Die Aufnahme selbst wird geändert,
 und zwar die geöffnete Datei: Es entsteht **keine zweite Datei** je Schnitt.

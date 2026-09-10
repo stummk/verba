@@ -14,6 +14,7 @@ import { labelHelp } from "../help.js";
 import { currentLanguage, t } from "../i18n.js";
 import { languageChip, setChipLanguage } from "../language-chip.js";
 import { languageName } from "../languages.js";
+import { contextMenu, menuIsOpen } from "../menu.js";
 import * as tl from "../timeline.js";
 import { on } from "../ws.js";
 import { viewGuard } from "../navigation.js";
@@ -37,6 +38,48 @@ const SELECTION_BUTTONS = [
   "range-transcribe", "range-add-segment", "audio-trim", "audio-cut", "clear-selection",
 ];
 const SPELLCHECK_KEY = "verba.spellcheck";
+// Space is the play key everywhere, and the play button says so even while it
+// is showing a pause icon — hence the constant rather than a lookup.
+const PLAY_KEY = " ";
+// The actions of the waveform, in the order of its toolbar. Each one is three
+// things at once — a button, a key, and an entry in the menu the right mouse
+// button opens — and the last two go through the first: pressing the key
+// clicks the button, picking the entry clicks the button. So every action has
+// exactly one implementation, and a button that is disabled or hidden closes
+// all three doors at the same time.
+//
+// `key` is null where an action is too rare or too destructive to sit under a
+// single letter; it then has no shortcut and simply keeps its place in the
+// menu.
+const WAVE_ACTIONS = [
+  {
+    id: "play-toggle",
+    key: PLAY_KEY,
+    icon: () => (wavesurfer?.isPlaying() ? "pause" : "play"),
+    label: () => (wavesurfer?.isPlaying() ? t("editor.pause") : t("editor.play")),
+  },
+  { id: "file-transcribe", key: "R", icon: () => "audioToText",
+    label: () => t("editor.retranscribeFile") },
+  { id: "range-transcribe", key: "T", icon: () => "speechToText",
+    label: () => t("editor.retranscribe") },
+  { id: "range-add-segment", key: "N", icon: () => "add",
+    label: () => t("editor.addSegment") },
+  { id: "audio-trim", key: "K", icon: () => "crop", label: () => t("editor.trim") },
+  { id: "audio-cut", key: "X", icon: () => "cut", label: () => t("editor.cut") },
+  { id: "cut-undo", key: "Z", icon: () => "undo", label: () => t("editor.cutUndo") },
+  { id: "clear-selection", key: "Escape", icon: () => "close",
+    label: () => t("editor.clearSelection") },
+  { id: "audio-restore", key: null, icon: () => "restore",
+    label: () => t("editor.restoreOriginal") },
+];
+
+// The key belongs in the name of the button: a tooltip that says only what the
+// button does is how a shortcut stays undiscovered.
+function withKey(label, key) {
+  if (!key) return label;
+  const named = key === PLAY_KEY ? t("common.keySpace") : key === "Escape" ? "Esc" : key;
+  return t("common.withShortcut", { label, key: named });
+}
 
 let wavesurfer = null;
 let unsubscribers = [];
@@ -291,7 +334,7 @@ export async function render(view, _status, params) {
   el("play-toggle").innerHTML = iconSvg("play");
   el("undo-button").innerHTML = iconSvg("undo");
   el("spellcheck-toggle").innerHTML = iconSvg("spellcheck");
-  el("file-transcribe").innerHTML = iconSvg("refresh");
+  el("file-transcribe").innerHTML = iconSvg("audioToText");
   el("range-transcribe").innerHTML = iconSvg("speechToText");
   el("audio-trim").innerHTML = iconSvg("crop");
   el("audio-cut").innerHTML = iconSvg("cut");
@@ -301,6 +344,15 @@ export async function render(view, _status, params) {
   el("range-copy").innerHTML = iconSvg("copy");
   el("range-result-close").innerHTML = iconSvg("close");
   el("editor-export").innerHTML = iconSvg("pdf");
+  // The key each of them answers to goes into the tooltip — the markup names
+  // the action, this adds the way to it that is not visible anywhere else.
+  for (const action of WAVE_ACTIONS) {
+    const button = el(action.id);
+    if (!button || !action.key) continue;
+    const label = withKey(action.label(), action.key);
+    button.title = label;
+    if (button.hasAttribute("aria-label")) button.setAttribute("aria-label", label);
+  }
   // The editor has no export list to pick the finished PDF from, so it hands
   // it straight to the browser: the export it started itself, recognised by
   // its job id, and named by the job — only the handler knows which of the
@@ -430,15 +482,85 @@ export async function render(view, _status, params) {
   waveHost.addEventListener("pointerdown", (event) => {
     extendSelection = event.shiftKey;
   }, true);
-  // The right button takes a selection away again — the counterpart to
-  // Shift+drag, and the reason the browser's own menu has to stay closed.
+  // The right button opens what the toolbar has, where the pointer is — the
+  // actions belong to the passage one has just marked, and the toolbar is a
+  // long way from it on a wide screen. Taking a single selection away used to
+  // be what this button did on the spot; it is now an entry in the menu, which
+  // says what it does before it does it.
   waveHost.addEventListener("contextmenu", (event) => {
     event.preventDefault();
-    const index = tl.indexAt(selections, timeAt(event.clientX));
-    if (index < 0) return;
-    selections = selections.filter((_span, at) => at !== index);
-    renderSelection();
+    contextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      items: waveMenuItems(tl.indexAt(selections, timeAt(event.clientX))),
+    });
   });
+
+  /**
+   * What the menu offers: exactly the actions the toolbar offers right now —
+   * a button that is disabled, hidden, or sits in a hidden bar has nothing to
+   * say here either — plus the two that only mean anything while the pointer
+   * is on one of several selected passages.
+   *
+   * @param {number} index the selection under the pointer, -1 for none
+   */
+  function waveMenuItems(index) {
+    const items = WAVE_ACTIONS
+      .filter((action) => usable(el(action.id)))
+      .map((action) => ({
+        icon: action.icon(),
+        label: withKey(action.label(), action.key),
+        onSelect: () => el(action.id).click(),
+      }));
+    if (index >= 0 && selections.length > 1) {
+      items.unshift({
+        icon: "play",
+        label: t("editor.rangePlay"),
+        onSelect: () => playSpans(tl.intersect([selections[index]], currentKeeps())),
+      });
+      items.push({
+        icon: "close",
+        label: t("editor.dropSpan"),
+        onSelect: () => {
+          selections = selections.filter((_span, at) => at !== index);
+          renderSelection();
+        },
+      });
+    }
+    return items;
+  }
+
+  // A button the user could press right now. The cut bar is hidden as a whole
+  // rather than button by button, so the ancestors count too.
+  function usable(button) {
+    return Boolean(button) && !button.disabled && !button.hidden && !button.closest("[hidden]");
+  }
+
+  // ── the keyboard ────────────────────────────────────────────────────
+  //
+  // A bare letter is a shortcut only where nothing else is listening: in a
+  // text field every key belongs to the text, an open menu or dialog owns
+  // Escape, and a key held with Ctrl, Alt or Shift belongs to the browser.
+  // What is left clicks the button of the same name — so the keyboard can do
+  // nothing the toolbar cannot, and nothing it currently refuses.
+  //
+  // It listens in the capture phase because the open menu has to be seen as
+  // open: the menu closes itself on Escape from a listener of its own, and by
+  // the bubble phase it would already be gone.
+  function onWaveKey(event) {
+    if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    if (event.isComposing) return;
+    if (event.target?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+    if (document.querySelector("dialog[open], .modal-backdrop")) return;
+    if (event.key === "Escape" && menuIsOpen()) return;
+    const pressed = event.key.length === 1 ? event.key.toUpperCase() : event.key;
+    const action = WAVE_ACTIONS.find((entry) => entry.key && entry.key === pressed);
+    if (!action || !usable(el(action.id))) return;
+    event.preventDefault();   // Space scrolls the page, and that is not the ask
+    el(action.id).click();
+  }
+  document.addEventListener("keydown", onWaveKey, true);
+  unsubscribers.push(() => document.removeEventListener("keydown", onWaveKey, true));
 
   function timeAt(clientX) {
     const wrapper = wavesurfer.getWrapper();
@@ -585,8 +707,12 @@ export async function render(view, _status, params) {
       highlightActiveSegment(startAt, { scroll: true });
     }
   });
-  wavesurfer.on("play", () => setIcon(el("play-toggle"), "pause", t("editor.pause")));
-  wavesurfer.on("pause", () => setIcon(el("play-toggle"), "play", t("editor.play")));
+  wavesurfer.on("play", () => setIcon(
+    el("play-toggle"), "pause", withKey(t("editor.pause"), PLAY_KEY)
+  ));
+  wavesurfer.on("pause", () => setIcon(
+    el("play-toggle"), "play", withKey(t("editor.play"), PLAY_KEY)
+  ));
   wavesurfer.on("timeupdate", (time) => {
     el("time-display").textContent =
       `${formatDuration(time)} / ${formatDuration(wavesurfer.getDuration())}`;
@@ -1356,7 +1482,12 @@ export async function render(view, _status, params) {
   }
 
   // ── live updates (range re-transcription, AI pipeline) ──────────────
-  unsubscribers = [
+  //
+  // Appended, not assigned: `destroy()` empties the list at the top of every
+  // render, and everything registered since then — the keyboard among it —
+  // belongs in the same list. Overwriting it here left those behind, and the
+  // second visit to an editor then answered every key twice.
+  unsubscribers.push(
     on("segments.changed", async ({ file_id }) => {
       if (file_id !== fileId) return;
       const fresh = await api.getSegments(fileId).catch(() => null);
@@ -1417,8 +1548,8 @@ export async function render(view, _status, params) {
           if (job.error) toast(job.error);
         }
       }
-    }),
-  ];
+    })
+  );
 
   setupPanels();
 }

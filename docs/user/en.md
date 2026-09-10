@@ -376,7 +376,9 @@ the left and the three round step badges at the right edge of the card. The
 badges sit one line lower for a reason: the stop button comes and goes in the
 corner above them, and the badges must not jump around when it does.
 **Clicking the card opens the editor**; everything else on it (checkbox,
-language chip, stop button, menu) does only what it says.
+language chip, stop button, menu) does only what it says. The **right mouse
+button** anywhere on the card opens the same menu where the pointer stands —
+in a long list that is a good deal closer than the corner.
 
 **Several files at once.** Every card carries a checkbox in its top left
 corner, and the *Select all* line above the list selects them all. As soon as something is
@@ -404,16 +406,18 @@ the step and, while it runs, the percentage and the sub-step — e.g.
 `Aufbereitung — 40 % · Bereinigung 2/5` or
 `Transkription — wartet (Position 3)`.
 
-**The actions live in the three-dot menu** on the right of the card, each with
-an icon and a label: *Transcribe* or *Again*, *AI processing*,
+**The actions live in the three-dot menu** on the right of the card — and in
+the menu the right mouse button opens, which shows the same list —, each with
+an icon and a label: *Transcribe*, *AI processing*,
 *Open in the editor*, *Export as PDF*, *Delete*. While a step runs, a **stop
 button** sits next to it directly on the card — cancelling is the one thing
 that is urgent then.
 
 ## Transcribing {#transcribe}
 
-- **Single file:** *Transcribe* in the three-dot menu of the card (finished
-  files offer *Again* there instead, for a second run)
+- **Single file:** *Transcribe* in the three-dot menu of the card — on a file
+  that is already finished this is the second run, and it replaces its
+  segments
 - **Everything:** "Transcribe all" in step 2 of the action card — the button
   takes the files that are still open. Once they are all transcribed it offers a
   second run over the whole list and asks first, because that replaces the
@@ -632,7 +636,8 @@ transcript and AI texts:
   is prefilled from the file name (`20260731_ru_de_…` means Russian).
   Together with the spell checking that means: after switching, the browser
   checks segments and cleaned text in the new language right away.
-- **Re-transcribe the whole file** — the button with the circular arrow, usable
+- **Re-transcribe the whole file** — the button with the waveform turning into
+  lines of text, usable
   without a selection: the file is recognised again completely and **every
   segment is replaced**, including your own edits to text and speakers (hence
   the confirmation). This is the way out after the language or the model has
@@ -642,7 +647,10 @@ transcript and AI texts:
   selected:
   - **Shift+drag** adds another passage to the selection; a drag without Shift
     starts a new one.
-  - The **right mouse button** on a selected passage takes that one back out;
+  - The **right mouse button** opens a menu where the pointer stands, with
+    exactly the actions the toolbar offers right now. With several passages
+    selected two more join them, for the passage under the pointer alone:
+    playing just that one, and *Deselect this passage*.
     the cross clears the whole selection.
   - Passages that overlap are merged into one — so one can drag on without
     minding the gaps. Below the waveform stands how many passages are selected
@@ -670,6 +678,22 @@ transcript and AI texts:
     the cursor lands in the first of them. It is meant for passages the
     recognition skipped. The segments take their place in the list by their
     start time, not at the end of it.
+
+**Keyboard shortcuts.** Every one of these buttons has a key, and the key is
+named in its tooltip. They apply while the cursor is not in a text field —
+when typing, every key belongs to the text — and they do exactly what the
+button does right now: a greyed-out button does not answer its key either.
+
+| Key | Action |
+| --- | --- |
+| Space | Play / pause |
+| `R` | Re-transcribe the whole file |
+| `T` | Transcribe the selection |
+| `N` | Create empty segments for the selection |
+| `K` | Trim to the selection (marked, not applied) |
+| `X` | Remove the selection (marked, not applied) |
+| `Z` | One step back (the last mark) |
+| `Esc` | Clear the selection |
 
 **Cutting — the way an audio editor does it.** The recording itself is changed,
 and it is the open file that changes: **no second file** appears per cut. So

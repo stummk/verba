@@ -12,7 +12,7 @@ import { t } from "../i18n.js";
 import { jobCardHost, jobLine, jobStepLabel } from "../jobs.js";
 import { languageChip, setChipLanguage } from "../language-chip.js";
 import { fillLanguageSelect } from "../languages.js";
-import { overflowMenu } from "../menu.js";
+import { bindContextMenu, overflowMenu } from "../menu.js";
 import { viewGuard } from "../navigation.js";
 import { setChipType, typeChip } from "../type-chip.js";
 import { on } from "../ws.js";
@@ -657,6 +657,10 @@ export async function render(view, _status, params) {
     actions.append(stop, fileMenu(fileRow));
 
     card.append(select, title, actions, meta);
+    // The right mouse button asks the card the same question the three dots
+    // do — and it asks it anywhere on the card, which on a long list is a good
+    // deal closer than the corner.
+    bindContextMenu(card, () => fileMenuItems(fileRow));
     refreshCardFailure(card, fileRow);
     return card;
   }
@@ -686,60 +690,64 @@ export async function render(view, _status, params) {
   function fileMenu(fileRow) {
     return overflowMenu({
       label: t("project.fileMenu"),
-      items: () => {
-        const current = files.get(fileRow.id) ?? fileRow;
-        const busy = isBusy(current);
-        const job = fileJobs.get(current.id);
-        return [
-          !busy && {
-            icon: current.status === "done" ? "refresh" : "speechToText",
-            label: current.status === "done" ? t("project.again") : t("project.transcribe"),
-            onSelect: () => api.transcribeFile(current.id, fileOptions(current))
-              .catch((e) => toast(e.message)),
-          },
-          busy && {
-            icon: "stop",
-            label: t("common.cancel"),
-            onSelect: () => {
-              if (job) api.cancelJob(job.id).catch((e) => toast(e.message));
-            },
-          },
-          current.status === "done" && llmEnabled && job?.kind !== "llm_process" && {
-            icon: "sparkle",
-            label: t("ai.title"),
-            onSelect: () => openAiDialog({ fileId: current.id }),
-          },
-          {
-            icon: "editNote",
-            label: t("project.openEditor"),
-            onSelect: () => { location.hash = `#/editor/${current.id}`; },
-          },
-          current.status === "done" && {
-            icon: "pdf",
-            label: t("export.file"),
-            onSelect: () => openExportDialog({ fileId: current.id }),
-          },
-          {
-            icon: "delete",
-            label: t("common.delete"),
-            danger: true,
-            onSelect: async () => {
-              const ok = await confirmDelete({
-                message: t("project.deleteFileConfirm", { name: current.filename }),
-              });
-              if (!ok) return;
-              try {
-                await api.deleteFile(current.id);
-                files.delete(current.id);
-                renderRows(files);
-              } catch (error) {
-                toast(error.message);
-              }
-            },
-          },
-        ];
-      },
+      items: () => fileMenuItems(fileRow),
     });
+  }
+
+  // The list itself, so the three-dot button and the right mouse button offer
+  // the same thing — and both build it at the moment they are opened.
+  function fileMenuItems(fileRow) {
+    const current = files.get(fileRow.id) ?? fileRow;
+    const busy = isBusy(current);
+    const job = fileJobs.get(current.id);
+    return [
+      !busy && {
+        icon: "audioToText",
+        label: t("project.transcribe"),
+        onSelect: () => api.transcribeFile(current.id, fileOptions(current))
+          .catch((e) => toast(e.message)),
+      },
+      busy && {
+        icon: "stop",
+        label: t("common.cancel"),
+        onSelect: () => {
+          if (job) api.cancelJob(job.id).catch((e) => toast(e.message));
+        },
+      },
+      current.status === "done" && llmEnabled && job?.kind !== "llm_process" && {
+        icon: "sparkle",
+        label: t("ai.title"),
+        onSelect: () => openAiDialog({ fileId: current.id }),
+      },
+      {
+        icon: "editNote",
+        label: t("project.openEditor"),
+        onSelect: () => { location.hash = `#/editor/${current.id}`; },
+      },
+      current.status === "done" && {
+        icon: "pdf",
+        label: t("export.file"),
+        onSelect: () => openExportDialog({ fileId: current.id }),
+      },
+      {
+        icon: "delete",
+        label: t("common.delete"),
+        danger: true,
+        onSelect: async () => {
+          const ok = await confirmDelete({
+            message: t("project.deleteFileConfirm", { name: current.filename }),
+          });
+          if (!ok) return;
+          try {
+            await api.deleteFile(current.id);
+            files.delete(current.id);
+            renderRows(files);
+          } catch (error) {
+            toast(error.message);
+          }
+        },
+      },
+    ];
   }
 
   function fileOptions(fileRow) {
