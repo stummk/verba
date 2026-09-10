@@ -263,6 +263,8 @@
   "llmModels.backendUnverified": "Сборка для GPU, которую не удалось опросить — достигает ли она карты, неизвестно.",
   "llmModels.backendUnknown": "неизвестно",
   "llmModels.installGpuBuild": "Установить сборку для GPU",
+  "llmModels.uninstall": "Удалить",
+  "llmModels.uninstallConfirm": "Удалить llama.cpp? Загруженные языковые модели останутся.",
   "llmModels.stopServer": "Остановить сервер",
   "llmModels.recommended": "Рекомендуется для этой системы",
   "type.pick": "Выбрать тип транскрипта",

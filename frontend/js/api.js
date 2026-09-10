@@ -141,6 +141,7 @@ export const api = {
   deleteModel: (name) => request("DELETE", `/api/models?name=${encodeURIComponent(name)}`),
   llmStatus: () => request("GET", "/api/models/llm"),
   llmSetup: (force = false) => request("POST", "/api/models/llm/setup", { force }),
+  llmUninstall: () => request("DELETE", "/api/models/llm/binary"),
   llmDownload: (name) => request("POST", "/api/models/llm/download", { name }),
   llmDeleteModel: (name) => request("DELETE", `/api/models/llm?name=${encodeURIComponent(name)}`),
   llmStopServer: () => request("POST", "/api/models/llm/stop"),

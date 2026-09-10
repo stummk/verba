@@ -77,6 +77,21 @@ def install_llm_binary(body: SetupRequest | None = None, user: dict = AdminUser)
     return {"started": True}
 
 
+@router.delete("/llm/binary")
+def uninstall_llm_binary(user: dict = AdminUser) -> dict:
+    """Remove the llama.cpp installation; the downloaded models stay.
+
+    Refused while an installation is running: the ladder unpacks and builds
+    into that very directory, and deleting it underneath would leave a
+    half-removed tree that `server_binary()` would happily try to start.
+    """
+    if llamacpp.install_running():
+        raise HTTPException(status_code=409, detail="Es läuft gerade eine Installation.")
+    llamacpp.uninstall_binary()
+    llamacpp.reset_install_log()
+    return {"deleted": True}
+
+
 @router.post("/llm/download", status_code=202)
 def download_llm_model(body: DownloadRequest, user: dict = AdminUser) -> dict:
     try:

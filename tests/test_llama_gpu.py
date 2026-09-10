@@ -375,38 +375,6 @@ def test_an_old_cmake_gets_the_call_without_native(tmp_path):
     assert "-DGGML_CUDA=ON" in arguments
 
 
-# ── what the review found ─────────────────────────────────────────────
-
-
-def test_a_rung_that_raises_does_not_cost_the_cpu_build(ladder, monkeypatch, tmp_path):
-    """Too little disk for a CUDA runtime must not skip the 17 MB build."""
-    llamacpp._install_state.update(running=False, percent=0, detail="", error="", log=[])
-
-    def fake_candidate(candidate, asset, release, emit, base, span):
-        if candidate.gpu:
-            raise OSError("Zu wenig freier Speicherplatz")
-        directory = llamacpp.binary_dir() / candidate.key
-        directory.mkdir(parents=True, exist_ok=True)
-        binary = directory / "llama-server"
-        binary.write_bytes(b"ELF")
-        return llamacpp._Attempt(binary, [])
-
-    monkeypatch.setattr(llamacpp, "_try_candidate", fake_candidate)
-    monkeypatch.setattr(llamacpp, "server_binary", lambda: None)
-
-    llamacpp.install_binary()
-
-    assert llamacpp.installed_backend()["backend"] == "cpu"
-    log = llamacpp.install_state()["log"]
-    assert any("Speicherplatz" in line for line in log), log
-
-
-def test_an_announcement_across_two_lines_is_unknown_not_absent(monkeypatch, tmp_path):
-    """The whole output matched, no single line did — that is not "no card"."""
-    answering(monkeypatch, stderr="ggml_vulkan: found 1\nVulkan devices available\n")
-    assert llamacpp._probe_devices(tmp_path / "llama-server") is None
-
-
 # ── an installation that is already there ─────────────────────────────
 
 
@@ -420,48 +388,29 @@ def test_an_existing_installation_is_left_alone(ladder, monkeypatch, tmp_path):
     assert llamacpp.install_binary() == str(binary)
 
 
-def test_a_forced_reinstall_replaces_only_once_it_succeeded(ladder, monkeypatch, tmp_path):
-    stale = tmp_path / "llama" / "legacy" / "llama-server"
+def test_force_replaces_the_installation(ladder, monkeypatch, tmp_path):
+    """The way a CPU build becomes a GPU build without deleting by hand."""
+    stale = tmp_path / "llama" / "cpu" / "llama-server"
     stale.parent.mkdir(parents=True, exist_ok=True)
-    stale.write_bytes(b"ELF old")
+    stale.write_bytes(b"ELF old")
+    llamacpp._backend_marker().write_text('{"backend": "cpu", "gpu": false}', encoding="utf-8")
     monkeypatch.setattr(llamacpp, "stop_server", lambda: None)
+
     llamacpp._install_state.update(running=False, percent=0, detail="", error="", log=[])
 
     def fake_candidate(candidate, asset, release, emit, base, span):
         directory = llamacpp.binary_dir() / candidate.key
         directory.mkdir(parents=True, exist_ok=True)
         binary = directory / "llama-server"
-        binary.write_bytes(b"ELF new")
+        binary.write_bytes(b"ELF new")
         return llamacpp._Attempt(binary, ["Vulkan0: NVIDIA"] if candidate.gpu else [])
 
     monkeypatch.setattr(llamacpp, "_try_candidate", fake_candidate)
 
     llamacpp.install_binary(force=True)
 
-    assert not stale.parent.exists(), "the old installation goes when the new one is accepted"
     assert llamacpp.installed_backend()["backend"] == "vulkan"
-
-
-def test_a_failed_release_lookup_keeps_the_old_installation(ladder, monkeypatch, tmp_path):
-    """A forced reinstall must not be destructive before it can deliver.
-
-    The container has no way out to GitHub; the admin clicks the offer. The
-    working CPU build has to survive that.
-    """
-    stale = tmp_path / "llama" / "cpu" / "llama-server"
-    stale.parent.mkdir(parents=True, exist_ok=True)
-    stale.write_bytes(b"ELF old")
-    monkeypatch.setattr(llamacpp, "stop_server", lambda: None)
-
-    def no_network():
-        raise RuntimeError("Fuer dieses System gibt es kein llama.cpp-Release")
-
-    monkeypatch.setattr(llamacpp, "resolve_release", no_network)
-
-    with pytest.raises(RuntimeError):
-        llamacpp.install_binary(force=True)
-
-    assert stale.exists(), "the installation that worked is still there"
+    assert not stale.exists()
 
 
 def test_the_endpoint_reinstalls_only_when_asked(client, monkeypatch, tmp_path):
@@ -527,6 +476,167 @@ def test_nothing_is_recorded_without_an_installation(monkeypatch, tmp_path):
     assert llamacpp.ensure_backend_recorded() == {}
 
 
+# ── removing it again ─────────────────────────────────────────────────
+
+
+def test_uninstalling_removes_the_installation_and_keeps_the_models(monkeypatch, tmp_path):
+    monkeypatch.setattr(llamacpp, "binary_dir", lambda: tmp_path / "llama")
+    monkeypatch.setattr(llamacpp, "llm_models_dir", lambda: tmp_path / "models")
+    binary = tmp_path / "llama" / "vulkan" / "llama-server"
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.write_bytes(b"ELF")
+    (tmp_path / "models").mkdir(parents=True, exist_ok=True)
+    model = tmp_path / "models" / "Qwen3-1.7B-Q8_0.gguf"
+    model.write_bytes(b"GGUF")
+    stopped: list[int] = []
+    monkeypatch.setattr(llamacpp, "stop_server", lambda: stopped.append(1))
+
+    llamacpp.uninstall_binary()
+
+    assert llamacpp.server_binary() is None
+    assert not (tmp_path / "llama").exists()
+    assert model.exists(), "the gigabytes stay — this removes the server, not the models"
+    assert stopped == [1], "a running server has to let go of its memory first"
+
+
+def test_removing_it_never_touches_a_running_installation(monkeypatch, tmp_path):
+    """`uninstall_binary` is also called *by* an installation (the force path).
+
+    Clearing the progress state there wiped the log of the run that was
+    writing it, and told the UI that nothing was running — mid-build.
+    """
+    monkeypatch.setattr(llamacpp, "binary_dir", lambda: tmp_path / "llama")
+    monkeypatch.setattr(llamacpp, "stop_server", lambda: None)
+    llamacpp._install_state.update(running=True, log=["Lade Vulkan-Build ..."], percent=40)
+
+    llamacpp.uninstall_binary()
+
+    assert llamacpp.install_state()["running"] is True
+    assert llamacpp.install_state()["log"] == ["Lade Vulkan-Build ..."]
+
+
+def test_the_uninstall_endpoint_ends_the_story(client, monkeypatch):
+    """The route is where an installation's log stops being interesting."""
+    called: list[int] = []
+    monkeypatch.setattr(llamacpp, "uninstall_binary", lambda: called.append(1))
+    llamacpp._install_state.update(running=False, log=["llama.cpp installiert: CPU-Build"])
+
+    assert client.delete("/api/models/llm/binary").json() == {"deleted": True}
+    assert llamacpp.install_state()["log"] == []
+    assert called == [1]
+
+
+def test_the_status_offers_the_upgrade_where_it_would_help(client, monkeypatch, tmp_path):
+    """The decision is the backend's, so the status carries it, not its inputs."""
+    monkeypatch.setattr(llamacpp, "binary_dir", lambda: tmp_path / "llama")
+    monkeypatch.setattr(llamacpp.hardware, "has_gpu", lambda *a, **k: True)
+    binary = tmp_path / "llama" / "cpu" / llamacpp._server_exe()
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.write_bytes(b"x")
+    monkeypatch.setattr(llamacpp, "_probe_devices", lambda b: [])
+
+    backend = client.get("/api/models/llm").json()["backend"]
+
+    assert backend["backend"] == "cpu"
+    assert backend["upgradable"] is True
+
+
+def test_nothing_to_upgrade_when_the_card_is_already_used(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(llamacpp, "binary_dir", lambda: tmp_path / "llama")
+    monkeypatch.setattr(llamacpp.hardware, "has_gpu", lambda *a, **k: True)
+    binary = tmp_path / "llama" / "cuda" / llamacpp._server_exe()
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    binary.write_bytes(b"x")
+    monkeypatch.setattr(llamacpp, "_probe_devices", lambda b: ["CUDA0: NVIDIA"])
+
+    backend = client.get("/api/models/llm").json()["backend"]
+
+    assert backend["gpu"] is True
+    assert backend["upgradable"] is False
+
+
+# ── what the review found ─────────────────────────────────────────────
+
+
+def test_a_failed_release_lookup_keeps_the_old_installation(ladder, monkeypatch, tmp_path):
+    """A forced reinstall must not be destructive before it can deliver.
+
+    The container has no way out to GitHub; the admin clicks the offer. The
+    working CPU build has to survive that.
+    """
+    stale = tmp_path / "llama" / "cpu" / "llama-server"
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    stale.write_bytes(b"ELF old")
+    monkeypatch.setattr(llamacpp, "stop_server", lambda: None)
+
+    def no_network():
+        raise RuntimeError("Fuer dieses System gibt es kein llama.cpp-Release")
+
+    monkeypatch.setattr(llamacpp, "resolve_release", no_network)
+
+    with pytest.raises(RuntimeError):
+        llamacpp.install_binary(force=True)
+
+    assert stale.exists(), "the installation that worked is still there"
+
+
+def test_a_forced_reinstall_replaces_only_once_it_succeeded(ladder, monkeypatch, tmp_path):
+    stale = tmp_path / "llama" / "legacy" / "llama-server"
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    stale.write_bytes(b"ELF old")
+    monkeypatch.setattr(llamacpp, "stop_server", lambda: None)
+    llamacpp._install_state.update(running=False, percent=0, detail="", error="", log=[])
+
+    def fake_candidate(candidate, asset, release, emit, base, span):
+        directory = llamacpp.binary_dir() / candidate.key
+        directory.mkdir(parents=True, exist_ok=True)
+        binary = directory / "llama-server"
+        binary.write_bytes(b"ELF new")
+        return llamacpp._Attempt(binary, ["Vulkan0: NVIDIA"] if candidate.gpu else [])
+
+    monkeypatch.setattr(llamacpp, "_try_candidate", fake_candidate)
+
+    llamacpp.install_binary(force=True)
+
+    assert not stale.parent.exists(), "the old installation goes when the new one is accepted"
+    assert llamacpp.installed_backend()["backend"] == "vulkan"
+
+
+def test_a_rung_that_raises_does_not_cost_the_cpu_build(ladder, monkeypatch, tmp_path):
+    """Too little disk for a CUDA runtime must not skip the 17 MB build."""
+    llamacpp._install_state.update(running=False, percent=0, detail="", error="", log=[])
+
+    def fake_candidate(candidate, asset, release, emit, base, span):
+        if candidate.gpu:
+            raise OSError("Zu wenig freier Speicherplatz")
+        directory = llamacpp.binary_dir() / candidate.key
+        directory.mkdir(parents=True, exist_ok=True)
+        binary = directory / "llama-server"
+        binary.write_bytes(b"ELF")
+        return llamacpp._Attempt(binary, [])
+
+    monkeypatch.setattr(llamacpp, "_try_candidate", fake_candidate)
+    monkeypatch.setattr(llamacpp, "server_binary", lambda: None)
+
+    llamacpp.install_binary()
+
+    assert llamacpp.installed_backend()["backend"] == "cpu"
+    log = llamacpp.install_state()["log"]
+    assert any("Speicherplatz" in line for line in log), log
+
+
+def test_the_uninstall_route_refuses_while_installing(client, monkeypatch):
+    """Deleting the directory the ladder unpacks into is not an option."""
+    monkeypatch.setattr(llamacpp, "uninstall_binary", lambda: pytest.fail("removed mid-install"))
+    llamacpp._install_state.update(running=True)
+    try:
+        response = client.delete("/api/models/llm/binary")
+    finally:
+        llamacpp._install_state.update(running=False)
+
+    assert response.status_code == 409
+
+
 def test_a_probe_that_could_not_ask_is_not_written_down(monkeypatch, tmp_path):
     """One timed-out probe must not brand a CUDA build "unknown" for good."""
     monkeypatch.setattr(llamacpp, "binary_dir", lambda: tmp_path / "llama")
@@ -559,30 +669,7 @@ def test_a_certain_answer_is_written_down(monkeypatch, tmp_path):
     assert llamacpp.installed_backend()["backend"] == "cuda"
 
 
-def test_the_status_offers_the_upgrade_where_it_would_help(client, monkeypatch, tmp_path):
-    """The decision is the backend's, so the status carries it, not its inputs."""
-    monkeypatch.setattr(llamacpp, "binary_dir", lambda: tmp_path / "llama")
-    monkeypatch.setattr(llamacpp.hardware, "has_gpu", lambda *a, **k: True)
-    binary = tmp_path / "llama" / "cpu" / llamacpp._server_exe()
-    binary.parent.mkdir(parents=True, exist_ok=True)
-    binary.write_bytes(b"x")
-    monkeypatch.setattr(llamacpp, "_probe_devices", lambda b: [])
-
-    backend = client.get("/api/models/llm").json()["backend"]
-
-    assert backend["backend"] == "cpu"
-    assert backend["upgradable"] is True
-
-
-def test_nothing_to_upgrade_when_the_card_is_already_used(client, monkeypatch, tmp_path):
-    monkeypatch.setattr(llamacpp, "binary_dir", lambda: tmp_path / "llama")
-    monkeypatch.setattr(llamacpp.hardware, "has_gpu", lambda *a, **k: True)
-    binary = tmp_path / "llama" / "cuda" / llamacpp._server_exe()
-    binary.parent.mkdir(parents=True, exist_ok=True)
-    binary.write_bytes(b"x")
-    monkeypatch.setattr(llamacpp, "_probe_devices", lambda b: ["CUDA0: NVIDIA"])
-
-    backend = client.get("/api/models/llm").json()["backend"]
-
-    assert backend["gpu"] is True
-    assert backend["upgradable"] is False
+def test_an_announcement_across_two_lines_is_unknown_not_absent(monkeypatch, tmp_path):
+    """The whole output matched, no single line did — that is not "no card"."""
+    answering(monkeypatch, stderr="ggml_vulkan: found 1\nVulkan devices available\n")
+    assert llamacpp._probe_devices(tmp_path / "llama-server") is None

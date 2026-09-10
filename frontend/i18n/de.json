@@ -263,6 +263,8 @@
   "llmModels.backendUnverified": "Ein GPU-Build, der sich nicht befragen ließ — ob er die Karte erreicht, ist ungewiss.",
   "llmModels.backendUnknown": "unbekannt",
   "llmModels.installGpuBuild": "GPU-Build nachinstallieren",
+  "llmModels.uninstall": "Entfernen",
+  "llmModels.uninstallConfirm": "llama.cpp entfernen? Die heruntergeladenen Sprachmodelle bleiben erhalten.",
   "llmModels.stopServer": "Server stoppen",
   "llmModels.recommended": "Empfohlen für dieses System",
   "type.pick": "Transkripttyp wählen",

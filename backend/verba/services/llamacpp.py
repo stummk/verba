@@ -125,7 +125,6 @@ _install_state: dict[str, Any] = {
     "log": [],
 }
 
-
 #: An installation whose backend was measured rather than recorded, remembered
 #: for this process: (binary, verdict). See `ensure_backend_recorded`.
 _measured_backend: tuple[Path, dict[str, Any]] | None = None
@@ -858,6 +857,37 @@ def _backend_status(hw: dict[str, Any]) -> dict[str, Any]:
     if not backend:
         return backend
     return {**backend, "upgradable": hardware.has_gpu(hw) and not backend["gpu"]}
+
+
+def uninstall_binary() -> None:
+    """Remove the llama.cpp installation. The GGUF models stay where they are.
+
+    Two reasons to want this: getting rid of a local LLM altogether, and
+    replacing a build that computes on the processor with one that does not —
+    the installation refuses to run over an existing one, and this is how that
+    one goes away. The models are the expensive part and live in their own
+    configured directory, so they are none of this function's business.
+    """
+    global _measured_backend
+    stop_server()
+    shutil.rmtree(binary_dir(), ignore_errors=True)
+    _measured_backend = None
+    logger.info("llama.cpp uninstalled")
+
+
+def install_running() -> bool:
+    """Whether an installation is under way — asked before it is disturbed."""
+    return bool(_install_state["running"])
+
+
+def reset_install_log() -> None:
+    """Forget what the last installation did.
+
+    Belongs to whoever ends an installation's story, not to `uninstall_binary`:
+    that one is also called while a *new* installation is running, and clearing
+    the log there wiped the very lines the run had just written.
+    """
+    _install_state.update(running=False, percent=0, detail="", error="", log=[])
 
 
 def _extract_archive(archive: Path, dest: Path) -> None:

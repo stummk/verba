@@ -223,6 +223,7 @@ ADMIN_ONLY = [
     ("post", "/api/types/restore-defaults", None),
     ("post", "/api/models/download", {"name": "small"}),
     ("post", "/api/models/llm/stop", None),
+    ("delete", "/api/models/llm/binary", None),
     ("get", "/api/search/models", None),
     ("post", "/api/search/reindex", None),
 ]

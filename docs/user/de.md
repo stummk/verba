@@ -904,6 +904,13 @@ bestehen, bis ein Ersatz sich bewährt hat — schlägt der Versuch fehl, etwa
 weil der Server nicht ins Netz kommt, läuft weiter, was vorher lief. Die
 heruntergeladenen Sprachmodelle bleiben ohnehin unangetastet.
 
+**Wieder entfernen.** Neben der Zeile steht **„Entfernen"** — das löscht die
+llama.cpp-Installation (nach Rückfrage), nicht die Modelle. Die GGUF-Dateien
+löscht man einzeln über das Papierkorb-Symbol in ihrer Zeile; das gilt auch
+für Modelle, die nicht aus dem Katalog stammen, sondern selbst ins
+GGUF-Verzeichnis gelegt wurden — sie erscheinen mit Dateinamen und Größe unter
+dem Katalog.
+
 **Endpunkt auf dem eigenen Rechner.** Zeigt die Base URL auf `localhost` bzw.
 `127.0.0.1` (typisch für Ollama oder LM Studio), erscheint unter dem Feld eine
 **Einschätzung**: wie viel Speicher hier gerade frei ist und welche Modellgröße

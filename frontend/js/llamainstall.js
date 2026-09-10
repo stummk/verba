@@ -24,6 +24,9 @@ import { on } from "./ws.js";
  *     the settings page has the whole catalog and needs no second button)
  *   extraControls – (status) => Node[] appended to the llama.cpp row (the
  *     settings page puts its "stop server" button there)
+ *   withUninstall – offer removing the installation (the settings page; the
+ *     wizard is for setting up)
+ *   confirmUninstall – () => Promise<boolean> asked before it is removed
  * @returns {() => void} unsubscribes from the event stream
  */
 export function mountLlamaInstaller(host, options = {}) {
@@ -114,6 +117,34 @@ export function mountLlamaInstaller(host, options = {}) {
     return button;
   }
 
+  // Removing the installation is its own button rather than an actionButton:
+  // a confirmation the user waves away must leave the button usable, and
+  // there is no progress stream to follow — it is a directory that goes away.
+  function uninstallButton() {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "text-btn small-btn";
+    button.textContent = t("llmModels.uninstall");
+    button.onclick = async () => {
+      const confirmed = await (options.confirmUninstall?.() ?? Promise.resolve(true));
+      if (!confirmed) return;
+      button.disabled = true;
+      try {
+        await api.llmUninstall();
+        lines = [];
+        logTitle.hidden = true;
+        log.hidden = true;
+        setBar(0, false);
+        status = await api.llmStatus().catch(() => status);
+        renderRows();
+      } catch (error) {
+        appendLine(error.message);
+        button.disabled = false;
+      }
+    };
+    return button;
+  }
+
   function renderRows() {
     binaryRow.replaceChildren(label("llama.cpp (llama-server)"), spacer());
     if (status?.binary_installed) {
@@ -129,6 +160,7 @@ export function mountLlamaInstaller(host, options = {}) {
           actionButton(t("llmModels.installGpuBuild"), () => api.llmSetup(true)),
         );
       }
+      if (options.withUninstall) binaryRow.append(uninstallButton());
     } else {
       const install = actionButton(t("llmModels.installBinary"), () => api.llmSetup());
       install.disabled = Boolean(status?.install?.running);

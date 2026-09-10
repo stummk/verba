@@ -263,6 +263,8 @@
   "llmModels.backendUnverified": "A GPU build that could not be questioned — whether it reaches the card is unknown.",
   "llmModels.backendUnknown": "unknown",
   "llmModels.installGpuBuild": "Install the GPU build",
+  "llmModels.uninstall": "Remove",
+  "llmModels.uninstallConfirm": "Remove llama.cpp? The downloaded language models are kept.",
   "llmModels.stopServer": "Stop server",
   "llmModels.recommended": "Recommended for this system",
   "type.pick": "Choose transcript type",

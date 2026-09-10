@@ -962,6 +962,9 @@ async function refreshLlmSection() {
     llmInstallerCleanup?.();
     llmInstallerCleanup = mountLlamaInstaller(binaryHost, {
       status,
+      // the wizard sets up; taking it apart again belongs here
+      withUninstall: true,
+      confirmUninstall: () => confirmDelete({ message: t("llmModels.uninstallConfirm") }),
       extraControls: (current) => (current?.server_running
         ? [iconButton("stop", t("llmModels.stopServer"), async () => {
             await api.llmStopServer().catch((e) => toast(e.message));
@@ -974,6 +977,7 @@ async function refreshLlmSection() {
   const catalogHost = el("llm-catalog");
   if (catalogHost) {
     const installedFiles = new Set(status.installed.map((m) => m.file));
+    const catalogFiles = new Set(status.catalog.map((entry) => entry.file));
     catalogHost.replaceChildren(...status.catalog.map((entry) => {
       const row = document.createElement("div");
       row.className = "model-row";
@@ -991,15 +995,7 @@ async function refreshLlmSection() {
         row.append(Object.assign(document.createElement("span"), {
           className: "badge badge-done", textContent: t("models.installed"),
         }));
-        row.append(iconButton("delete", t("common.delete"), async () => {
-          const ok = await confirmDelete({
-            message: t("models.deleteConfirm", { name: entry.label }),
-          });
-          if (!ok) return;
-          await api.llmDeleteModel(entry.file).catch((e) => toast(e.message));
-          toast(t("models.deleted"));
-          await refreshLlmSection();
-        }));
+        row.append(deleteGgufButton(entry.file, entry.label));
       } else {
         const size = `${(entry.size_mb / 1024).toFixed(1)} GB`;
         row.append(iconButton("download", `${t("models.download")} (${size})`, async () => {
@@ -1018,6 +1014,28 @@ async function refreshLlmSection() {
       wrap.append(row, progress);
       return wrap;
     }));
+    // A GGUF that is not from the catalog — put there by hand, or left over
+    // from an older catalog — was usable but invisible: no row, so no way to
+    // get rid of the gigabytes it occupies.
+    for (const model of status.installed) {
+      if (catalogFiles.has(model.file)) continue;
+      const row = document.createElement("div");
+      row.className = "model-row";
+      row.append(
+        Object.assign(document.createElement("span"), {
+          className: "model-name", textContent: model.file,
+        }),
+        Object.assign(document.createElement("span"), { className: "spacer" }),
+        Object.assign(document.createElement("span"), {
+          className: "badge badge-pending",
+          textContent: `${(model.size_mb / 1024).toFixed(1)} GB`,
+        }),
+      );
+      const fitting = fitBadge(model.fit);
+      if (fitting) row.append(fitting);
+      row.append(deleteGgufButton(model.file, model.file));
+      catalogHost.append(row);
+    }
   }
 
   const modelSelect = el("llm-local-model");
@@ -1033,6 +1051,21 @@ async function refreshLlmSection() {
     modelSelect.dataset.value = modelSelect.value;
     modelSelect.onchange = () => { modelSelect.dataset.value = modelSelect.value; };
   }
+}
+
+/**
+ * Delete one GGUF file: the same flow for a catalog model and for one that
+ * was put into the models directory by hand. `label` is only what the
+ * confirmation calls it — the file name is what gets deleted.
+ */
+function deleteGgufButton(file, label) {
+  return iconButton("delete", t("common.delete"), async () => {
+    const ok = await confirmDelete({ message: t("models.deleteConfirm", { name: label }) });
+    if (!ok) return;
+    await api.llmDeleteModel(file).catch((error) => toast(error.message));
+    toast(t("models.deleted"));
+    await refreshLlmSection();
+  });
 }
 
 // An endpoint on 127.0.0.1 runs on this machine, so its memory is ours — but

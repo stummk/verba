@@ -863,6 +863,12 @@ replacement has proven itself — if the attempt fails, because the server
 cannot reach the network for instance, what ran before keeps running. The
 downloaded language models are left untouched either way.
 
+**Removing it again.** Next to the row there is **"Remove"** — that deletes
+the llama.cpp installation (after a confirmation), not the models. GGUF files
+are deleted one by one with the bin icon in their row; that includes models
+which did not come from the catalog but were placed in the GGUF directory by
+hand — they show up below the catalog with their file name and size.
+
 **An endpoint on your own machine.** If the base URL points at `localhost` or
 `127.0.0.1` (typical for Ollama or LM Studio), an **estimate** appears below the
 field: how much memory is free here right now and which model size is realistic

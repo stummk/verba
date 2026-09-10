@@ -111,13 +111,15 @@ python -m ruff format --check backend/ tests/ run.py
     rung, `None` means "could not be asked" and is kept on trust; a rejected
     attempt takes its directory with it, so `server_binary()` stays
     unambiguous, and `backend.json` records what was accepted for the status.
-    A rung that raises is a failed attempt, never the end of the ladder, or a
-    full disk would cost the 17 MB CPU build over the 600 MB CUDA one.
     The ladder never runs over an existing installation: `install_binary(force=True)`
     is the deliberate replacement of a build that computes on the processor,
     and it is not destructive — the old installation stays until
     `_accept_install` has a proven replacement, so a release that cannot be
-    reached leaves the machine with the llama.cpp it had. And
+    reached leaves the machine with the llama.cpp it had. A rung that raises
+    is a failed attempt, never the end of the ladder, or a full disk would
+    cost the 17 MB CPU build over the 600 MB CUDA one. `uninstall_binary()`
+    removes the installation but never the models and never the progress
+    state of a running install (the route owns `reset_install_log`), and
     `ensure_backend_recorded()` measures an installation that predates the
     marker once — a certain answer is written down, an uncertain one only
     remembered for this process, so one timed-out probe cannot brand a
