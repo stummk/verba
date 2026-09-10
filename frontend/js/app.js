@@ -4,6 +4,7 @@ import { api } from "./api.js";
 import { el, html, toast } from "./dom.js";
 import { initI18n, t } from "./i18n.js";
 import { isActive, jobStatusLine, jobStepLabel } from "./jobs.js";
+import { beginNavigation, isCurrent } from "./navigation.js";
 import * as ws from "./ws.js";
 import * as dashboard from "./views/dashboard.js";
 import * as docs from "./views/docs.js";
@@ -53,10 +54,9 @@ let systemStatus = null;
 // {enabled, user} — user is null while the management is off, so `isAdmin()`
 // is true then and every role check below reads "everything allowed"
 let authState = { enabled: false, user: null };
-// the view currently on screen, and a counter that invalidates a render whose
-// navigation was overtaken by the next one
+// the view currently on screen; which render owns it is kept in navigation.js,
+// because the views have to ask that question themselves
 let activeModule = null;
-let navigation = 0;
 // the very first run shows the wizard alone: no tabs to wander off into until
 // it is finished or skipped. Opening it again later is a normal view.
 let firstRunPending = false;
@@ -66,7 +66,7 @@ async function navigate() {
   let route = routes[parsed.route] ? parsed.route : "dashboard";
   if (routes[route].admin && !isAdmin()) route = "dashboard";
   const config = routes[route];
-  const token = ++navigation;
+  const token = beginNavigation();
 
   // The outgoing view releases its WebSocket subscriptions, timers and window
   // handlers *before* the next one is built — otherwise every visited view
@@ -98,9 +98,9 @@ async function navigate() {
   view.replaceChildren(html`<div class="view-loading" aria-hidden="true"></div>`);
   try {
     await config.module.render(view, systemStatus, parsed.params);
-    if (token !== navigation) return; // a newer navigation owns the view now
+    if (!isCurrent(token)) return; // a newer navigation owns the view now
   } catch (error) {
-    if (token !== navigation) return;
+    if (!isCurrent(token)) return;
     view.innerHTML = "";
     const card = document.createElement("div");
     card.className = "card";

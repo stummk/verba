@@ -13,6 +13,7 @@ import { jobCardHost, jobLine, jobStepLabel } from "../jobs.js";
 import { languageChip, setChipLanguage } from "../language-chip.js";
 import { fillLanguageSelect } from "../languages.js";
 import { overflowMenu } from "../menu.js";
+import { viewGuard } from "../navigation.js";
 import { setChipType, typeChip } from "../type-chip.js";
 import { on } from "../ws.js";
 
@@ -45,6 +46,13 @@ function visibilityChip(project, authState) {
 }
 
 export async function render(view, _status, params) {
+  // Two projects in a row are the same module, so the router does not call
+  // destroy() in between — the previous render is released here instead.
+  destroy();
+  // A render this one overtook still has requests in flight, and its answers
+  // would land here: a job that has long since finished then sits on a card as
+  // a step still to be cancelled, until the next navigation clears the map.
+  const stillMounted = viewGuard();
   const projectId = Number(params[0]);
   let projectError = null;
   const [project, settings, authState, types] = await Promise.all([
@@ -57,6 +65,7 @@ export async function render(view, _status, params) {
     // the picker behind every file's type chip — one list for the whole view
     api.listTypes().catch(() => []),
   ]);
+  if (!stillMounted()) return;
   // The model list scans directories and probes the hardware — the view must
   // not wait for it, so the advanced dropdown fills in once it arrives.
   const modelsPromise = api.listModels().catch(() => ({ builtin: [], local: [] }));
@@ -189,9 +198,8 @@ export async function render(view, _status, params) {
   `);
 
   fillLanguageSelect(el("adv-language"), { placeholder: t("project.advAuto") });
-  const renderedFor = projectId;
   modelsPromise.then((models) => {
-    if (el("adv-model") && renderedFor === currentProjectId()) fillModelSelect(models);
+    if (stillMounted() && el("adv-model")) fillModelSelect(models);
   });
 
   // step tabs: one workflow step visible at a time; panels stay in the DOM
@@ -481,7 +489,9 @@ export async function render(view, _status, params) {
 
   // the jobs snapshot is taken only after subscribing, so no job.update can
   // fall between snapshot and subscription; WS events that arrived first win
-  for (const job of await api.listJobs(true).catch(() => [])) {
+  const jobSnapshot = await api.listJobs(true).catch(() => []);
+  if (!stillMounted()) return; // the snapshot is as old as its request
+  for (const job of jobSnapshot) {
     projectJobs.apply(job);
     if (job.file_id != null && !jobEventsSeen.has(job.file_id)) {
       fileJobs.set(job.file_id, job);
@@ -494,7 +504,7 @@ export async function render(view, _status, params) {
     clearTimeout(queueTimerHandle);
     queueTimerHandle = setTimeout(async () => {
       const overview = await api.queueOverview().catch(() => null);
-      if (!overview) return;
+      if (!overview || !stillMounted()) return;
       const positions = new Map();
       for (const lane of Object.values(overview.lanes)) {
         for (const job of lane) {
@@ -958,13 +968,6 @@ export async function render(view, _status, params) {
     if (deleted) toast(t("export.deletedCount", { count: deleted }));
   };
 
-}
-
-// Which project the hash points at right now — a late model list must not
-// drop into the dropdown of a project the user has already left.
-function currentProjectId() {
-  const segments = location.hash.replace(/^#\/?/, "").split("/");
-  return segments[0] === "project" ? Number(segments[1]) : null;
 }
 
 function fillModelSelect(models) {
