@@ -1276,11 +1276,19 @@ function showNewApiKey(key) {
 
 async function refreshUpdate(refresh = false) {
   if (!el("update-row")) return;
+  // A check the user asked for must not fail silently — the "?" alone would
+  // have to be opened to notice. The one that runs on every page load stays
+  // in the "?": a toast on arriving at the settings says nothing anybody
+  // asked about.
+  const failed = (text) => {
+    setHelp(el("update-help"), text);
+    if (refresh) toast(text);
+  };
   let info;
   try {
     info = await api.updateInfo(refresh);
   } catch (error) {
-    setHelp(el("update-help"), t("update.checkFailed", { detail: error.message }));
+    failed(t("update.checkFailed", { detail: error.message }));
     return;
   }
   if (!el("update-row")) return; // the request outlived the view
@@ -1297,14 +1305,17 @@ async function refreshUpdate(refresh = false) {
   button.setAttribute("aria-label", action);
   button.classList.toggle("filled", !button.disabled);
 
-  let status = "";
-  if (info.error) status = t("update.checkFailed", { detail: info.error });
-  // the reason a kind of installation cannot update itself comes from the
-  // backend, which words it for the user
-  else if (!info.supported) status = info.reason;
-  else if (info.available) status = t("update.availableHint", { version: info.latest });
-  else if (info.checked) status = t("update.upToDateHint");
-  setHelp(el("update-help"), status);
+  if (info.error) {
+    failed(t("update.checkFailed", { detail: info.error }));
+  } else {
+    let status = "";
+    // the reason a kind of installation cannot update itself comes from the
+    // backend, which words it for the user
+    if (!info.supported) status = info.reason;
+    else if (info.available) status = t("update.availableHint", { version: info.latest });
+    else if (info.checked) status = t("update.upToDateHint");
+    setHelp(el("update-help"), status);
+  }
 
   const notes = el("update-notes");
   notes.hidden = !(info.available && info.notes);
