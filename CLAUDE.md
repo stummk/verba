@@ -19,6 +19,15 @@ python -m ruff check backend/ tests/ run.py
 python -m ruff format --check backend/ tests/ run.py
 ```
 
+## Completion Gate
+
+After every development change, run the focused tests for the changed behavior, then
+run the full test suite and both Ruff checks shown above. The GitHub Actions quality
+gate in `.github/workflows/ci.yml` must pass on both `ubuntu-latest` and
+`windows-latest`; a change is not complete while either platform fails. When local
+execution is limited to one operating system, run all available checks locally and
+report that the other platform is covered by CI.
+
 ## Structure (short version)
 
 - `run.py` — entry point; bootstraps core deps, desktop/server mode,
@@ -294,8 +303,8 @@ python -m ruff format --check backend/ tests/ run.py
   (`project_or_403`/`file_or_403`), and every query that spans projects joins
   `auth.visibility_clause()` — the search index is global, so that is where a
   private transcript would otherwise leak.
-- After every code change, run `python -m ruff format --check backend/ tests/ run.py` and
-  fix any reported files before considering the change complete.
+- After every code change, run the focused tests first, then the full test suite and
+  both Ruff checks. The Windows and Linux CI jobs must also pass before completion.
 - **Maintain the in-app docs:** user-visible feature changes belong in the
   user guide `docs/user/{de,en,ru}.md` (in the app under Settings →
   Documentation) — always update all three languages. Every `## ` heading

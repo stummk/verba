@@ -28,6 +28,7 @@ def noop_report(percent: int, message: str = "") -> None:
 def workspaces_in_tmp(tmp_path):
     settings = config.get_settings()
     settings.general.workspaces_dir = str(tmp_path / "workspaces")
+    settings.general.browse_roots = [str(tmp_path)]
     config.save_settings(settings)
 
 

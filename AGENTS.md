@@ -62,8 +62,14 @@ the onboarding — in tests via `setup_check.install_group(...)` when needed.
 
 ## Test Routines
 
-- After every code change, run `python -m ruff format --check backend/ tests/ run.py` and
-  fix any reported files before considering the change complete.
+- After every code change, run the focused tests for the changed behavior first. Then run
+  `python -m ruff format --check backend/ tests/ run.py`, `python -m ruff check backend/ tests/ run.py`,
+  and `python -m pytest tests/ -q` before considering the change complete.
+- Every change must remain cross-platform: the GitHub Actions quality gate in
+  `.github/workflows/ci.yml` must pass on both `ubuntu-latest` and `windows-latest`.
+  Do not treat a change as complete while either platform is failing.
+- When local testing is only possible on one operating system, run all available local
+  checks and rely on the CI matrix for the other platform; report any unavailable check.
 - Every new route: test with FastAPI `TestClient` (`tests/`), including the error case.
 - `conftest.py` sets `VERBA_DATA_DIR` to a tmp directory — tests must never
   touch the real `data/`.
