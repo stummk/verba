@@ -815,10 +815,31 @@ chosen release and package, the download, unpacking, any system packages
 installed on the way, and the version check — line by line, while it happens.
 Switching views or reloading does not lose the log; it comes from the server.
 
-**Which llama.cpp gets installed?** Verba fetches the official release that
-matches the system: on Windows with an NVIDIA GPU the CUDA build plus the CUDA
-runtime, otherwise the CPU build; on Linux and macOS the CPU build — llama.cpp
-publishes no CUDA package for Linux.
+**Which llama.cpp gets installed?** One that actually uses the graphics
+card. Verba tries in order and **checks after every step whether the installed
+`llama-server` really sees the card** — a build that does not find it would
+otherwise compute in main memory unnoticed:
+
+1. **The platform's GPU package.** On Windows the CUDA build plus the CUDA
+   runtime. On Linux the Vulkan build — llama.cpp publishes no CUDA packages
+   for Linux, and Vulkan reaches an NVIDIA card through the driver's ICD for a
+   30 MB download. If the Vulkan loader is missing, Verba installs it
+   (`libvulkan1`).
+2. **Building it here.** If no prebuilt package finds the card, Verba fetches
+   the source of the same release and compiles `llama-server` with CUDA on
+   this machine. It installs the tools it needs first (`cmake`, `g++`, the CUDA
+   toolkit) — the toolkit is several GB, the build takes 10 to 20 minutes, and
+   both are in the log. It builds for the installed card only, and the number
+   of parallel compilers follows the available memory rather than the core
+   count. Linux only; Windows has a CUDA package anyway.
+3. **The CPU build.** What is left when nothing reaches the card — the
+   language model is then slower, but it runs.
+
+Next to "installed" you then see **which** build it became: `CUDA`, `Vulkan`,
+`CUDA (built here)` or `CPU`. Hovering it names the card the build reported.
+Where the card itself does not answer, nothing is built either — in a
+container the devices `/dev/nvidia-uvm` and `/dev/nvidia-uvm-tools` are
+usually missing, and the log says so.
 
 Once unpacked, Verba runs `llama-server` once as a test. If a system library
 is missing — on a lean Linux server usually `libgomp1`, `libstdc++6` or

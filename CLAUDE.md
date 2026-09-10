@@ -102,7 +102,22 @@ python -m ruff format --check backend/ tests/ run.py
     `chat_template_kwargs` — an endpoint that refuses those is remembered and
     served without them from then on), llamacpp (local LLM: hardware probe,
     binary/GGUF download into the configured directory — files already there
-    are loaded in place, `recommended` entries drive the hardware suggestion),
+    are loaded in place, `recommended` entries drive the hardware suggestion.
+    The binary is not one download but a ladder (`_candidates`), walked until a
+    build is *proven* to reach the card: the platform's GPU package (Windows
+    CUDA, Linux Vulkan — no CUDA package exists for Linux), then a CUDA build
+    compiled here (`llamabuild`), then the CPU build. `_probe_devices` asks the
+    installed binary via `--list-devices` — `[]` means "no GPU" and rejects the
+    rung, `None` means "could not be asked" and is kept on trust; a rejected
+    attempt takes its directory with it, so `server_binary()` stays
+    unambiguous, and `backend.json` records what was accepted for the status.
+    A rung that raises is a failed attempt, never the end of the ladder, or a
+    full disk would cost the 17 MB CPU build over the 600 MB CUDA one),
+    llamabuild (compiling llama.cpp with CUDA on the machine: its own tool
+    table for the package installer, `CMAKE_CUDA_ARCHITECTURES=native`, and a
+    compiler count bounded by RAM rather than cores — `-j$(nproc)` with nvcc
+    is how a container OOMs unreadably. Linux only, and never the answer to a
+    driver that does not answer),
     pipeline (cleanup/translation,
     derived_texts, auto-chaining after transcription via the project's
     auto_process switch; `run_cleanup` is where the fork lives, because that

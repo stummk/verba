@@ -854,10 +854,32 @@ Download, Entpacken, nachinstallierte Systempakete und die Versionsprüfung —
 Zeile für Zeile, während es passiert. Ein Wechsel der Ansicht oder ein Neuladen
 verliert das Protokoll nicht, es kommt vom Server.
 
-**Welches llama.cpp wird installiert?** Verba holt das offizielle Release
-passend zum System: unter Windows mit NVIDIA-GPU den CUDA-Build samt
-CUDA-Laufzeit, sonst den CPU-Build; unter Linux und macOS den CPU-Build — für
-Linux veröffentlicht llama.cpp kein CUDA-Paket.
+**Welches llama.cpp wird installiert?** Eines, das die Grafikkarte
+tatsächlich nutzt. Verba probiert dafür der Reihe nach und **prüft nach jedem
+Schritt, ob der installierte `llama-server` die Karte wirklich sieht** — ein
+Build, der sie nicht findet, würde sonst unbemerkt im Arbeitsspeicher rechnen:
+
+1. **Das GPU-Paket der Plattform.** Unter Windows den CUDA-Build samt
+   CUDA-Laufzeit. Unter Linux den Vulkan-Build — CUDA-Pakete veröffentlicht
+   llama.cpp für Linux nicht, und Vulkan erreicht eine NVIDIA-Karte über den
+   ICD des Treibers bei 30 MB Download. Fehlt der Vulkan-Loader, installiert
+   Verba ihn nach (`libvulkan1`).
+2. **Selbst bauen.** Findet kein fertiges Paket die Karte, holt Verba den
+   Quellcode desselben Release und kompiliert `llama-server` mit CUDA auf
+   dieser Maschine. Nötige Werkzeuge (`cmake`, `g++`, CUDA-Toolkit) installiert
+   sie vorher — das Toolkit ist mehrere GB groß, der Build dauert 10 bis 20
+   Minuten, und beides steht im Protokoll. Gebaut wird nur für die eingebaute
+   Karte, und die Zahl paralleler Compiler richtet sich nach dem
+   Arbeitsspeicher, nicht nach den Kernen. Nur unter Linux; Windows hat ja ein
+   CUDA-Paket.
+3. **Der CPU-Build.** Was übrig bleibt, wenn nichts die Karte erreicht — dann
+   läuft das Sprachmodell eben langsamer, aber es läuft.
+
+Neben „installiert" steht danach, **welcher** Build es geworden ist: `CUDA`,
+`Vulkan`, `CUDA (selbst gebaut)` oder `CPU`. Der Mauszeiger darüber nennt die
+Karte, die der Build gemeldet hat. Antwortet die Karte selbst nicht, wird auch
+nicht gebaut — in einem Container fehlen dann meist die Geräte
+`/dev/nvidia-uvm` und `/dev/nvidia-uvm-tools`; das Protokoll sagt es.
 
 Nach dem Entpacken startet Verba `llama-server` einmal zur Probe. Fehlt dabei
 eine Systembibliothek — auf einem schlanken Linux-Server typischerweise

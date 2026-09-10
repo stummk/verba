@@ -207,30 +207,48 @@ def on_platform(monkeypatch, system: str, machine: str = "x86_64", gpu: bool = F
 @pytest.mark.parametrize(
     ("system", "machine", "gpu", "expected"),
     [
-        # the Linux server case: the plain CPU build, not s390x, not Vulkan
+        # without a GPU the ladder is one rung: the plain build, not s390x
         ("Linux", "x86_64", False, "llama-b10621-bin-ubuntu-x64.tar.gz"),
-        ("Linux", "x86_64", True, "llama-b10621-bin-ubuntu-x64.tar.gz"),
+        # with one it starts at Vulkan — the only GPU build published for Linux
+        ("Linux", "x86_64", True, "llama-b10621-bin-ubuntu-vulkan-x64.tar.gz"),
         ("Linux", "aarch64", False, "llama-b10621-bin-ubuntu-arm64.tar.gz"),
         ("Windows", "AMD64", False, "llama-b10621-bin-win-cpu-x64.zip"),
         ("Windows", "AMD64", True, "llama-b10621-bin-win-cuda-12.4-x64.zip"),
-        ("Windows", "ARM64", True, "llama-b10621-bin-win-cpu-arm64.zip"),
         ("Darwin", "arm64", False, "llama-b10621-bin-macos-arm64.tar.gz"),
         ("Darwin", "x86_64", False, "llama-b10621-bin-macos-x64.tar.gz"),
     ],
 )
-def test_the_release_asset_matches_the_platform(monkeypatch, system, machine, gpu, expected):
+def test_the_first_rung_matches_the_platform(monkeypatch, system, machine, gpu, expected):
     on_platform(monkeypatch, system, machine, gpu)
-    picked = llamacpp._pick_release_asset(assets(RELEASE_ASSETS))
-    assert picked is not None and picked["name"] == expected
+    rungs = llamacpp._pick_candidates(assets(RELEASE_ASSETS))
+    assert rungs and rungs[0][1]["name"] == expected
+
+
+def test_the_cpu_build_closes_every_ladder(monkeypatch):
+    """Whatever the GPU rungs are, llama.cpp stays installable."""
+    on_platform(monkeypatch, "Linux", "x86_64", gpu=True)
+    rungs = llamacpp._pick_candidates(assets(RELEASE_ASSETS))
+    assert [candidate.key for candidate, _ in rungs] == ["vulkan", "cpu"]
+    assert rungs[-1][1]["name"] == "llama-b10621-bin-ubuntu-x64.tar.gz"
+    assert [candidate.gpu for candidate, _ in rungs] == [True, False]
+
+
+def test_no_asset_is_offered_by_two_rungs(monkeypatch):
+    """Only the broad CUDA pattern is left — it must not appear twice."""
+    on_platform(monkeypatch, "Windows", "AMD64", gpu=True)
+    remaining = [name for name in RELEASE_ASSETS if "cuda-12" not in name]
+    rungs = llamacpp._pick_candidates(assets(remaining))
+    names = [asset["name"] for _, asset in rungs]
+    assert len(names) == len(set(names))
 
 
 def test_a_cuda_build_of_another_architecture_is_not_taken(monkeypatch):
     """With the x64 CUDA builds gone, the arm64 one must not be installed."""
     on_platform(monkeypatch, "Windows", "AMD64", gpu=True)
     remaining = [name for name in RELEASE_ASSETS if "cuda-12" not in name]
-    remaining = [name for name in remaining if "cuda-13.3" not in name]
-    picked = llamacpp._pick_release_asset(assets(remaining))
-    assert picked is not None and picked["name"] == "llama-b10621-bin-win-cpu-x64.zip"
+    remaining = [name for name in remaining if "cuda-13" not in name]
+    rungs = llamacpp._pick_candidates(assets(remaining))
+    assert [asset["name"] for _, asset in rungs] == ["llama-b10621-bin-win-cpu-x64.zip"]
 
 
 def test_the_cuda_runtime_belongs_to_the_cuda_build():
@@ -243,7 +261,7 @@ def test_the_cuda_runtime_belongs_to_the_cuda_build():
 
 def test_a_platform_without_a_build_is_refused(monkeypatch):
     on_platform(monkeypatch, "Linux", "s390x")
-    assert llamacpp._pick_release_asset(assets(RELEASE_ASSETS)) is None
+    assert llamacpp._pick_candidates(assets(RELEASE_ASSETS)) == []
 
 
 def _release(tag: str, names: list[str]) -> dict:
@@ -260,10 +278,10 @@ def test_the_nightly_pointer_is_followed(monkeypatch):
     monkeypatch.setattr(llamacpp, "_get_json", lambda url: pages[url])
     monkeypatch.setattr(llamacpp, "_fetch_text", lambda url: "b10621\n")
 
-    release, asset = llamacpp.resolve_release()
+    release, rungs = llamacpp.resolve_release()
 
     assert release["tag_name"] == "b10621"
-    assert asset["name"] == "llama-b10621-bin-ubuntu-x64.tar.gz"
+    assert rungs[0][1]["name"] == "llama-b10621-bin-ubuntu-x64.tar.gz"
 
 
 def test_the_release_list_is_the_last_resort(monkeypatch):
@@ -280,10 +298,10 @@ def test_the_release_list_is_the_last_resort(monkeypatch):
     monkeypatch.setattr(llamacpp, "_get_json", lambda url: pages[url])
     monkeypatch.setattr(llamacpp, "_fetch_text", lambda url: "b99999")
 
-    release, asset = llamacpp.resolve_release()
+    release, rungs = llamacpp.resolve_release()
 
     assert release["tag_name"] == "b10621"
-    assert asset["name"] == "llama-b10621-bin-ubuntu-x64.tar.gz"
+    assert rungs[0][1]["name"] == "llama-b10621-bin-ubuntu-x64.tar.gz"
 
 
 def test_a_release_without_any_build_for_this_system_raises(monkeypatch):
@@ -438,11 +456,16 @@ def test_the_release_archive_is_unpacked_and_the_server_found(
         "resolve_release",
         lambda: (
             {"tag_name": "b1", "assets": []},
-            {
-                "name": archive_name,
-                "size": len(http_source.handler.payload),
-                "browser_download_url": http_source.url,
-            },
+            [
+                (
+                    llamacpp._Candidate("cpu", "", False, "CPU-Build"),
+                    {
+                        "name": archive_name,
+                        "size": len(http_source.handler.payload),
+                        "browser_download_url": http_source.url,
+                    },
+                )
+            ],
         ),
     )
 
@@ -587,11 +610,16 @@ def test_the_installation_survives_a_repaired_dependency(
         "resolve_release",
         lambda: (
             {"tag_name": "b1", "assets": []},
-            {
-                "name": archive.name,
-                "size": len(http_source.handler.payload),
-                "browser_download_url": http_source.url,
-            },
+            [
+                (
+                    llamacpp._Candidate("cpu", "", False, "CPU-Build"),
+                    {
+                        "name": archive.name,
+                        "size": len(http_source.handler.payload),
+                        "browser_download_url": http_source.url,
+                    },
+                )
+            ],
         ),
     )
 
@@ -616,11 +644,16 @@ def test_an_unrepairable_installation_is_removed(
         "resolve_release",
         lambda: (
             {"tag_name": "b1", "assets": []},
-            {
-                "name": archive.name,
-                "size": len(http_source.handler.payload),
-                "browser_download_url": http_source.url,
-            },
+            [
+                (
+                    llamacpp._Candidate("cpu", "", False, "CPU-Build"),
+                    {
+                        "name": archive.name,
+                        "size": len(http_source.handler.payload),
+                        "browser_download_url": http_source.url,
+                    },
+                )
+            ],
         ),
     )
 
@@ -628,7 +661,8 @@ def test_an_unrepairable_installation_is_removed(
         llamacpp.install_binary()
 
     assert llamacpp.server_binary() is None
-    assert not dest.exists()
+    # the rejected attempt takes its directory with it
+    assert not (dest / "cpu").exists()
 
 
 # ── the installation log the UI shows ─────────────────────────────────
@@ -728,18 +762,23 @@ def test_the_log_tells_the_whole_story(http_source, monkeypatch, package_manager
         "resolve_release",
         lambda: (
             {"tag_name": "b1", "assets": []},
-            {
-                "name": archive.name,
-                "size": len(http_source.handler.payload),
-                "browser_download_url": http_source.url,
-            },
+            [
+                (
+                    llamacpp._Candidate("cpu", "", False, "CPU-Build"),
+                    {
+                        "name": archive.name,
+                        "size": len(http_source.handler.payload),
+                        "browser_download_url": http_source.url,
+                    },
+                )
+            ],
         ),
     )
 
     llamacpp.install_binary()
 
     log = "\n".join(llamacpp.install_state()["log"])
-    assert "Release b1, Paket llama-b1-bin-ubuntu-x64.tar.gz" in log
+    assert "Release b1" in log and "llama-b1-bin-ubuntu-x64.tar.gz" in log
     assert "Entpacke" in log
     assert "libgomp.so.1" in log and "libgomp1" in log
     assert "version: 0.3.0-dev (build 10621)" in log

@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from verba import config
-from verba.services import cudalibs, download
+from verba.services import cudalibs, download, llamabuild
 
 
 @pytest.fixture(autouse=True)
@@ -37,6 +37,18 @@ def no_cuda_libraries(monkeypatch):
     cudalibs.invalidate()
     yield
     cudalibs.invalidate()
+
+
+@pytest.fixture(autouse=True)
+def no_source_build(monkeypatch):
+    """No test ever compiles llama.cpp.
+
+    The installation ladder reaches for a CUDA build from source when no
+    prebuilt package finds the GPU — on a developer machine with a card that
+    would mean apt-installing a toolkit and a quarter-hour of nvcc. The tests
+    that are about the build patch this back.
+    """
+    monkeypatch.setattr(llamabuild, "possible", lambda: (False, ""))
 
 
 @pytest.fixture()

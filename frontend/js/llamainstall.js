@@ -24,7 +24,6 @@ import { on } from "./ws.js";
  *     the settings page has the whole catalog and needs no second button)
  *   extraControls – (status) => Node[] appended to the llama.cpp row (the
  *     settings page puts its "stop server" button there)
- *   onChanged – called with the fresh status after an installation ended
  * @returns {() => void} unsubscribes from the event stream
  */
 export function mountLlamaInstaller(host, options = {}) {
@@ -63,11 +62,35 @@ export function mountLlamaInstaller(host, options = {}) {
     return node;
   }
 
-  function badge(text) {
+  function badge(text, variant = "badge-done", title = "") {
     const node = document.createElement("span");
-    node.className = "badge badge-done";
+    node.className = `badge ${variant}`;
     node.textContent = text;
+    if (title) node.title = title;
     return node;
+  }
+
+  // Which build is installed, and whether it reaches the graphics card. The
+  // installation walks a ladder to get llama.cpp onto the GPU (see
+  // services/llamacpp.py) and this is where the outcome becomes visible —
+  // otherwise "installed" would look the same whether it computes on the card
+  // or on the processor. The devices the build reported hang in the tooltip.
+  function backendBadge(backend) {
+    if (!backend?.backend) return null;
+    const names = {
+      cuda: t("llmModels.backendCuda"),
+      "cuda-source": t("llmModels.backendCudaSource"),
+      vulkan: t("llmModels.backendVulkan"),
+      cpu: t("llmModels.backendCpu"),
+    };
+    let title = t("llmModels.backendOnCpu");
+    if (backend.devices?.length) title = backend.devices.join("\n");
+    else if (backend.gpu) title = t("llmModels.backendUnverified");
+    return badge(
+      names[backend.backend] ?? backend.backend,
+      backend.gpu ? "badge-fit-ok" : "badge-pending",
+      title,
+    );
   }
 
   function actionButton(text, onClick) {
@@ -94,6 +117,8 @@ export function mountLlamaInstaller(host, options = {}) {
     binaryRow.replaceChildren(label("llama.cpp (llama-server)"), spacer());
     if (status?.binary_installed) {
       binaryRow.append(badge(t("models.installed")));
+      const backend = backendBadge(status.backend);
+      if (backend) binaryRow.append(backend);
     } else {
       const install = actionButton(t("llmModels.installBinary"), () => api.llmSetup());
       install.disabled = Boolean(status?.install?.running);
@@ -147,7 +172,6 @@ export function mountLlamaInstaller(host, options = {}) {
     if (info.state === "running") return;
     status = await api.llmStatus().catch(() => status);
     renderRows();
-    options.onChanged?.(status);
   });
   return () => unsubscribe();
 }

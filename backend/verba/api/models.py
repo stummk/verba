@@ -58,7 +58,7 @@ def llm_status() -> dict:
 
 @router.post("/llm/setup", status_code=202)
 def install_llm_binary(user: dict = AdminUser) -> dict:
-    """Download the llama.cpp server binary in the background."""
+    """Install the llama.cpp server in the background."""
     if llamacpp.server_binary() is not None:
         return {"started": False, "installed": True}
     if not llamacpp.start_binary_install():

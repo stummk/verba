@@ -16,6 +16,7 @@ Progress is reported via "model.download" and "engine.status" events.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import platform
@@ -144,11 +145,19 @@ def server_binary() -> Path | None:
     of them lie side by side — the freshest one is the installation that was
     verified, and the one to run.
     """
-    exe = "llama-server.exe" if platform.system() == "Windows" else "llama-server"
-    candidates = [path for path in binary_dir().rglob(exe) if path.is_file()]
+    candidates = [path for path in binary_dir().rglob(_server_exe()) if path.is_file()]
     if not candidates:
         return None
     return max(candidates, key=lambda path: path.stat().st_mtime)
+
+
+def _server_exe() -> str:
+    return "llama-server.exe" if platform.system() == "Windows" else "llama-server"
+
+
+def _server_binary_in(directory: Path) -> Path | None:
+    """The llama-server of one candidate — not of whichever attempt is newest."""
+    return next((path for path in directory.rglob(_server_exe()) if path.is_file()), None)
 
 
 # ── hardware probe & recommendation ───────────────────────────────────
@@ -243,6 +252,15 @@ _LINUX_LIBRARIES: dict[str, dict[str, tuple[str, ...]]] = {
         "pacman": ("openssl",),
         "apk": ("openssl",),
     },
+    # the Vulkan build's way to the GPU: the loader is a package, the driver's
+    # ICD next to it is not — a container without it starts and sees no card
+    "libvulkan.so.1": {
+        "apt": ("libvulkan1",),
+        "dnf": ("vulkan-loader",),
+        "zypper": ("libvulkan1",),
+        "pacman": ("vulkan-icd-loader",),
+        "apk": ("vulkan-loader",),
+    },
 }
 
 #: Package managers in the order they are tried: key into _LINUX_LIBRARIES,
@@ -300,48 +318,108 @@ def _arch_token() -> str:
     return ""
 
 
-def _asset_patterns() -> list[str]:
-    """Asset name fragments for this platform, best first.
+class _Candidate(NamedTuple):
+    """One installable llama.cpp build.
 
-    llama.cpp publishes no CUDA build for Linux, and its Vulkan build needs a
-    loader that a server installation usually has not got — so Linux gets the
-    plain CPU build, which runs everywhere. On Windows the CUDA 12 build comes
-    first because it still works with older drivers than the CUDA 13 one.
+    `key` is both the directory it unpacks into and the backend name the
+    status reports. `gpu` says whether this build is *meant* to reach the
+    graphics card — whether it actually does is a question only the installed
+    binary can answer (`_probe_devices`), and the whole ladder exists because
+    the two are not the same thing.
+    """
+
+    key: str
+    pattern: str
+    gpu: bool
+    label: str
+
+
+def _candidates() -> list[_Candidate]:
+    """The builds to try on this system, best first.
+
+    "GPU support" is a different package on every platform. Windows has
+    official CUDA builds — CUDA 12 first, because it still works with older
+    drivers than the CUDA 13 one. For Linux llama.cpp publishes no CUDA build
+    at all, only a Vulkan one: that reaches an NVIDIA card through the
+    driver's ICD, costs 30 MB instead of a toolkit, and needs nothing but the
+    Vulkan loader — which `_ensure_loadable` installs like any other missing
+    library. Where even that finds no card, `llamabuild` compiles a CUDA build
+    on the machine.
+
+    The plain CPU build closes the ladder, so llama.cpp stays usable on a
+    system that has no GPU or cannot be brought to use it.
     """
     system = platform.system()
-    if not _arch_token():
+    arch = _arch_token()
+    if not arch:
         return []
+    gpu = hardware.has_gpu()
     if system == "Windows":
-        if _is_arm():
-            return ["bin-win-cpu-arm64"]
-        if hardware.has_gpu():
-            return ["bin-win-cuda-12", "bin-win-cuda", "bin-win-cpu-x64"]
-        return ["bin-win-cpu-x64"]
+        ladder = []
+        if gpu and not _is_arm():
+            ladder.append(_Candidate("cuda", "bin-win-cuda-12", True, "CUDA-Build"))
+        if gpu:
+            ladder.append(_Candidate("cuda", "bin-win-cuda", True, "CUDA-Build"))
+        ladder.append(_Candidate("cpu", f"bin-win-cpu-{arch}", False, "CPU-Build"))
+        return ladder
     if system == "Linux":
-        return ["bin-ubuntu-arm64"] if _is_arm() else ["bin-ubuntu-x64"]
+        ladder = []
+        if gpu:
+            ladder.append(_Candidate("vulkan", f"bin-ubuntu-vulkan-{arch}", True, "Vulkan-Build"))
+        ladder.append(_Candidate("cpu", f"bin-ubuntu-{arch}", False, "CPU-Build"))
+        return ladder
     if system == "Darwin":
-        return ["bin-macos-arm64"] if _is_arm() else ["bin-macos-x64"]
+        # Metal is compiled into the official build; nothing to choose here
+        return [_Candidate("cpu", f"bin-macos-{arch}", False, "macOS-Build")]
     return []
 
 
-def _pick_release_asset(assets: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """The archive to install from one release.
+def _pick_candidates(assets: list[dict[str, Any]]) -> list[_Rung]:
+    """Every candidate this release actually carries an archive for.
 
     Windows ships .zip, Linux and macOS .tar.gz — both are accepted, so a
     change of packaging on one platform does not break the other. The
     architecture is required on top of the pattern: a release that drops one
     CUDA version would otherwise let the broader "bin-win-cuda" fragment match
-    the arm64 build on an x64 machine.
+    the arm64 build on an x64 machine. An asset already taken by an earlier,
+    more specific candidate is not offered twice.
     """
     arch = _arch_token()
-    for pattern in _asset_patterns():
+    picked: list[_Rung] = []
+    taken: set[str] = set()
+    for candidate in _candidates():
         for asset in assets:
             name = asset.get("name", "")
             if name.startswith("cudart-"):
                 continue  # the CUDA runtime, fetched alongside the build it belongs to
-            if pattern in name and arch in name and name.endswith(ARCHIVE_SUFFIXES):
-                return asset
-    return None
+            if candidate.pattern in name and arch in name and name.endswith(ARCHIVE_SUFFIXES):
+                if name not in taken:
+                    taken.add(name)
+                    picked.append((candidate, asset))
+                break
+    return picked
+
+
+#: One rung of the installation ladder: the build and the archive it comes in
+#: — or no archive, for the rung that is compiled here rather than downloaded.
+_Rung = tuple[_Candidate, dict[str, Any] | None]
+
+#: The rung `llamabuild` compiles. Not a candidate `_candidates()` can offer:
+#: it has no asset, and whether it is possible is llamabuild's question.
+_SOURCE_BUILD = _Candidate("cuda-source", "", True, "CUDA-Build aus den Quellen")
+
+
+class _Attempt(NamedTuple):
+    """What came of one rung.
+
+    `binary` is None when the rung did not yield a usable installation, and
+    `problem` then says why in German. `devices` is the three-valued answer of
+    `_probe_devices`: cards found, none found, or could not be asked.
+    """
+
+    binary: Path | None
+    devices: list[str] | None = None
+    problem: str = ""
 
 
 def _pick_cudart_asset(assets: list[dict[str, Any]], binary_name: str) -> dict[str, Any] | None:
@@ -375,8 +453,8 @@ def _fetch_text(url: str) -> str:
     return response.text
 
 
-def resolve_release() -> tuple[dict[str, Any], dict[str, Any]]:
-    """Newest release carrying a binary for this platform, and that asset.
+def resolve_release() -> tuple[dict[str, Any], list[_Rung]]:
+    """Newest release carrying builds for this platform, and that ladder.
 
     The release layout changed: `releases/latest` now answers with a semver
     release whose only asset is `nightly-tag.txt`, naming the nightly build
@@ -385,23 +463,23 @@ def resolve_release() -> tuple[dict[str, Any], dict[str, Any]]:
     list is scanned from the top.
     """
     latest = _get_json(RELEASE_API)
-    candidates = [latest]
+    releases = [latest]
     pointer = next((a for a in latest.get("assets", []) if a.get("name") == NIGHTLY_POINTER), None)
     if pointer is not None:
         tag = _fetch_text(pointer["browser_download_url"]).strip()
         if tag:
-            candidates.append(_get_json(RELEASE_TAG_API.format(tag=tag)))
-    for candidate in candidates:
-        asset = _pick_release_asset(candidate.get("assets", []))
-        if asset is not None:
-            return candidate, asset
+            releases.append(_get_json(RELEASE_TAG_API.format(tag=tag)))
+    for release in releases:
+        rungs = _pick_candidates(release.get("assets", []))
+        if rungs:
+            return release, rungs
 
-    for candidate in _get_json(RELEASE_LIST_API) or []:
-        if not isinstance(candidate, dict):
+    for release in _get_json(RELEASE_LIST_API) or []:
+        if not isinstance(release, dict):
             continue
-        asset = _pick_release_asset(candidate.get("assets", []))
-        if asset is not None:
-            return candidate, asset
+        rungs = _pick_candidates(release.get("assets", []))
+        if rungs:
+            return release, rungs
     logger.error(
         "no llama.cpp asset for %s/%s in the current releases",
         platform.system(),
@@ -471,7 +549,16 @@ def start_binary_install() -> bool:
 
 
 def install_binary(report: Any = None) -> str:
-    """Download the current llama.cpp release binary; returns the server path."""
+    """Install llama.cpp so that it uses the GPU wherever the machine has one.
+
+    Not one download but a ladder, walked until a build is *proven* to see the
+    card: the GPU package for this platform first, then — on Linux, where
+    llama.cpp publishes no CUDA build — a CUDA build compiled on the machine,
+    and the CPU build last. Every rung is installed, asked what devices it
+    sees, and removed again when the answer is none, so what stays behind is a
+    single installation whose backend is known instead of a binary that
+    quietly computes on the processor.
+    """
 
     def emit(percent: int, message: str, state: str = "running") -> None:
         _install_event(percent, message, state)
@@ -485,57 +572,215 @@ def install_binary(report: Any = None) -> str:
 
     emit(0, f"System: {platform.system()} {platform.machine()}")
     emit(0, "Suche aktuelles llama.cpp-Release ...")
-    release, asset = resolve_release()
-    logger.info("installing llama.cpp %s: %s", release.get("tag_name", "?"), asset["name"])
-    emit(2, f"Release {release.get('tag_name', '?')}, Paket {asset['name']}")
+    release, rungs = resolve_release()
+    tag = release.get("tag_name", "?")
+    logger.info("installing llama.cpp %s: %s", tag, [rung[1]["name"] for rung in rungs])
+    plan = ", ".join(f"{candidate.label} ({asset['name']})" for candidate, asset in rungs)
+    emit(2, f"Release {tag}, Paket(e): {plan}")
 
-    downloads = [(asset, "llama.cpp")]
+    from . import llamabuild
+
+    can_build, build_reason = llamabuild.possible()
+    ladder = _ladder(rungs, can_build)
+    problems: list[str] = []
+    if not can_build and build_reason:
+        emit(4, f"Kein CUDA-Build aus den Quellen: {build_reason}")
+        problems.append(f"CUDA-Build aus den Quellen: {build_reason}")
+
+    # every attempt owns an equal slice, so the bar only moves forward
+    span = max(85 // max(len(ladder), 1), 1)
+    cursor = 5
+
+    for candidate, asset in ladder:
+        try:
+            attempt = _try_candidate(candidate, asset, release, emit, cursor, span)
+        except Exception as exc:  # noqa: BLE001 — one rung failing is not the end
+            # A rung can fail for reasons that say nothing about the next one:
+            # too little disk space for a CUDA runtime, an archive over the
+            # size limit, a download that breaks off. Letting that escape
+            # would skip the 17 MB CPU build over the 600 MB one — so it is a
+            # failed attempt like any other, and the ladder walks on.
+            logger.exception("%s could not be installed", candidate.label)
+            attempt = _Attempt(None, problem=download.error_message(exc))
+        cursor += span
+        if attempt.binary is None:
+            problems.append(f"{candidate.label}: {attempt.problem}")
+            emit(cursor, f"{candidate.label}: {attempt.problem}")
+            continue
+        # a GPU build has to show a card; one that could not be asked is
+        # trusted, and the CPU build has nothing to show in the first place
+        if attempt.devices or attempt.devices is None or not candidate.gpu:
+            if problems and not candidate.gpu:
+                emit(cursor, "Es bleibt beim CPU-Build: " + " · ".join(problems))
+            return _accept_install(attempt.binary, candidate, attempt.devices, emit)
+        problems.append(f"{candidate.label}: findet auf diesem System keine Grafikkarte")
+        emit(cursor, f"{candidate.label} findet keine Grafikkarte — nächste Möglichkeit ...")
+        shutil.rmtree(binary_dir() / candidate.key, ignore_errors=True)
+
+    detail = " · ".join(problems) or "kein passendes Paket"
+    logger.error("no llama.cpp build works here: %s", detail)
+    raise RuntimeError(f"llama.cpp ließ sich hier nicht installieren: {detail}")
+
+
+def _ladder(rungs: list[_Rung], can_build: bool) -> list[_Rung]:
+    """The rungs to walk, with the compiled one in its place.
+
+    The build from source belongs after every prebuilt GPU package — it is by
+    far the most expensive way to the card — and before the CPU build, which
+    is the giving-up rung. It carries no asset: that is how `_try_candidate`
+    knows to compile instead of download.
+    """
+    if not can_build:
+        return list(rungs)
+    ladder = list(rungs)
+    ladder.insert(
+        next((index for index, (c, _) in enumerate(ladder) if not c.gpu), len(ladder)),
+        (_SOURCE_BUILD, None),
+    )
+    return ladder
+
+
+def _try_candidate(
+    candidate: _Candidate,
+    asset: dict[str, Any] | None,
+    release: dict[str, Any],
+    emit: Any,
+    base: int,
+    span: int,
+) -> _Attempt:
+    """Install one rung and ask it what it sees.
+
+    Every candidate gets its own directory, and one that cannot run here is
+    deleted again: a rejected attempt must leave nothing behind that
+    `server_binary()` would later find and start. A rung without an asset is
+    compiled rather than downloaded.
+    """
+    if asset is None:
+        return _build_from_source(candidate, release, emit, base, span)
+
+    dest = binary_dir() / candidate.key
+    shutil.rmtree(dest, ignore_errors=True)
+    dest.mkdir(parents=True, exist_ok=True)
+
+    downloads = [(asset, candidate.label)]
     cudart = _pick_cudart_asset(release.get("assets", []), asset["name"])
     if cudart is not None:
         downloads.append((cudart, "CUDA-Laufzeit"))
-
-    dest = binary_dir()
-    dest.mkdir(parents=True, exist_ok=True)
     # archive plus unpacked content, and only the compressed size is known
     download.require_free_space(dest, sum(int(item.get("size", 0)) for item, _ in downloads) * 3)
 
-    span = 96 // len(downloads)
+    share = max(span // len(downloads), 1)
     for index, (item, label) in enumerate(downloads):
         size = int(item.get("size", 0))
         if size > MAX_BINARY_BYTES:
             raise RuntimeError(f"{label}-Download zu groß ({size} Bytes)")
-        base = index * span
+        start = base + index * share
         archive = dest / item["name"]
         # a leftover from an earlier run cannot be verified — only resume within this one
         archive.unlink(missing_ok=True)
-        emit(base, f"Lade {label} ({size // (1024 * 1024)} MB) ...")
+        emit(start, f"Lade {label} ({size // (1024 * 1024)} MB) ...")
         download.fetch(
             item["browser_download_url"],
             archive,
             MAX_BINARY_BYTES,
-            download.phase(emit, base, span, f"Lade {label} ..."),
+            download.phase(emit, start, share, f"Lade {label} ..."),
         )
-        emit(base + span, f"Entpacke {label} ...")
+        emit(start + share, f"Entpacke {label} ...")
         _extract_archive(archive, dest)
         archive.unlink(missing_ok=True)
 
-    binary = server_binary()
+    binary = _server_binary_in(dest)
     if binary is None:
         logger.error("no llama-server in %s", asset["name"])
-        raise RuntimeError("Im llama.cpp-Archiv war kein llama-server enthalten")
+        shutil.rmtree(dest, ignore_errors=True)
+        return _Attempt(None, problem=f"im Archiv {asset['name']} war kein llama-server")
     if platform.system() != "Windows":
         binary.chmod(0o755)
-    emit(97, "Prüfe, ob llama-server auf diesem System startet ...")
+
+    emit(base + span, f"Prüfe, ob {candidate.label} auf diesem System startet ...")
     try:
-        version = _ensure_loadable(binary, emit)
-    except RuntimeError:
-        # a binary this system cannot load must not look like an installation
+        version = _ensure_loadable(binary, emit, base + span)
+    except RuntimeError as exc:
+        logger.warning("%s does not run here: %s", candidate.label, exc)
         shutil.rmtree(dest, ignore_errors=True)
-        raise
+        return _Attempt(None, problem=str(exc))
     if version:
-        emit(99, version)
-    emit(100, f"llama.cpp installiert: {binary}", state="done")
+        emit(base + span, version)
+    # only a GPU build has a decision riding on this — for the CPU build the
+    # answer is known, and asking would be a process spawn for nothing
+    return _Attempt(binary, _probe_devices(binary) if candidate.gpu else [])
+
+
+def _build_from_source(
+    candidate: _Candidate, release: dict[str, Any], emit: Any, base: int, span: int
+) -> _Attempt:
+    """Compile the rung that has no package — see services/llamabuild.py.
+
+    Whatever the build raises reaches `install_binary`'s loop, which treats it
+    as a rung that did not work and walks on to the CPU build — the whole
+    point of having one.
+    """
+    from . import llamabuild
+
+    emit(base, f"Baue llama.cpp mit CUDA auf dieser Maschine ({candidate.label}) ...")
+    binary = llamabuild.build(release.get("tag_name", "?"), emit, base=base, span=span)
+    return _Attempt(binary, _probe_devices(binary))
+
+
+def _accept_install(
+    binary: Path, candidate: _Candidate, devices: list[str] | None, emit: Any
+) -> str:
+    """Keep this build, drop the other attempts, and record what it is."""
+    try:
+        for entry in binary_dir().iterdir():
+            if entry.is_dir() and entry.name != candidate.key:
+                shutil.rmtree(entry, ignore_errors=True)
+    except OSError:  # nothing to clean up is not a failure
+        pass
+    # a fresh GPU build that could not be asked is trusted; see _probe_devices
+    _record_backend(candidate.key, devices, gpu=candidate.gpu)
+    where = f" — Grafikkarte: {devices[0]}" if devices else ""
+    logger.info("llama.cpp installed: %s (%s)%s", binary, candidate.key, where)
+    emit(100, f"llama.cpp installiert: {candidate.label}{where}", state="done")
     return str(binary)
+
+
+def _backend_marker() -> Path:
+    return binary_dir() / "backend.json"
+
+
+def _record_backend(key: str, devices: list[str] | None, *, gpu: bool) -> dict[str, Any]:
+    """Write down which build is installed and what it saw; returns that.
+
+    `gpu` is what to believe when the devices could not be asked at all: a
+    build just installed *as* a GPU build gets the benefit of the doubt, an
+    installation nobody measured before does not.
+    """
+    backend = {
+        "backend": key,
+        "gpu": bool(devices) if devices is not None else gpu,
+        "verified": devices is not None,
+        "devices": devices or [],
+    }
+    try:
+        _backend_marker().write_text(json.dumps(backend, ensure_ascii=False), encoding="utf-8")
+    except OSError as exc:  # the installation is fine, only the note is not
+        logger.warning("could not record the llama.cpp backend: %s", exc)
+    return backend
+
+
+def installed_backend() -> dict[str, Any]:
+    """Which build is installed and which GPUs it reported when it was.
+
+    Written once, when a build is accepted, because probing the devices again
+    would be a process spawn on every status poll — and the answer only
+    changes when the installation or the driver does.
+    """
+    try:
+        data = json.loads(_backend_marker().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _extract_archive(archive: Path, dest: Path) -> None:
@@ -552,7 +797,7 @@ def _extract_archive(archive: Path, dest: Path) -> None:
             tf.extractall(dest)
 
 
-def _ensure_loadable(binary: Path, emit: Any) -> str:
+def _ensure_loadable(binary: Path, emit: Any, percent: int = 97) -> str:
     """Make the fresh binary run, installing the libraries it is missing.
 
     The dynamic linker names one missing library per attempt, so this runs in
@@ -560,6 +805,10 @@ def _ensure_loadable(binary: Path, emit: Any) -> str:
     nothing can be installed — no package manager, no root, or a library that
     is present but too old — the loader failure is raised and the caller
     discards the installation. Returns what the binary says about itself.
+
+    `percent` is where in the bar this happens: one rung of the installation
+    ladder owns a slice, and a repair inside it must not report the 97 % that
+    was right back when there was only ever one attempt.
     """
     for _ in range(len(_LINUX_LIBRARIES)):
         try:
@@ -567,48 +816,67 @@ def _ensure_loadable(binary: Path, emit: Any) -> str:
         except _LoaderFailure as failure:
             if not failure.missing:
                 raise
-            emit(97, f"Fehlende Systembibliothek: {', '.join(failure.missing)}")
-            installed = _install_system_libraries(failure.missing, emit)
+            emit(percent, f"Fehlende Systembibliothek: {', '.join(failure.missing)}")
+            installed = _install_system_libraries(failure.missing, emit, percent)
             if not installed:
                 raise
             logger.info("installed system packages: %s", ", ".join(installed))
-            emit(98, f"Systempaket installiert: {', '.join(installed)}")
+            emit(percent, f"Systempaket installiert: {', '.join(installed)}")
     return _verify_binary(binary)
 
 
-def _install_system_libraries(libraries: list[str], emit: Any) -> list[str]:
-    """Install the packages carrying `libraries`; returns what was installed.
+def _install_system_libraries(libraries: list[str], emit: Any, percent: int = 97) -> list[str]:
+    """Install the packages carrying the libraries the loader is missing."""
+    return install_packages(_LINUX_LIBRARIES, libraries, emit, percent)
+
+
+def can_install_packages() -> bool:
+    """Whether system packages can be installed here at all — asked before
+    a plan is announced that depends on it (services/llamabuild.py)."""
+    return platform.system() == "Linux" and _package_manager() is not None
+
+
+def install_packages(
+    table: dict[str, dict[str, tuple[str, ...]]],
+    names: list[str],
+    emit: Any,
+    percent: int = 97,
+    timeout: int = _PACKAGE_TIMEOUT_S,
+) -> list[str]:
+    """Install the packages carrying `names`; returns what was installed.
+
+    `table` maps what is missing — a library soname, a build tool — to the
+    package that carries it per manager; only names from such a table are ever
+    handed to a package manager, never anything parsed out of an output.
 
     Only on Linux, and only when this process can act as root — a systemd
     service usually can, a desktop start cannot. sudo is called
-    non-interactively, so nothing ever waits for a password nobody can type,
-    and the package names come from _LINUX_LIBRARIES, never from the output
-    that was parsed.
+    non-interactively, so nothing ever waits for a password nobody can type.
     """
     if platform.system() != "Linux":
         return []
     manager = _package_manager()
     if manager is None:
-        logger.info("no package manager available as root — cannot install %s", libraries)
+        logger.info("no package manager available as root — cannot install %s", names)
         return []
     installed: list[str] = []
     refreshed = False
-    for library in libraries:
-        for package in _LINUX_LIBRARIES.get(library, {}).get(manager.key, ()):
-            emit(97, f"Installiere fehlendes Systempaket {package} ({manager.key}) ...")
-            if _run_privileged([*manager.install, package]):
+    for name in names:
+        for package in table.get(name, {}).get(manager.key, ()):
+            emit(percent, f"Installiere fehlendes Systempaket {package} ({manager.key}) ...")
+            if _run_privileged([*manager.install, package], timeout):
                 installed.append(package)
                 break
             if manager.refresh and not refreshed:
                 # a container image often ships without any package lists
                 refreshed = True
-                emit(97, "Aktualisiere die Paketlisten ...")
+                emit(percent, "Aktualisiere die Paketlisten ...")
                 if _run_privileged(manager.refresh) and _run_privileged(
-                    [*manager.install, package]
+                    [*manager.install, package], timeout
                 ):
                     installed.append(package)
                     break
-            emit(97, f"{package} ließ sich nicht installieren")
+            emit(percent, f"{package} ließ sich nicht installieren")
     return installed
 
 
@@ -718,6 +986,74 @@ def _verify_binary(binary: Path) -> str:
         )
     logger.info("llama-server verified: %s", output.strip().splitlines()[:1])
     return next((line.strip() for line in output.splitlines() if line.strip()), "")
+
+
+#: How ggml names a device that is not the CPU, and the backend behind it —
+#: which is also how an installation that predates the marker is identified.
+#: One table, because everything below is derived from it: three hand-kept
+#: copies of these names had already drifted apart.
+_GPU_BACKENDS = {
+    "CUDA": "cuda",
+    "Vulkan": "vulkan",
+    "ROCm": "rocm",
+    "HIP": "rocm",
+    "SYCL": "sycl",
+    "Metal": "metal",
+    "MUSA": "musa",
+}
+_GPU_NAMES = "|".join(_GPU_BACKENDS)
+
+#: A device line of `--list-devices`, e.g. "CUDA0: NVIDIA RTX A500 (4096 MiB)".
+#: The CPU is a device too and deliberately not among these names.
+_GPU_DEVICE = re.compile(rf"^\s*((?:{_GPU_NAMES})\d*\s*:\s*\S.*)$", re.MULTILINE)
+#: What ggml prints while a backend initialises — a second witness, because a
+#: build that lists no devices may still have found one this way.
+_GPU_FOUND = re.compile(rf"found\s+([1-9]\d*)\s+(?:{_GPU_NAMES})", re.IGNORECASE)
+#: An argument parser that does not know `--list-devices` says so like this.
+_UNKNOWN_ARGUMENT = ("invalid argument", "unrecognized argument", "unknown argument", "error: --")
+
+
+def _probe_devices(binary: Path) -> list[str] | None:
+    """The GPUs this binary can actually use; `None` when it cannot be asked.
+
+    This is the question the whole ladder turns on, and the only honest way to
+    ask it is to let ggml load its backends and report: a CUDA build without a
+    working driver and a Vulkan build without an ICD both start happily and
+    then compute on the CPU. That silence is exactly what this breaks.
+
+    An empty list is a definite "no GPU here". `None` means the binary did not
+    understand the question — an ancient or a very new build — and the caller
+    then has to decide on trust rather than on evidence.
+    """
+    try:
+        result = procutil.run(
+            [str(binary), "--list-devices"],
+            cwd=str(binary.parent),
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logger.warning("could not list the devices of %s: %s", binary, exc)
+        return None
+    output = f"{result.stdout}\n{result.stderr}"
+    devices = [match.group(1).strip() for match in _GPU_DEVICE.finditer(output)]
+    if devices:
+        logger.info("%s sees %s", binary.name, "; ".join(devices))
+        return devices
+    if _GPU_FOUND.search(output):
+        # the backend announced a card without listing it as a device; where
+        # the announcement wrapped over two lines there is nothing to name,
+        # and that is "could not tell", not "no card"
+        found = [line.strip() for line in output.splitlines() if _GPU_FOUND.search(line)]
+        return found or None
+    lowered = output.lower()
+    if result.returncode != 0 and any(marker in lowered for marker in _UNKNOWN_ARGUMENT):
+        logger.warning("%s does not know --list-devices", binary.name)
+        return None
+    logger.info("%s sees no GPU device", binary.name)
+    return []
 
 
 def _loader_failure(returncode: int, output: str) -> str:
@@ -1010,6 +1346,10 @@ def status() -> dict[str, Any]:
         model["fit"] = hardware.check_llm_model(hardware.gguf_requirement(model["size_mb"]), hw=hw)
     return {
         "binary_installed": server_binary() is not None,
+        # which build is installed and whether it reached the GPU: the one
+        # thing a user cannot see from the outside (see install_binary). An
+        # installation older than this bookkeeping is measured once here.
+        "backend": installed_backend(),
         "install": install_state(),
         "server_running": _server_process is not None and _server_process.poll() is None,
         "active_model": _server_model,
