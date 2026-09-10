@@ -311,6 +311,12 @@ davor — er passt nirgends ganz und läuft wie bisher über. Die Option gehört
 zum Typ, gilt also nur für die Transkripte, die ihn verwenden, und ist bei
 allen Standardtypen aus.
 
+Dazu kommt **Sprecher automatisch erkennen**, bei
+**Interview/Dialog**, **Protokoll** und **Rollenspiel** an und bei den
+einstimmigen Typen aus. Ist sie an, wird nach der Transkription erkannt, wer
+wann spricht, und ein Segment mit einem Sprecherwechsel an dieser Stelle
+geteilt — Einzelheiten im Abschnitt „Sprechererkennung".
+
 Die beiden Prompts:
 
 - **Bereinigungsprompt** — sagt der KI, wie das Transkript selbst aufbereitet
@@ -491,6 +497,96 @@ arbeiten. Wartende Dateien zeigen ihre Position an; kleine Aufträge (Auswahl
 transkribieren, Audio-Schnitt) werden bevorzugt eingeschoben, und die
 Reihenfolge bleibt fair pro Nutzer.
 
+## Sprechererkennung {#speakers}
+
+Whisper hört Wörter, keine Personen. Es setzt eine Segmentgrenze, wo eine
+Sprechpause ist — und in einem Gespräch fällt die Pause regelmäßig **nicht**
+mit dem Sprecherwechsel zusammen. Ein Segment enthält dann das Ende des einen
+Satzes und den Anfang der Antwort, und das Transkript liest sich wie eine
+einzige Stimme, obwohl zwei geredet haben.
+
+Die Sprechererkennung ist der zweite Durchgang, der das auseinandernimmt:
+
+- Jedes Segment bekommt seinen Sprecher — **Sprecher 1**, **Sprecher 2**, …,
+  durchnummeriert danach, wer zuerst spricht.
+- **Ein Segment, in dem der Sprecher wechselt, wird an dieser Stelle geteilt.**
+  Aus einem Segment mit zwei Stimmen werden zwei Segmente mit je einer.
+
+Die Namen sind Platzhalter: Die Erkennung kann hören, dass zwei verschiedene
+Personen reden, aber nicht, wie sie heißen. Wer sie umbenennt, wird gefragt, ob
+die anderen Segmente derselben Person mitkommen sollen — einmal antworten
+statt zweihundert Zeilen von Hand ändern.
+
+### Wo sie eingeschaltet wird
+
+Ob die Erkennung nach jeder Transkription automatisch läuft, entscheidet der
+**Transkripttyp** (Abschnitt „Transkripttypen") mit dem Schalter **Sprecher
+automatisch erkennen**. Bei **Interview/Dialog**, **Protokoll** und
+**Rollenspiel** ist er an, bei **Lied**, **Gedicht** und **Rede** aus: Bei
+einer einzelnen Stimme wäre jeder erkannte „zweite Sprecher" ein Fehler.
+
+Unabhängig davon startet im **Editor** der Knopf **Sprecher erkennen** die
+Erkennung für die geöffnete Aufnahme — auch bei einem Typ, der sie nicht
+automatisch vorsieht. Das ist der Weg für die eine Aufnahme, die sich als
+Gespräch entpuppt.
+
+### Anzahl Sprecher
+
+Wie viele Personen zu hören sind, ermittelt die Erkennung immer selbst — die
+Zahl wird nirgends angegeben. Was sich daran drehen lässt, ist die
+**Trennschärfe** in den Einstellungen: Sie sagt, wie verschieden zwei Stimmen
+klingen müssen, um als zwei Personen zu gelten. Werden zwei ähnliche Stimmen
+zu einer zusammengefasst, hilft ein niedrigerer Wert; entstehen Sprecher, die
+es nicht gibt, ein höherer.
+
+### Einrichten
+
+Die Erkennung braucht eine eigene Komponente und zwei Modelldateien
+(zusammen etwa 35 MB), beides in **Einstellungen → Transkription →
+Sprechererkennung**:
+
+- Die Komponente wird bei der Ersteinrichtung mitinstalliert. Fehlt sie, sagt
+  die Seite das und der Knopf im Editor verweigert freundlich.
+- Das **Segmentierungsmodell** findet die Sprechabschnitte und ist ohne
+  Alternative. Das **Sprechermodell** erkennt die Stimmen wieder; hier ist die
+  Größe eine Wahl: Das Standardmodell reicht für deutlich verschiedene
+  Stimmen, die größeren helfen bei ähnlichen Stimmen, vielen Sprechern oder
+  schlechter Aufnahmequalität. Die Sprache der Aufnahme spielt keine Rolle —
+  eine Stimme ist eine Stimme.
+
+Gerechnet wird auf dem Prozessor, ohne Grafikkarte, ohne Konto und ohne
+Internet, sobald die Modelle geladen sind. Eine Stunde Aufnahme dauert je nach
+Rechner wenige Minuten.
+
+### Wann der Schnitt genau sitzt — und wann er geschätzt ist
+
+Läuft die Erkennung nach einer Transkription, hat Whisper dabei zusätzlich
+festgehalten, **wann jedes Wort gesagt wurde**. Der Schnitt fällt dann genau
+zwischen zwei Wörter, und kein Zeichen geht verloren.
+
+Für ein Transkript, das ohne diese Zeiten entstanden ist — eine alte Aufnahme,
+oder eines, dessen Text von Hand geändert wurde — wird die Schnittstelle im
+Text **geschätzt**: aus dem Anteil der Zeit, der bis zum Sprecherwechsel
+vergangen ist, und dann auf das nächste Satzende verschoben. Bei einem
+Sprecherwechsel am Satzende — dem Normalfall im Gespräch — trifft das genau;
+bei einem Wechsel mitten im Satz kann ein Halbsatz auf der falschen Seite
+landen. Wer es genau braucht, transkribiert die Datei neu und lässt die
+Erkennung danach laufen.
+
+Zu kurze Wechsel werden bewusst ignoriert: Ein einzelnes Wort, das der
+Erkennung nach von der anderen Person kommt, mitten in einem Satz derselben
+Stimme, ist ein Wackler der Erkennung und kein Sprecherwechsel — dafür wird
+kein Satz zerschnitten.
+
+### Was danach damit passiert
+
+- Die **Gliederungen** *Dialog* und *Drehbuch* bauen das PDF aus genau diesen
+  Segmenten samt Sprechernamen auf (Abschnitt „PDF-Export").
+- Die **Suche** kann auf einen Sprecher eingeschränkt werden
+  (Abschnitt „Suche").
+- Die **KI-Aufbereitung** und der Suchindex warten auf die Erkennung: Sie lesen
+  die Segmente, die sie gerade umschreibt.
+
 ## KI-Aufbereitung (Bereinigung & Übersetzung) {#ai}
 
 Sobald ein Sprachmodell konfiguriert ist (Abschnitt „Sprachmodell (LLM)
@@ -644,6 +740,11 @@ transkribierten Datei öffnet den Editor — einen
   Browser es sofort herunter — im Editor gibt es keine Liste der Exporte, aus
   der man es sonst holen müsste. Es liegt trotzdem wie immer im Ordner
   `exports/` und im Abschnitt **Exporte (PDF)** des Transkripts.
+- **Sprecher erkennen**: Der Knopf mit den zwei Personen unter der Wellenform
+  startet die Sprechererkennung für diese Aufnahme — auch dann, wenn ihr Typ
+  sie nicht automatisch vorsieht. Wie viele Personen reden, wird dabei selbst
+  ermittelt. Vorhandene Sprechernamen werden ersetzt, danach wird gefragt.
+  Abschnitt „Sprechererkennung".
 - **Text und Sprecher** direkt in den Segmentzeilen bearbeiten — Änderungen werden
   automatisch gespeichert („Gespeichert"-Anzeige), **Rückgängig** hebt die letzten
   Änderungen schrittweise auf

@@ -343,8 +343,19 @@ def delete_text(file_id: int, kind: str, request: Request, language: str = "") -
 
 @router.get("/files/{file_id}/segments")
 def get_segments(file_id: int, request: Request) -> dict:
+    """The transcript for the editor — without the word timings.
+
+    Those are the transcription's own notes for the speaker recognition
+    (services/diarize.py); nothing in the frontend reads them, and for an
+    hour-long interview they would be a few hundred kilobytes of JSON on
+    every editor open.
+    """
     file_row = _file_or_404(file_id, request)
-    return {"file": file_row, "segments": transcripts.list_segments(file_id)}
+    segments = [
+        {key: value for key, value in segment.items() if key != "words"}
+        for segment in transcripts.list_segments(file_id)
+    ]
+    return {"file": file_row, "segments": segments}
 
 
 @router.get("/files/{file_id}/audio")

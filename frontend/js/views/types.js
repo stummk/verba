@@ -14,7 +14,7 @@ let types = [];
 let selected = null; // a type object, "new", or null
 let defaults = {
   output_prompt: "", structure: "paragraphs", structures: ["paragraphs"], verbatim: true,
-  condense: false,
+  condense: false, diarize: false,
 };
 // both prompts of the type being edited, so switching the dropdown keeps
 // unsaved edits of the other one
@@ -25,6 +25,7 @@ let draft = {
   keep_sections: false,
   verbatim: true,
   condense: false,
+  diarize: false,
 };
 let promptKind = "system_prompt";
 
@@ -89,6 +90,7 @@ function select(target) {
     keep_sections: isNew ? false : Boolean(target?.keep_sections),
     verbatim: isNew ? defaults.verbatim !== false : Boolean(target?.verbatim),
     condense: isNew ? Boolean(defaults.condense) : Boolean(target?.condense),
+    diarize: isNew ? Boolean(defaults.diarize) : Boolean(target?.diarize),
   };
   renderList();
   renderDetail();
@@ -140,6 +142,7 @@ function renderDetail() {
     <select id="type-structure"></select>
     ${raw(checkLine("type-verbatim", t("types.verbatim"), t("types.verbatimHint")))}
     ${raw(checkLine("type-condense", t("types.condense"), t("types.condenseHint")))}
+    ${raw(checkLine("type-diarize", t("types.diarize"), t("types.diarizeHint")))}
     ${raw(checkLine("type-keep-sections", t("types.keepSections"), t("types.keepSectionsHint")))}
     <label for="type-prompt-kind">${t("types.promptKind")}</label>
     <select id="type-prompt-kind">
@@ -189,6 +192,12 @@ function renderDetail() {
     showPrompt(); // the cleanup prompt is an instruction only for a document
   };
 
+  // whether the speakers are recognised after the transcription; it changes
+  // the segments themselves, so it belongs to the type, not to the export
+  const diarize = el("type-diarize");
+  diarize.checked = draft.diarize;
+  diarize.onchange = () => { draft.diarize = diarize.checked; };
+
   const kindSelect = el("type-prompt-kind");
   const textarea = el("type-prompt");
   kindSelect.value = promptKind;
@@ -231,6 +240,7 @@ function renderDetail() {
       keep_sections: draft.keep_sections,
       verbatim: draft.verbatim,
       condense: draft.condense,
+      diarize: draft.diarize,
     };
     if (!name) {
       el("type-name").focus();

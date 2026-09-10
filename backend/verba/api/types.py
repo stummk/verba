@@ -30,6 +30,9 @@ class TypeRequest(BaseModel):
     # and writes a document of its own instead of cleaning section by section;
     # independent of `verbatim`, which speaks only for the export
     condense: bool = False
+    # after the transcription the speakers are recognised and a segment
+    # holding a speaker change is split (services/diarize.py)
+    diarize: bool = False
 
 
 @router.get("")
@@ -46,6 +49,7 @@ def default_prompts() -> dict:
         "structures": list(STRUCTURES),
         "verbatim": True,
         "condense": False,
+        "diarize": False,
     }
 
 
@@ -59,6 +63,7 @@ def create_type(body: TypeRequest, user: dict = AdminUser) -> dict:
         body.keep_sections,
         body.verbatim,
         body.condense,
+        body.diarize,
     )
 
 
@@ -73,6 +78,7 @@ def update_type(type_id: int, body: TypeRequest, user: dict = AdminUser) -> dict
         body.keep_sections,
         body.verbatim,
         body.condense,
+        body.diarize,
     )
     if updated is None:
         raise HTTPException(status_code=404, detail="Transcript type not found")

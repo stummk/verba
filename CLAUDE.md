@@ -95,8 +95,24 @@ python -m ruff format --check backend/ tests/ run.py
     restart, which is what `generation()` tells whisper), whisper (model
     discovery,
     CPU fallback for broken CUDA and for a full VRAM, preflight refusal of a
-    model that fits nowhere, range transcription), transcripts
-    (segment CRUD + workspace JSON sync), audio (ffmpeg cutting), media (duration probe),
+    model that fits nowhere, range transcription; `word_timestamps` exactly
+    where the type asks for the speakers, because that is the only thing that
+    reads them), diarize (speaker recognition, sherpa-onnx on the CPU: two
+    ONNX models downloaded into their own directory, and the half that
+    matters — turning turns into a transcript. A segment of one voice only
+    gains a name and keeps its row; a segment in which the speaker changes is
+    cut, between two words where the word timings are there and at a guessed,
+    sentence-end-snapped position where they are not. `plan_speakers()` is
+    pure so all of that is testable without a model on disk. How many voices
+    there are is never stated anywhere — always `num_clusters=-1`, with
+    `diarization.threshold` as the only knob over the automatic count. Runs
+    after the transcription for a type whose `diarize` is on — *before* the
+    index and the LLM steps, which read the segments it rewrites — and on
+    demand per file from the editor, where `chain` in the payload tells the
+    two apart),
+    transcripts
+    (segment CRUD + word timings + speaker splitting/renaming + workspace JSON
+    sync), audio (ffmpeg cutting), media (duration probe),
     llm (OpenAI-compatible client; `settings.llm.reasoning` turns a
     reasoning model down or off via `reasoning_effort` plus
     `chat_template_kwargs` — an endpoint that refuses those is remembered and
@@ -157,9 +173,12 @@ python -m ruff format --check backend/ tests/ run.py
     which takes it only where neither the name scheme nor a tag stated one),
     chunking (segment boundaries + overlap), metadata (tags/file name),
     project_types (7 default types with cleanup prompt, output-format
-    prompt, layout and two independent switches — `verbatim` (`is_verbatim()`)
+    prompt, layout and three independent switches — `verbatim` (`is_verbatim()`)
     for what the export may do, `condense` (`condenses()`) for how the
-    aufbereitung runs; seeding + per-field backfill via meta table, and
+    aufbereitung runs, `diarize` (`diarizes()`) for whether the speakers are
+    recognised at all (on for the conversation types, off for the single
+    voices — every "second speaker" on a song is an error); seeding +
+    per-field backfill via meta table, and
     `condense` is carried over from `verbatim` once in `db._migrate` so an
     installation keeps the way its types worked),
     pdf (two-stage

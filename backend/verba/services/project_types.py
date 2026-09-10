@@ -19,6 +19,13 @@ whole recording and writes a document of its own (minutes with decisions and
 to-dos) instead of cleaning the transcript section by section. Off by default,
 because reproducing the material is what a transcript type normally does.
 
+`diarize` is the third, and the only one that acts before the LLM ever sees
+the text: with it on, the transcription is followed by the speaker recognition
+(services/diarize.py) — the segments get their speaker, and a segment in which
+the speaker changes is split at that moment. On for the types that are a
+conversation (interview, minutes, roleplay), off for the ones that are one
+voice, where every recognised "second speaker" would be an error.
+
 Seven builtin types ship with the app. They are seeded exactly once (tracked
 via the meta table) so that deleting a builtin type sticks across restarts;
 a "restore defaults" action re-inserts any missing builtin.
@@ -38,6 +45,7 @@ OUTPUT_PROMPT_MARKER = "project_types_output_prompts"
 STRUCTURE_MARKER = "project_types_structures"
 VERBATIM_MARKER = "project_types_verbatim"
 CONDENSE_MARKER = "project_types_condense"
+DIARIZE_MARKER = "project_types_diarize"
 
 # The builtin output prompts embed the block contract; it is expanded into the
 # stored prompt so nothing about the export stays hidden from the user.
@@ -51,6 +59,7 @@ BUILTIN_TYPES: list[dict[str, Any]] = [
         "structure": "stanzas",
         "verbatim": True,
         "condense": False,
+        "diarize": False,
         "system_prompt": (
             "You are editing a Song transcription. Preserve line breaks and recognizable "
             "repetitions (choruses). Structure the text into verses and choruses, correct "
@@ -70,6 +79,7 @@ BUILTIN_TYPES: list[dict[str, Any]] = [
         "structure": "dialogue",
         "verbatim": True,
         "condense": False,
+        "diarize": True,
         "system_prompt": (
             "You are editing an Interview or dialogue transcription. Assign spoken "
             "contributions to speakers (Speaker 1, Speaker 2, ... or recognized names), "
@@ -89,6 +99,7 @@ BUILTIN_TYPES: list[dict[str, Any]] = [
         "structure": "paragraphs",
         "verbatim": True,
         "condense": False,
+        "diarize": False,
         "system_prompt": (
             "You are editing a speech transcription. Divide the text into meaningful "
             "paragraphs, correct grammar and punctuation, and remove filler words. Keep "
@@ -106,6 +117,7 @@ BUILTIN_TYPES: list[dict[str, Any]] = [
         "structure": "paragraphs",
         "verbatim": False,
         "condense": True,
+        "diarize": True,
         "system_prompt": (
             "You create meeting minutes from a conversation transcription. Summarize the "
             "discussion objectively, list decisions separately, and extract all tasks into "
@@ -127,6 +139,7 @@ BUILTIN_TYPES: list[dict[str, Any]] = [
         "structure": "stanzas",
         "verbatim": True,
         "condense": False,
+        "diarize": False,
         "system_prompt": (
             "You are editing a poem transcription. Restore the stanza and verse structure, "
             "preserving rhythm, rhyme, and line breaks. Correct only unambiguous mishearings "
@@ -145,6 +158,7 @@ BUILTIN_TYPES: list[dict[str, Any]] = [
         "structure": "script",
         "verbatim": True,
         "condense": False,
+        "diarize": True,
         "system_prompt": (
             "You are editing a roleplay or play transcription. Turn the text into a script: "
             "put character names before each spoken contribution and italicize stage "
@@ -182,6 +196,7 @@ TYPE_FIELDS = (
     "type_keep_sections",
     "type_verbatim",
     "type_condense",
+    "type_diarize",
 )
 
 
@@ -224,6 +239,19 @@ def condenses(project: dict[str, Any]) -> bool:
     (`overview.reduce_document`).
     """
     return bool(project.get("type_condense"))
+
+
+def diarizes(project: dict[str, Any]) -> bool:
+    """Whether this type has the speakers recognised after the transcription.
+
+    Read from a project or file row (`type_diarize`, joined by `workspace`).
+    Off for a type that predates the field, for a row without a type and for
+    every type that is one voice — recognising speakers on a song would split
+    its verses between people who are not there. On, it costs the
+    transcription its word timings (services/whisper.py) and one job per file
+    (services/diarize.py).
+    """
+    return bool(project.get("type_diarize"))
 
 
 def default_output_prompt() -> str:
@@ -271,10 +299,12 @@ def seed_builtin_types() -> None:
 
 
 _BUILTIN_COLUMNS = (
-    "key, name, structure, keep_sections, verbatim, condense, system_prompt, output_prompt, builtin"
+    "key, name, structure, keep_sections, verbatim, condense, diarize, "
+    "system_prompt, output_prompt, builtin"
 )
 _INSERT_BUILTIN = (
-    f"INSERT OR IGNORE INTO project_types ({_BUILTIN_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)"
+    f"INSERT OR IGNORE INTO project_types ({_BUILTIN_COLUMNS}) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)"
 )
 
 
@@ -288,6 +318,7 @@ def _builtin_row(key: str, name: str, entry: dict[str, Any]) -> tuple[Any, ...]:
         int(bool(entry.get("keep_sections"))),
         int(bool(entry.get("verbatim", True))),
         int(bool(entry.get("condense"))),
+        int(bool(entry.get("diarize"))),
         entry["system_prompt"],
         entry["output_prompt"],
     )
@@ -300,6 +331,7 @@ _BACKFILL_FIELDS = (
     ("structure", STRUCTURE_MARKER, "paragraphs"),
     ("verbatim", VERBATIM_MARKER, 1),
     ("condense", CONDENSE_MARKER, 0),
+    ("diarize", DIARIZE_MARKER, 0),
 )
 
 
@@ -328,11 +360,12 @@ def restore_builtin_types() -> list[dict[str, Any]]:
         for entry in builtin_types():
             conn.execute(
                 f"INSERT INTO project_types ({_BUILTIN_COLUMNS}) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1) "
                 "ON CONFLICT(key) DO UPDATE SET "
                 "name = excluded.name, structure = excluded.structure, "
                 "keep_sections = excluded.keep_sections, "
                 "verbatim = excluded.verbatim, condense = excluded.condense, "
+                "diarize = excluded.diarize, "
                 "system_prompt = excluded.system_prompt, "
                 "output_prompt = excluded.output_prompt, builtin = 1",
                 _builtin_row(entry["key"], entry["name"], entry),
@@ -388,6 +421,7 @@ def create_type(
     keep_sections: bool = False,
     verbatim: bool = True,
     condense: bool = False,
+    diarize: bool = False,
 ) -> dict[str, Any]:
     """Create a type; without an output prompt it starts from the default so
     the user has something to adapt rather than an empty field."""
@@ -398,8 +432,8 @@ def create_type(
         key = _unique_key(conn, slugify(name))
         cursor = conn.execute(
             "INSERT INTO project_types "
-            "(key, name, structure, keep_sections, verbatim, condense, system_prompt, "
-            "output_prompt, builtin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
+            "(key, name, structure, keep_sections, verbatim, condense, diarize, "
+            "system_prompt, output_prompt, builtin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
             (
                 key,
                 name,
@@ -407,6 +441,7 @@ def create_type(
                 int(keep_sections),
                 int(verbatim),
                 int(condense),
+                int(diarize),
                 system_prompt,
                 output_prompt or default_output_prompt(),
             ),
@@ -424,6 +459,7 @@ def update_type(
     keep_sections: bool = False,
     verbatim: bool = True,
     condense: bool = False,
+    diarize: bool = False,
 ) -> dict[str, Any] | None:
     """Update a type. An emptied output prompt stays empty — the export then
     falls back to the default, which is a valid choice."""
@@ -432,13 +468,15 @@ def update_type(
     with db.get_conn() as conn:
         cursor = conn.execute(
             "UPDATE project_types SET name = ?, structure = ?, keep_sections = ?, "
-            "verbatim = ?, condense = ?, system_prompt = ?, output_prompt = ? WHERE id = ?",
+            "verbatim = ?, condense = ?, diarize = ?, system_prompt = ?, "
+            "output_prompt = ? WHERE id = ?",
             (
                 name,
                 normalize_structure(structure),
                 int(keep_sections),
                 int(verbatim),
                 int(condense),
+                int(diarize),
                 system_prompt,
                 output_prompt,
                 type_id,

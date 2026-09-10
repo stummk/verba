@@ -100,6 +100,19 @@ FEATURE_GROUPS: list[FeatureGroup] = [
     # LLM support needs no pip group: remote endpoints use the core httpx
     # client, local models use the llama.cpp binary (installed via settings).
     FeatureGroup(
+        key="diarize",
+        label="Sprechererkennung (sherpa-onnx)",
+        # Two small ONNX models on the processor, no torch and no token; the
+        # models themselves are downloaded from the settings page
+        # (services/diarize.py). numpy is named because this group reads the
+        # audio itself — faster-whisper brings it too, but a group that only
+        # works because another one is installed is a trap.
+        packages=["sherpa-onnx>=1.10", "numpy>=1.24"],
+        import_name="sherpa_onnx",
+        required=False,
+        extra_imports=["numpy"],
+    ),
+    FeatureGroup(
         key="search",
         label="Semantische Suche",
         packages=["sentence-transformers>=3.0", "sqlite-vec>=0.1.6"],
@@ -261,6 +274,11 @@ def _module_installed(name: str) -> bool:
 def group_installed(group: FeatureGroup) -> bool:
     """Whether every module of the group can be located."""
     return all(_module_installed(name) for name in group.import_names)
+
+
+def group_by_key(key: str) -> FeatureGroup | None:
+    """One feature group by its key — for a service asking after its own."""
+    return next((group for group in FEATURE_GROUPS if group.key == key), None)
 
 
 def check_groups() -> list[CheckResult]:

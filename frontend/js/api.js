@@ -145,6 +145,10 @@ export const api = {
   llmDownload: (name) => request("POST", "/api/models/llm/download", { name }),
   llmDeleteModel: (name) => request("DELETE", `/api/models/llm?name=${encodeURIComponent(name)}`),
   llmStopServer: () => request("POST", "/api/models/llm/stop"),
+  speakerStatus: () => request("GET", "/api/models/speakers"),
+  speakerDownload: (name) => request("POST", "/api/models/speakers/download", { name }),
+  speakerDeleteModel: (name) =>
+    request("DELETE", `/api/models/speakers?name=${encodeURIComponent(name)}`),
   llmTest: (baseUrl, apiKey) =>
     request("POST", "/api/settings/llm/test", { base_url: baseUrl, api_key: apiKey }),
 
@@ -161,6 +165,13 @@ export const api = {
   processProject: (projectId, options) =>
     request("POST", `/api/projects/${projectId}/process`, options),
   getTexts: (fileId) => request("GET", `/api/files/${fileId}/texts`),
+
+  // speakers
+  diarizeFile: (fileId) => request("POST", `/api/files/${fileId}/diarize`),
+  renameSpeaker: (fileId, oldName, newName) =>
+    request("POST", `/api/files/${fileId}/speakers/rename`, {
+      old_name: oldName, new_name: newName,
+    }),
 
   // PDF export
   exportFile: (fileId, options = {}) =>

@@ -10,6 +10,8 @@ programs. Everything runs locally — no cloud required.
 
 - Transcription (faster-whisper, GPU with CPU fallback), live progress, fair
   queue for multiple users
+- Speaker recognition (sherpa-onnx, CPU): who speaks when, and a segment
+  holding a speaker change is split at that change
 - Editor with waveform, segment editing, speakers, range re-transcription
   and audio cutting
 - AI processing (cleanup, translation into nearly any language) via a local

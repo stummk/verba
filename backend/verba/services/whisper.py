@@ -347,8 +347,19 @@ def _store_segments(file_id: int, segments: list[dict[str, Any]]) -> None:
     with db.get_conn() as conn:
         conn.execute("DELETE FROM segments WHERE file_id = ?", (file_id,))
         conn.executemany(
-            "INSERT INTO segments (file_id, idx, start_s, end_s, text) VALUES (?, ?, ?, ?, ?)",
-            [(file_id, i, seg["start"], seg["end"], seg["text"]) for i, seg in enumerate(segments)],
+            "INSERT INTO segments (file_id, idx, start_s, end_s, text, words) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    file_id,
+                    i,
+                    seg["start"],
+                    seg["end"],
+                    seg["text"],
+                    transcripts.encode_words(seg.get("words") or []),
+                )
+                for i, seg in enumerate(segments)
+            ],
         )
 
 
@@ -414,9 +425,17 @@ def handle_transcribe_job(
     # "20260731_ru_de_…" states Russian, and a recognition that heard German
     # would otherwise transcribe — and then translate — the wrong language.
     declared = language_for(file_row, overrides)
+    from . import diarize
+
+    # A type that has its speakers recognised needs to know when each word was
+    # said, because that is where a segment holding two voices may be cut
+    # (services/diarize.py). It costs alignment time, so nothing else asks.
+    wants_speakers = diarize.wanted_for(file_row)
     try:
         segments, info, duration = _with_cpu_fallback(
-            lambda: _run_transcription(audio_path, file_row, file_id, cancel, report, overrides),
+            lambda: _run_transcription(
+                audio_path, file_row, file_id, cancel, report, overrides, words=wants_speakers
+            ),
             report,
         )
         _store_segments(file_id, segments)
@@ -426,14 +445,24 @@ def handle_transcribe_job(
         )
         transcripts.sync_after_change(file_id)
         _publish_engine_status("ready")
-        report(100, f"{file_row['filename']}: fertig ({len(segments)} Segmente)")
 
         from .pipeline import maybe_enqueue_auto_process
         from .vectorstore import maybe_enqueue_index
 
-        maybe_enqueue_index(file_id, session_id=job.get("session_id") or "")
-
-        maybe_enqueue_auto_process(file_id, session_id=job.get("session_id") or "")
+        session = job.get("session_id") or ""
+        # The speaker recognition rewrites these very segments, so everything
+        # that reads them waits for it: the search index would index text that
+        # is about to be split, and the LLM steps would clean up a transcript
+        # without its speakers. The diarize job takes both on afterwards.
+        note = ""
+        if wants_speakers and diarize.ready():
+            diarize.enqueue(file_id, session_id=session, chain=True)
+        else:
+            if wants_speakers:
+                note = " — Sprechererkennung nicht eingerichtet"
+            maybe_enqueue_index(file_id, session_id=session)
+            maybe_enqueue_auto_process(file_id, session_id=session)
+        report(100, f"{file_row['filename']}: fertig ({len(segments)} Segmente){note}")
     except JobCancelled:
         raise
     except Exception as exc:
@@ -602,6 +631,7 @@ def _run_transcription(
     cancel: threading.Event,
     report: Callable[[int, str], None],
     overrides: dict[str, Any] | None = None,
+    words: bool = False,
 ) -> tuple[list[dict[str, Any]], Any, float | None]:
     overrides = overrides or {}
     model = get_model(model_override=overrides.get("model", ""))
@@ -609,6 +639,7 @@ def _run_transcription(
         str(audio_path),
         language=language_for(file_row, overrides) or None,
         beam_size=5,
+        word_timestamps=words,
     )
     duration = info.duration or probe_duration(audio_path)
 
@@ -619,7 +650,20 @@ def _run_transcription(
             workspace.set_file_status(file_id, "pending")
             _publish_engine_status("ready")
             raise JobCancelled()
-        segments.append({"start": segment.start, "end": segment.end, "text": segment.text.strip()})
+        # The tokens keep their leading space, so joining them back together
+        # reproduces the text exactly — which is what a segment split between
+        # two speakers has to do (services/diarize.py).
+        timings = (
+            [(word.start, word.end, word.word) for word in (segment.words or [])] if words else []
+        )
+        segments.append(
+            {
+                "start": segment.start,
+                "end": segment.end,
+                "text": segment.text.strip(),
+                "words": timings,
+            }
+        )
         if duration:
             percent = min(99, int(segment.end * 100 / duration))
             report(percent, f"{file_row['filename']}: {format_clock(segment.end)}")

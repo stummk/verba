@@ -60,6 +60,8 @@ const WAVE_ACTIONS = [
   },
   { id: "file-transcribe", key: "R", icon: () => "audioToText",
     label: () => t("editor.retranscribeFile") },
+  { id: "speakers-detect", key: null, icon: () => "people",
+    label: () => t("editor.detectSpeakers") },
   { id: "range-transcribe", key: "T", icon: () => "speechToText",
     label: () => t("editor.retranscribe") },
   { id: "range-add-segment", key: "N", icon: () => "add",
@@ -212,6 +214,9 @@ export async function render(view, _status, params) {
         <button id="file-transcribe" class="icon-btn"
                 title="${t("editor.retranscribeFile")}"
                 aria-label="${t("editor.retranscribeFile")}"></button>
+        <button id="speakers-detect" class="icon-btn"
+                title="${t("editor.detectSpeakers")}"
+                aria-label="${t("editor.detectSpeakers")}"></button>
         <button id="range-transcribe" class="icon-btn" disabled
                 title="${t("editor.retranscribe")}" aria-label="${t("editor.retranscribe")}"></button>
         <button id="range-add-segment" class="icon-btn" disabled
@@ -335,6 +340,7 @@ export async function render(view, _status, params) {
   el("undo-button").innerHTML = iconSvg("undo");
   el("spellcheck-toggle").innerHTML = iconSvg("spellcheck");
   el("file-transcribe").innerHTML = iconSvg("audioToText");
+  el("speakers-detect").innerHTML = iconSvg("people");
   el("range-transcribe").innerHTML = iconSvg("speechToText");
   el("audio-trim").innerHTML = iconSvg("crop");
   el("audio-cut").innerHTML = iconSvg("cut");
@@ -779,6 +785,31 @@ export async function render(view, _status, params) {
     }
   };
 
+  // Who is talking, as a pass of its own over the finished transcript: the
+  // transcript type usually has this run by itself after a transcription, and
+  // this is the single recording that turns out to hold two voices anyway.
+  // How many they are is never asked — it is worked out from the recording.
+  el("speakers-detect").onclick = async () => {
+    if (!segments.length) {
+      toast(t("editor.detectSpeakersNoSegments"));
+      return;
+    }
+    if (segments.some((segment) => (segment.speaker ?? "").trim())) {
+      const ok = await confirmAction({
+        title: t("editor.detectSpeakersTitle"),
+        message: t("editor.detectSpeakersConfirm"),
+        confirmLabel: t("editor.detectSpeakersStart"),
+      });
+      if (!ok) return;
+    }
+    try {
+      await api.diarizeFile(fileId);
+      toast(t("editor.detectSpeakersStarted"));
+    } catch (error) {
+      toast(error.message);
+    }
+  };
+
   el("range-transcribe").onclick = async () => {
     if (!selections.length) return;
     try {
@@ -1135,12 +1166,45 @@ export async function render(view, _status, params) {
           const local = segments.find((s) => s.id === segmentId);
           if (local) Object.assign(local, updated);
           el("save-state").textContent = t("editor.saved");
+          // a renamed speaker is almost never renamed in one segment only
+          if (field === "speaker" && before !== input.value) {
+            await offerBulkRename(before, input.value);
+          }
         } catch (error) {
           el("save-state").textContent = "";
           toast(t("editor.saveError", { message: error.message }));
         }
       }, AUTOSAVE_DELAY));
     });
+  }
+
+  /**
+   * A recognised speaker is called "Sprecher 2" in every segment they speak
+   * in, so correcting that name once and then two hundred more times is the
+   * work this offers to do. Only asked where it applies: the old name has to
+   * be somebody's, and somebody else has to still carry it.
+   */
+  async function offerBulkRename(oldName, newName) {
+    const from = (oldName ?? "").trim();
+    if (!from) return;
+    const others = segments.filter((segment) => segment.speaker === from).length;
+    if (!others) return;
+    const ok = await confirmAction({
+      title: t("editor.renameSpeakerTitle"),
+      message: t("editor.renameSpeakerConfirm", {
+        count: others,
+        from,
+        to: (newName ?? "").trim() || t("editor.renameSpeakerEmpty"),
+      }),
+      confirmLabel: t("editor.renameSpeakerApply"),
+    });
+    if (!ok) return;
+    try {
+      const result = await api.renameSpeaker(fileId, from, newName);
+      toast(t("editor.renameSpeakerDone", { count: result.renamed }));
+    } catch (error) {
+      toast(error.message);
+    }
   }
 
   el("undo-button").onclick = async () => {
@@ -1520,7 +1584,10 @@ export async function render(view, _status, params) {
       if (job.file_id !== fileId) return;
       // everything that works on the audio reports in the same line under
       // the waveform: the two transcriptions, the cut, and the restore
-      if (["transcribe_range", "transcribe", "audio_edit", "audio_restore"].includes(job.kind)) {
+      if (
+        ["transcribe_range", "transcribe", "audio_edit", "audio_restore", "diarize"]
+          .includes(job.kind)
+      ) {
         showJobState("range-progress", "range-message", job);
       }
       // The recording behind the waveform is a different file now — the

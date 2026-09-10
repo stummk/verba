@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ..core.jobs import job_queue
-from ..services import audio, timeline, transcripts, vectorstore
+from ..services import audio, diarize, timeline, transcripts, vectorstore
 from .deps import file_or_403 as _file_or_404
 
 router = APIRouter(prefix="/api", tags=["segments"])
@@ -67,6 +67,59 @@ def delete_segment(segment_id: int, request: Request) -> dict:
         raise HTTPException(status_code=404, detail="Segment not found")
     vectorstore.maybe_enqueue_index(segment["file_id"])
     return {"deleted": True}
+
+
+@router.post("/files/{file_id}/diarize", status_code=202)
+def diarize_file(
+    file_id: int,
+    request: Request,
+    x_session_id: str = Header(default="", alias="X-Session-Id"),
+) -> dict:
+    """Recognise the speakers of this recording — regardless of its type.
+
+    The transcript type decides whether this happens by itself after a
+    transcription; this is the other way in, for the recording that turns out
+    to hold two voices although its type says one. How many voices there are
+    is never asked: it is worked out from the recording (services/diarize.py).
+    """
+    _file_or_404(file_id, request)
+    if not diarize.library_available():
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Die Sprechererkennung ist nicht installiert. "
+                "Bitte in den Einstellungen die Komponente einrichten."
+            ),
+        )
+    if not diarize.ready():
+        raise HTTPException(
+            status_code=409,
+            detail="Die Modelle der Sprechererkennung fehlen — bitte in den Einstellungen laden.",
+        )
+    if job_queue.active_jobs_for_file("diarize", file_id):
+        raise HTTPException(
+            status_code=409, detail="Für diese Aufnahme läuft bereits eine Sprechererkennung"
+        )
+    if not transcripts.list_segments(file_id):
+        raise HTTPException(status_code=409, detail="Diese Aufnahme ist noch nicht transkribiert")
+    return diarize.enqueue(file_id, session_id=x_session_id)
+
+
+class SpeakerRename(BaseModel):
+    """Replace one speaker's name throughout a transcript."""
+
+    old_name: str = Field(min_length=1, max_length=200)
+    new_name: str = Field(default="", max_length=200)
+
+
+@router.post("/files/{file_id}/speakers/rename")
+def rename_speaker(file_id: int, body: SpeakerRename, request: Request) -> dict:
+    """Give a recognised speaker a real name, in every segment at once."""
+    _file_or_404(file_id, request)
+    changed = transcripts.rename_speaker(file_id, body.old_name.strip(), body.new_name.strip())
+    if changed:
+        vectorstore.maybe_enqueue_index(file_id)
+    return {"renamed": changed}
 
 
 class TimeSpan(BaseModel):

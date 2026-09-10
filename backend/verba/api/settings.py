@@ -90,6 +90,8 @@ def get_paths(user: dict = AdminUser) -> dict:
         "models_dir": str(config.models_dir(settings)),
         "embeddings_dir": str(config.embeddings_dir(settings)),
         "embeddings_default": str(config.default_embeddings_dir()),
+        "speakers_dir": str(config.speakers_dir(settings)),
+        "speakers_default": str(config.default_speakers_dir()),
         "llm_models_dir": str(config.llm_models_dir(settings)),
         "llm_models_default": str(config.default_llm_models_dir()),
         "logs_dir": str(config.logs_dir()),
