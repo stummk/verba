@@ -30,6 +30,14 @@
   --md-inverse-on-surface: #f2f0f7;
   --md-scrim: rgba(0, 0, 0, 0.45);
 
+  /* the live resource bars: four categorical hues, each with its own label
+     next to it — validated for colour-vision deficiency against the card
+     surface, so no pair rests on hue alone */
+  --monitor-cpu: #3b5bc4;
+  --monitor-ram: #0e7a4d;
+  --monitor-gpu: #b25000;
+  --monitor-vram: #9b2fb0;
+
   /* shape */
   --shape-xs: .25rem;
   --shape-sm: .5rem;
@@ -72,6 +80,10 @@
     --md-warning-container: #5a3a00;
     --md-inverse-surface: #e4e1e9;
     --md-inverse-on-surface: #303036;
+    --monitor-cpu: #6a86e8;
+    --monitor-ram: #12a670;
+    --monitor-gpu: #c87b1a;
+    --monitor-vram: #a95fd0;
     --elev-1: 0 .0625rem .125rem rgba(0,0,0,.4);
     --elev-2: 0 .125rem .375rem rgba(0,0,0,.5);
     --elev-3: 0 .375rem 1rem rgba(0,0,0,.6);
@@ -1518,6 +1530,28 @@ dialog textarea {
 .search-answer-text > :last-child { margin-bottom: .75rem; }
 
 /* ── phase 5.6: system info (settings) ─────────────────────────────── */
+/* live resource bars (settings → system) */
+.resource-bars { margin: .1rem 0 1rem; }
+.resource { padding: .35rem 0; }
+.resource-head { display: flex; align-items: baseline; gap: .6rem; }
+.resource-label { font-size: .78rem; font-weight: 600; color: var(--md-on-surface-variant); }
+.resource-value {
+  margin-left: auto;
+  font-size: .82rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--md-on-surface);
+}
+.resource .progressbar { margin: .3rem 0 0; height: .4375rem; }
+.resource-cpu .progressbar > div { background: var(--monitor-cpu); }
+.resource-ram .progressbar > div { background: var(--monitor-ram); }
+.resource-gpu .progressbar > div { background: var(--monitor-gpu); }
+.resource-vram .progressbar > div { background: var(--monitor-vram); }
+/* the bars are redrawn twice a second — an animated width would never settle
+   for someone who asked the system for less motion */
+@media (prefers-reduced-motion: reduce) {
+  .resource .progressbar > div { transition: none; }
+}
+
 .info-list { margin: 0; }
 .info-row { display: grid; gap: .15rem .9rem; padding: .5rem 0; border-bottom: .0625rem solid var(--md-outline-variant); }
 .info-row:last-child { border-bottom: none; }

@@ -1188,6 +1188,15 @@ this machine.
 - **System:** information about the machine Verba runs on — CPU (model and
   cores), memory (free/total), graphics card with VRAM, ffmpeg status — plus
   the app version
+- **Load:** above that, the system area shows what the machine is doing right
+  now: one coloured bar each for the processor, the memory and — where an
+  NVIDIA graphics card is present — its load and its graphics memory. The
+  values are fetched every two seconds for as long as the page is open; every
+  bar is filled up to its own maximum (100 % for a load, the whole memory for
+  RAM and VRAM), and the figure next to it names the current value. Without a
+  graphics card the two GPU bars are absent. This is how you see whether the
+  machine still has room before a transcription is started — and what is
+  keeping it busy during a run.
 
 ## Users & visibility {#security}
 

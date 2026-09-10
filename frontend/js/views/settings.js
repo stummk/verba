@@ -339,6 +339,10 @@ export async function render(view) {
           <p class="small muted" id="cuda-log-title" hidden>${t("cuda.logTitle")}</p>
           <div class="setup-log" id="cuda-log" hidden></div>
         </div>
+        ${raw(labelHelp(
+          `<h3 class="subhead">${t("monitor.title")}</h3>`, t("monitor.intro"), "head-row sub"
+        ))}
+        <div class="resource-bars" id="resource-bars"></div>
         <dl class="info-list" id="system-info"></dl>
       </div>
 
@@ -735,6 +739,7 @@ export async function render(view) {
   // the loaders filled selects — that is the baseline, unless the user was
   // quicker than they were
   if (!touched) markPristine();
+  startResourceMonitor();
 }
 
 /**
@@ -1377,6 +1382,145 @@ function showOsProgress(run) {
   log.scrollTop = log.scrollHeight;
 }
 
+// ── live resource monitor ─────────────────────────────────────────────
+
+// How often the bars ask for new numbers. The backend keeps a reading of
+// about this age, so a faster poll would only repeat itself.
+const MONITOR_INTERVAL_MS = 2000;
+
+let monitorTimer = null;
+let monitorWake = null;
+
+/**
+ * The bars this reading has, in order.
+ *
+ * Every bar carries its own maximum, because the four are not the same kind
+ * of number: a load is a share of 100 %, a memory is full when the machine's
+ * own memory is gone. Without a graphics card the two GPU bars are left out
+ * entirely — an empty bar would claim the card is idle.
+ */
+function resourceBars(data) {
+  const gb = (mb) => (mb / 1024).toFixed(1);
+  const percent = (value) =>
+    value == null ? t("monitor.unavailable") : t("monitor.percent", { value: value.toFixed(0) });
+  const memory = (used, total) =>
+    total ? t("monitor.ofTotal", { used: gb(used), total: gb(total) }) : t("monitor.unavailable");
+
+  const bars = [
+    {
+      key: "cpu",
+      label: t("monitor.cpu"),
+      value: data.cpu_percent ?? 0,
+      max: 100,
+      text: percent(data.cpu_percent),
+    },
+    {
+      key: "ram",
+      label: t("monitor.ram"),
+      value: data.ram_used_mb,
+      max: data.ram_total_mb,
+      text: memory(data.ram_used_mb, data.ram_total_mb),
+    },
+  ];
+  if (data.vram_total_mb) {
+    bars.push(
+      {
+        key: "gpu",
+        label: data.gpu_name || t("monitor.gpu"),
+        value: data.gpu_percent ?? 0,
+        max: 100,
+        text: percent(data.gpu_percent),
+      },
+      {
+        key: "vram",
+        label: t("monitor.vram"),
+        value: data.vram_used_mb,
+        max: data.vram_total_mb,
+        text: memory(data.vram_used_mb, data.vram_total_mb),
+      },
+    );
+  }
+  return bars;
+}
+
+function buildResourceBar(bar) {
+  const node = html`
+    <div class="resource resource-${bar.key}" data-key="${bar.key}">
+      <div class="resource-head">
+        <span class="resource-label">${bar.label}</span>
+        <span class="resource-value"></span>
+      </div>
+      <div class="progressbar" role="progressbar" aria-valuemin="0"><div></div></div>
+    </div>
+  `;
+  return node.firstElementChild;
+}
+
+/**
+ * Show one reading. The rows are only rebuilt when the set of bars itself
+ * changes (a graphics card that appears) — otherwise the widths are moved on
+ * the existing elements, which is what lets CSS animate them instead of
+ * making them jump.
+ */
+function renderResources(data) {
+  const host = el("resource-bars");
+  if (!host) return;
+  const bars = resourceBars(data);
+  const keys = bars.map((bar) => bar.key).join(",");
+  if (host.dataset.keys !== keys) {
+    host.dataset.keys = keys;
+    host.replaceChildren(...bars.map(buildResourceBar));
+  }
+  for (const bar of bars) {
+    const row = host.querySelector(`[data-key="${bar.key}"]`);
+    if (!row) continue;
+    row.querySelector(".resource-label").textContent = bar.label;
+    row.querySelector(".resource-value").textContent = bar.text;
+    const meter = row.querySelector(".progressbar");
+    const share = bar.max > 0 ? Math.max(0, Math.min(1, bar.value / bar.max)) : 0;
+    meter.firstElementChild.style.width = `${(share * 100).toFixed(1)}%`;
+    meter.setAttribute("aria-valuemax", String(bar.max));
+    meter.setAttribute("aria-valuenow", String(Math.round(bar.value)));
+    meter.setAttribute("aria-valuetext", `${bar.label}: ${bar.text}`);
+    meter.setAttribute("aria-label", bar.label);
+  }
+}
+
+/**
+ * Poll for as long as the settings page is on screen — and no longer.
+ *
+ * A tab in the background is not on screen: it keeps its bars but stops
+ * asking, and reads once more the moment it is looked at again. The first
+ * reading is taken regardless, so a page built in a background tab is never
+ * shown with empty bars.
+ */
+function startResourceMonitor() {
+  stopResourceMonitor();
+  const tick = async (always = false) => {
+    if (!el("resource-bars")) return stopResourceMonitor(); // the view moved on
+    if (document.hidden && !always) return; // a tab nobody looks at needs no numbers
+    try {
+      renderResources(await api.systemResources());
+    } catch {
+      // a reading that failed is not worth a message: the bars keep what
+      // they show and the next tick tries again
+    }
+  };
+  monitorWake = () => {
+    if (!document.hidden) tick(true);
+  };
+  document.addEventListener("visibilitychange", monitorWake);
+  tick(true);
+  monitorTimer = setInterval(tick, MONITOR_INTERVAL_MS);
+}
+
+function stopResourceMonitor() {
+  if (monitorTimer) clearInterval(monitorTimer);
+  if (monitorWake) document.removeEventListener("visibilitychange", monitorWake);
+  monitorTimer = null;
+  monitorWake = null;
+}
+
 // ── system info ───────────────────────────────────────────────────────
 
 async function refreshSystemInfo() {
@@ -1447,6 +1591,7 @@ function renderCudaSection(state) {
 
 // Called by the router when another view takes over.
 export function destroy() {
+  stopResourceMonitor();
   unsubscribers.forEach((off) => off());
   unsubscribers = [];
   unsubscribe?.();

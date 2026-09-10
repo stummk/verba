@@ -71,14 +71,26 @@ def test_the_probe_reports_plausible_numbers():
 def test_the_gpu_query_is_parsed(monkeypatch):
     class FakeResult:
         returncode = 0
-        stdout = "NVIDIA RTX A500 Laptop GPU, 4096, 3210\n"
+        stdout = "NVIDIA RTX A500 Laptop GPU, 4096, 3210, 37\n"
 
     monkeypatch.setattr(hardware.subprocess, "run", lambda *a, **k: FakeResult())
     assert hardware.gpu_info() == {
         "name": "NVIDIA RTX A500 Laptop GPU",
         "vram_total_mb": 4096,
         "vram_free_mb": 3210,
+        "util_percent": 37.0,
     }
+
+
+def test_an_unreported_gpu_load_is_unknown_not_idle(monkeypatch):
+    """A driver that answers "[N/A]" has not said the card is idle."""
+
+    class FakeResult:
+        returncode = 0
+        stdout = "NVIDIA RTX A500 Laptop GPU, 4096, 3210, [N/A]\n"
+
+    monkeypatch.setattr(hardware.subprocess, "run", lambda *a, **k: FakeResult())
+    assert hardware.gpu_info()["util_percent"] is None
 
 
 @pytest.mark.parametrize("failure", [OSError("not found"), subprocess.TimeoutExpired("x", 1)])
@@ -87,7 +99,12 @@ def test_a_machine_without_nvidia_smi_reports_no_gpu(monkeypatch, failure):
         raise failure
 
     monkeypatch.setattr(hardware.subprocess, "run", fail)
-    assert hardware.gpu_info() == {"name": "", "vram_total_mb": 0, "vram_free_mb": 0}
+    assert hardware.gpu_info() == {
+        "name": "",
+        "vram_total_mb": 0,
+        "vram_free_mb": 0,
+        "util_percent": None,
+    }
     assert hardware.has_gpu(hardware.probe(fresh=True)) is False
 
 

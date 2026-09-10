@@ -96,6 +96,7 @@ export const api = {
   // system & settings
   systemStatus: () => request("GET", "/api/system/status"),
   systemInfo: () => request("GET", "/api/system/info"),
+  systemResources: () => request("GET", "/api/system/resources"),
   updateInfo: (refresh = false) => request("GET", `/api/system/update?refresh=${refresh}`),
   startUpdate: () => request("POST", "/api/system/update"),
   osUpdateInfo: () => request("GET", "/api/system/os-update"),

@@ -97,12 +97,19 @@ def ram_mb() -> tuple[int, int]:
 
 
 def gpu_info() -> dict[str, Any]:
-    """Name plus total/free VRAM in MB via nvidia-smi; zeros without a GPU."""
+    """Name, total/free VRAM in MB and current load via nvidia-smi.
+
+    Zeros without a GPU. The utilisation is not a memory figure and no
+    verdict here uses it — it is read along because the live monitor would
+    otherwise spawn nvidia-smi a second time for that one number. A driver
+    that does not report it says "[N/A]", which is `None`, not zero: an
+    unknown load and an idle card are different answers.
+    """
     try:
         out = procutil.run(
             [
                 "nvidia-smi",
-                "--query-gpu=name,memory.total,memory.free",
+                "--query-gpu=name,memory.total,memory.free,utilization.gpu",
                 "--format=csv,noheader,nounits",
             ],
             capture_output=True,
@@ -110,15 +117,24 @@ def gpu_info() -> dict[str, Any]:
             timeout=10,
         )
         if out.returncode == 0 and out.stdout.strip():
-            name, total, free = out.stdout.strip().splitlines()[0].rsplit(",", 2)
+            name, total, free, util = out.stdout.strip().splitlines()[0].rsplit(",", 3)
             return {
                 "name": name.strip(),
                 "vram_total_mb": int(total.strip()),
                 "vram_free_mb": int(free.strip()),
+                "util_percent": _percent(util),
             }
     except (OSError, subprocess.TimeoutExpired, ValueError):
         pass
-    return {"name": "", "vram_total_mb": 0, "vram_free_mb": 0}
+    return {"name": "", "vram_total_mb": 0, "vram_free_mb": 0, "util_percent": None}
+
+
+def _percent(text: str) -> float | None:
+    """A percentage nvidia-smi printed, or None where it printed "[N/A]"."""
+    try:
+        return max(0.0, min(100.0, float(text.strip())))
+    except ValueError:
+        return None
 
 
 _probe_lock = threading.Lock()

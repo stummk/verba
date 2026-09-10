@@ -8,7 +8,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from .. import __version__, config, datamove, lifecycle, setup_check
-from ..services import cudalibs, osupdate, updates
+from ..services import cudalibs, monitor, osupdate, updates
 from .deps import AdminUser
 
 router = APIRouter(prefix="/api/system", tags=["system"])
@@ -55,6 +55,16 @@ def get_info(user: dict = AdminUser) -> dict:
     info = setup_check.system_info()
     info["version"] = __version__
     return info
+
+
+@router.get("/resources")
+def get_resources(user: dict = AdminUser) -> dict:
+    """Processor, memory and graphics load right now — the live bars.
+
+    Polled every couple of seconds while the settings page is open, so it
+    never measures synchronously beyond the first call (see `monitor`).
+    """
+    return monitor.sample()
 
 
 @router.post("/setup/run")

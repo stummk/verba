@@ -1246,6 +1246,15 @@ Status, die Einschätzung für diesen Rechner.
 - **System:** Informationen über den Rechner, auf dem Verba läuft — CPU
   (Modell und Kerne), Arbeitsspeicher (frei/gesamt), Grafikkarte samt VRAM,
   ffmpeg-Status — sowie die App-Version
+- **Auslastung:** Darüber zeigt der Systembereich, was der Rechner gerade
+  tut: je ein farbiger Balken für Prozessor, Arbeitsspeicher und — wenn eine
+  NVIDIA-Grafikkarte da ist — deren Auslastung und Grafikspeicher. Die Werte
+  werden alle zwei Sekunden neu geholt, solange die Seite offen ist; jeder
+  Balken ist bis zu seinem eigenen Maximum gefüllt (100 % bei einer
+  Auslastung, der gesamte Speicher bei RAM und VRAM), und die Zahl daneben
+  nennt den aktuellen Wert. Ohne Grafikkarte fehlen die beiden GPU-Balken.
+  Damit lässt sich vor dem Start einer Transkription sehen, ob der Rechner
+  noch Luft hat, und während eines Laufs, was ihn beschäftigt.
 
 ## Nutzer & Sichtbarkeit {#security}
 
