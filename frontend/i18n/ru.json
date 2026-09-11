@@ -649,7 +649,9 @@
   "speakers.dirEffective": "Модели лежат в: {path}",
   "speakers.segmentation": "Модель сегментации",
   "speakers.required": "необходима",
-  "speakers.libraryMissing": "Компонент не установлен — он устанавливается вместе с настройкой (раздел «Система»).",
+  "speakers.libraryMissing": "Компонент ещё не установлен ({packages}) — установите его здесь, затем загрузите модели.",
   "speakers.ready": "Готово к работе.",
-  "speakers.modelsMissing": "Не хватает моделей — загрузите их ниже."
+  "speakers.modelsMissing": "Не хватает моделей — загрузите их ниже.",
+  "speakers.component": "Компонент (sherpa-onnx)",
+  "speakers.install": "Установить компонент"
 }

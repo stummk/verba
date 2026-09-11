@@ -526,8 +526,12 @@ helps; if speakers appear that do not exist, a higher one.
 The recognition needs a component of its own and two model files (about 35 MB
 together), both in **Settings → Transcription → Speaker recognition**:
 
-- The component is installed along with the first-run setup. If it is missing,
-  the page says so and the button in the editor refuses politely.
+- **The component first**, then the models. It is installed along with the
+  first-run setup; if it is missing, the page says so, names the package that
+  is absent, and a button next to it installs the component on the spot, with
+  the progress below. Only then do the models help: they can be downloaded
+  first, but without the component the button in the editor refuses even
+  though the models say "installed".
 - The **segmentation model** finds the stretches of speech and has no
   alternative. The **speaker model** recognises the voices again; here size is
   a choice: the default model is enough for clearly different voices, the

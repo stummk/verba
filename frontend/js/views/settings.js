@@ -123,6 +123,17 @@ export async function render(view) {
           helpText(t("speakers.intro"), t("speakers.typeHint")), "head-row sub"
         ))}
         <p class="small" id="speaker-status"></p>
+        <div id="speaker-install" hidden>
+          <div class="model-row">
+            <span class="model-name">${t("speakers.component")}</span>
+            <span class="spacer"></span>
+            <button type="button" class="icon-btn" id="speaker-install-start"
+                    title="${t("speakers.install")}" aria-label="${t("speakers.install")}"
+                    >${raw(iconSvg("download"))}</button>
+          </div>
+          <p class="small muted" id="speaker-log-title" hidden>${t("cuda.logTitle")}</p>
+          <div class="setup-log" id="speaker-log" hidden></div>
+        </div>
         <div class="form-grid">
           <div class="setting-field">
             ${raw(fieldLabel("diarize-model", t("speakers.model"), t("speakers.modelHint")))}
@@ -529,6 +540,29 @@ export async function render(view) {
     }
   };
 
+  // The speaker recognition's own library, installed from the section that
+  // needs it: sending somebody back through the first-run wizard for a
+  // component they only discovered here is how the models end up downloaded
+  // next to a component that is not there.
+  el("speaker-install-start").onclick = async () => {
+    const button = el("speaker-install-start");
+    button.disabled = true;
+    el("speaker-log-title").hidden = false;
+    el("speaker-log").hidden = false;
+    el("speaker-log").textContent = "";
+    try {
+      const result = await api.installComponent("diarize");
+      if (!result.started) {
+        toast(result.reason);
+        button.disabled = false;
+        await refreshSpeakerSection();
+      }
+    } catch (error) {
+      toast(error.message);
+      button.disabled = false;
+    }
+  };
+
   // the GPU libraries: the one component an installation usually acquires
   // after the first run, so it gets its own button instead of sending the
   // administrator back through the wizard
@@ -584,13 +618,17 @@ export async function render(view) {
     // installing the CUDA libraries is a pip run like the setup's own: the
     // same progress events, shown next to the button that started it
     on("setup.progress", async (info) => {
-      const log = el("cuda-log");
-      if (!log) return; // the view moved on
-      log.textContent = (info.log ?? []).join("\n");
-      log.scrollTop = log.scrollHeight;
+      const logs = ["cuda-log", "speaker-log"].map(el).filter(Boolean);
+      if (!logs.length) return; // the view moved on
+      // one installation state for every component, so both logs that can
+      // start one show it — whichever of them the user is looking at
+      for (const log of logs) {
+        log.textContent = (info.log ?? []).join("\n");
+        log.scrollTop = log.scrollHeight;
+      }
       if (info.running) return;
       if (info.error) toast(t("cuda.failed", { detail: info.error }));
-      await refreshSystemInfo();
+      await Promise.allSettled([refreshSystemInfo(), refreshSpeakerSection()]);
     }),
     // the two ONNX models of the speaker recognition, downloaded from here
     on("speaker.model", async (info) => {
@@ -1010,10 +1048,16 @@ async function refreshSpeakerSection(progress = null) {
   const line = el("speaker-status");
   if (line) {
     line.textContent = !status.available
-      ? t("speakers.libraryMissing")
+      ? t("speakers.libraryMissing", { packages: (status.missing ?? []).join(", ") })
       : status.ready
         ? t("speakers.ready")
         : t("speakers.modelsMissing");
+  }
+  const install = el("speaker-install");
+  if (install) {
+    install.hidden = status.available;
+    const button = el("speaker-install-start");
+    if (button) button.disabled = false;
   }
 
   const select = el("diarize-model");

@@ -717,6 +717,33 @@ def _mark_setup_completed() -> None:
     config.save_settings(settings)
 
 
+def missing_modules(group: FeatureGroup) -> list[str]:
+    """Which of the group's modules cannot be located right now.
+
+    `group_installed` only answers yes or no, and "the component is missing"
+    is a dead end for whoever reads it: a group is several packages, and one
+    of them being absent looks exactly like none of them being there.
+    """
+    return [name for name in group.import_names if not _module_installed(name)]
+
+
+def run_feature_group(key: str) -> None:
+    """Install one optional feature group — its own button on the settings page.
+
+    The same reasoning as `run_cuda_libs`: a component that is wanted after
+    the first run must be installable where it is used, not only by sending
+    the administrator back through the wizard. `setup.completed` stays
+    untouched for exactly that reason.
+    """
+    group = group_by_key(key)
+    if group is None:
+        return
+    _execute(
+        [(group.label, lambda: install_group(group))],
+        done_message=f"{group.label}: Installation abgeschlossen.",
+    )
+
+
 def run_cuda_libs() -> None:
     """Install only the CUDA libraries — the button next to the GPU row.
 

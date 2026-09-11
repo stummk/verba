@@ -102,6 +102,10 @@ def model_path(name: str, settings: config.Settings | None = None) -> Path:
     return config.speakers_dir(settings) / name
 
 
+#: The feature group that carries the library — the key `setup_check` knows it by.
+GROUP_KEY = "diarize"
+
+
 def library_available() -> bool:
     """Whether sherpa-onnx is installed (its own feature group).
 
@@ -109,18 +113,34 @@ def library_available() -> bool:
     "installed" means here — a frozen build installs feature groups into a
     directory of its own, and a half-removed package must not look present.
     """
-    from ..setup_check import group_by_key, group_installed
+    return not missing_modules()
 
-    group = group_by_key("diarize")
-    return group is not None and group_installed(group)
+
+def missing_modules() -> list[str]:
+    """Which modules of the group are not there — "" when the group is gone.
+
+    Named rather than counted: "the component is not installed" is where the
+    trail ends for whoever reads it, and this component is two packages, of
+    which one may well be present because another feature brought it.
+    """
+    from ..setup_check import group_by_key
+    from ..setup_check import missing_modules as group_missing
+
+    group = group_by_key(GROUP_KEY)
+    return group_missing(group) if group is not None else [GROUP_KEY]
 
 
 def status() -> dict[str, Any]:
     """What the settings page needs to show: library, models, downloads."""
     settings = config.get_settings()
     directory = config.speakers_dir(settings)
+    missing = missing_modules()
     return {
-        "available": library_available(),
+        "available": not missing,
+        # which packages are absent, so a component that *is* installed and
+        # still not seen can be reported instead of merely disbelieved
+        "missing": missing,
+        "group": GROUP_KEY,
         # the *selected* model has to be there, not just any of them — that is
         # what decides whether a recognition can start
         "ready": ready(),
@@ -305,8 +325,9 @@ def _diarizer() -> Any:
     """The configured recognition, or a German refusal naming what is missing."""
     if not library_available():
         raise RuntimeError(
-            "Die Sprechererkennung ist nicht installiert. "
-            "Bitte in den Einstellungen die Komponente einrichten."
+            "Die Sprechererkennung ist nicht installiert. Bitte unter "
+            "Einstellungen → Transkription → Sprechererkennung die "
+            "Komponente installieren."
         )
     import sherpa_onnx
 

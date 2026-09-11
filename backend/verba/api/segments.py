@@ -87,8 +87,9 @@ def diarize_file(
         raise HTTPException(
             status_code=409,
             detail=(
-                "Die Sprechererkennung ist nicht installiert. "
-                "Bitte in den Einstellungen die Komponente einrichten."
+                "Die Sprechererkennung ist nicht installiert. Bitte unter "
+                "Einstellungen → Transkription → Sprechererkennung die "
+                "Komponente installieren."
             ),
         )
     if not diarize.ready():

@@ -545,8 +545,12 @@ Die Erkennung braucht eine eigene Komponente und zwei Modelldateien
 (zusammen etwa 35 MB), beides in **Einstellungen → Transkription →
 Sprechererkennung**:
 
-- Die Komponente wird bei der Ersteinrichtung mitinstalliert. Fehlt sie, sagt
-  die Seite das und der Knopf im Editor verweigert freundlich.
+- **Zuerst die Komponente**, dann die Modelle. Sie wird bei der
+  Ersteinrichtung mitinstalliert; fehlt sie, sagt die Seite es und nennt das
+  fehlende Paket, und ein Knopf daneben installiert sie an Ort und Stelle —
+  der Fortschritt steht darunter. Erst danach helfen die Modelle: Sie lassen
+  sich zwar auch vorher laden, aber ohne die Komponente verweigert der Knopf
+  im Editor, obwohl bei den Modellen „installiert“ steht.
 - Das **Segmentierungsmodell** findet die Sprechabschnitte und ist ohne
   Alternative. Das **Sprechermodell** erkennt die Stimmen wieder; hier ist die
   Größe eine Wahl: Das Standardmodell reicht für deutlich verschiedene

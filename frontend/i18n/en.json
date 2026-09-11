@@ -649,7 +649,9 @@
   "speakers.dirEffective": "Models live in: {path}",
   "speakers.segmentation": "Segmentation model",
   "speakers.required": "required",
-  "speakers.libraryMissing": "The component is not installed — the setup installs it along with the rest (System section).",
+  "speakers.libraryMissing": "The component is not installed yet ({packages}) — install it here, then download the models.",
   "speakers.ready": "Ready to use.",
-  "speakers.modelsMissing": "Models are still missing — please download them below."
+  "speakers.modelsMissing": "Models are still missing — please download them below.",
+  "speakers.component": "Component (sherpa-onnx)",
+  "speakers.install": "Install the component"
 }

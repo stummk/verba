@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .. import __version__, config, datamove, lifecycle, setup_check
@@ -97,6 +97,32 @@ def install_cuda_libs(user: dict = AdminUser) -> dict:
         return {"started": False, "reason": state["detail"] or "Nicht erforderlich."}
     thread = threading.Thread(
         target=setup_check.run_cuda_libs, daemon=True, name="cuda-libs-runner"
+    )
+    thread.start()
+    return {"started": True}
+
+
+@router.post("/component/{key}")
+def install_component(key: str, user: dict = AdminUser) -> dict:
+    """Install one optional feature group, named by its key.
+
+    The counterpart to the CUDA button: a component that is only wanted once
+    somebody reaches the feature it belongs to — the speaker recognition is
+    the first — is installed from that feature's own settings section rather
+    than by walking the first-run wizard again.
+    """
+    group = setup_check.group_by_key(key)
+    if group is None:
+        raise HTTPException(status_code=404, detail="Unbekannte Komponente")
+    if setup_check.progress.running:
+        return {"started": False, "reason": "Es läuft bereits eine Installation."}
+    if setup_check.group_installed(group):
+        return {"started": False, "reason": f"{group.label} ist bereits installiert."}
+    thread = threading.Thread(
+        target=setup_check.run_feature_group,
+        args=(key,),
+        daemon=True,
+        name=f"component-{key}",
     )
     thread.start()
     return {"started": True}

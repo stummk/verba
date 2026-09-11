@@ -10,6 +10,7 @@ it rewrites the very segments those read.
 from __future__ import annotations
 
 import threading
+import time
 
 import pytest
 
@@ -78,7 +79,11 @@ def test_a_missing_component_is_refused_in_german(client, file_row, monkeypatch)
     response = client.post(f"/api/files/{file_row['id']}/diarize", json={})
 
     assert response.status_code == 409
-    assert "nicht installiert" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert "nicht installiert" in detail
+    # and it says where to install it — "somewhere in the settings" is what
+    # sent the first user of this looking in the wrong section
+    assert "Sprechererkennung" in detail
 
 
 def test_missing_models_are_refused_too(client, file_row, monkeypatch):
@@ -164,6 +169,59 @@ def test_renaming_a_speaker_nobody_is_called_changes_nothing(client, file_row):
     )
 
     assert response.json()["renamed"] == 0
+
+
+# ── installing the component from where it is missed ──────────────────
+
+
+def test_the_component_can_be_installed_from_its_own_section(client, monkeypatch):
+    """The models are downloadable without the library, so the two can drift.
+
+    Whoever downloads 100 MB of models next to a component that is not there
+    must be able to install it right there, not by walking the first-run
+    wizard again.
+    """
+    from verba import setup_check
+
+    started: list[str] = []
+    monkeypatch.setattr(setup_check, "run_feature_group", started.append)
+    monkeypatch.setattr(setup_check, "group_installed", lambda group: False)
+
+    response = client.post("/api/system/component/diarize")
+
+    assert response.status_code == 200
+    assert response.json()["started"] is True
+    for _ in range(50):  # the runner is a thread
+        if started:
+            break
+        time.sleep(0.02)
+    assert started == ["diarize"]
+
+
+def test_an_unknown_component_is_a_404(client):
+    assert client.post("/api/system/component/nonsense").status_code == 404
+
+
+def test_a_component_that_is_there_is_not_installed_again(client, monkeypatch):
+    from verba import setup_check
+
+    monkeypatch.setattr(setup_check, "group_installed", lambda group: True)
+
+    response = client.post("/api/system/component/diarize")
+
+    assert response.json()["started"] is False
+    assert "installiert" in response.json()["reason"]
+
+
+def test_the_status_names_the_packages_it_cannot_find(monkeypatch):
+    """ "Not installed" is a dead end; "sherpa_onnx is missing" is a lead."""
+    from verba import setup_check
+
+    monkeypatch.setattr(setup_check, "_module_installed", lambda name: name != "sherpa_onnx")
+
+    assert diarize.missing_modules() == ["sherpa_onnx"]
+    assert diarize.status()["missing"] == ["sherpa_onnx"]
+    assert diarize.status()["available"] is False
 
 
 # ── the transcript type decides, and the order is fixed ───────────────
