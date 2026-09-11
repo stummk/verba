@@ -390,7 +390,7 @@ Auswahl gediehen ist und wann der Server die Datei speichert.
 
 **Jede Datei ist eine Karte.** Die Dateiliste besteht aus Karten. Oben die
 Zeile mit dem Auswahlkästchen, dem Dateinamen und — ganz rechts — dem
-Drei-Punkte-Menü; darunter die Zeile mit Sprache und Dauer links und den drei
+Drei-Punkte-Menü; darunter die Zeile mit Sprache und Dauer links und den vier
 runden Schritt-Symbolen rechts am Kartenrand. Dass die Symbole eine Zeile
 tiefer stehen, hat einen Grund: in der Ecke über ihnen kommt und geht der
 Stopp-Knopf, und die Symbole sollen dabei nicht hin- und herspringen.
@@ -410,10 +410,11 @@ ohne Transkript werden übersprungen und die Leiste sagt wie viele) und
 **Löschen**. Die Auswahl bleibt erhalten, während
 Aufträge laufen und die Karten sich aktualisieren.
 
-**Die drei Schritt-Symbole.** Rechts auf jeder Karte stehen immer drei runde
-Symbole — **Transkription**, **Aufbereitung**, **Übersetzung** — auch dann,
-wenn ein Schritt noch nicht gelaufen ist. Genau das ist der Punkt: die Karte
-sagt ebenso deutlich, was noch fehlt, wie das, was fertig ist.
+**Die vier Schritt-Symbole.** Rechts auf jeder Karte stehen immer vier runde
+Symbole — **Transkription**, **Aufbereitung**, **Übersetzung**, **Suchindex**
+— auch dann, wenn ein Schritt noch nicht gelaufen ist. Genau das ist der
+Punkt: die Karte sagt ebenso deutlich, was noch fehlt, wie das, was fertig
+ist.
 
 | Aussehen | Bedeutung |
 | --- | --- |
@@ -427,6 +428,11 @@ Der Text steht im **Tooltip**: darauf zeigen (oder auf dem Handy antippen)
 nennt den Schritt und, wenn er läuft, Prozent und Teilschritt —
 z. B. `Aufbereitung — 40 % · Bereinigung 2/5` oder
 `Transkription — wartet (Position 3)`.
+
+Das letzte Symbol, die **Lupe**, ist der Suchindex. Ihn baut Verba selbst —
+nach der Transkription und nach jeder Änderung am Text —, hier ist also
+nichts zu starten. Grau heißt: diese Datei ist über **Suche** noch nicht zu
+finden; grün: sie ist es.
 
 **Die Aktionen stehen im Drei-Punkte-Menü** rechts auf der Karte — und im
 Menü der rechten Maustaste, das dieselbe Liste zeigt —, jede mit
@@ -1249,7 +1255,8 @@ das ehrlich statt zu raten.
 
 Neue Transkriptionen, Segment-Änderungen und jede gespeicherte Glättung oder
 Übersetzung werden automatisch indiziert, gelöschte Dateien sofort aus dem
-Index entfernt. Nach einer Aktualisierung von Verba kann der Index älter sein
+Index entfernt. Ob eine einzelne Datei im Index liegt, sagt das vierte
+Schritt-Symbol auf ihrer Karte (die Lupe). Nach einer Aktualisierung von Verba kann der Index älter sein
 als das, was er können soll — die Einstellungen sagen das dann und der Knopf
 für den Neuaufbau nimmt die fehlenden Texte auf. Unter **Einstellungen →
 Suche** stehen der Index-Status, das Embedding-Modell und ein Knopf für den

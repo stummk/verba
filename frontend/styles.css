@@ -504,9 +504,9 @@ details.advanced .form-grid { margin-top: .25rem; }
 .select-all-line { margin-bottom: .5rem; }
 .row-select { width: 1.1rem; height: 1.1rem; accent-color: var(--md-primary); cursor: pointer; }
 
-/* ── the three step badges (transcription, cleanup, translation) ──────
-   Always all three, so the card says what is still missing as clearly as what
-   is done. The ring is the progress; the words are in the tooltip. */
+/* ── the step badges (transcription, cleanup, translation, search index) ──
+   Always all of them, so the card says what is still missing as clearly as
+   what is done. The ring is the progress; the words are in the tooltip. */
 /* they close the meta line at the right edge of the card, so they stand under
    the corner and keep their place while the stop button up there comes and goes */
 .file-card-steps {

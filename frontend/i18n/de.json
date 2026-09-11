@@ -63,6 +63,7 @@
   "fileStep.transcribe": "Transkription",
   "fileStep.cleanup": "Aufbereitung",
   "fileStep.translation": "Übersetzung",
+  "fileStep.index": "Suchindex",
   "fileStep.idle": "{step} — noch nicht ausgeführt",
   "fileStep.queued": "{step} — wartet",
   "fileStep.queuedAt": "{step} — wartet (Position {pos})",

@@ -271,7 +271,9 @@ def delete_project(project_id: int, delete_files: bool = True) -> None:
 
 # Every file row carries which derived texts exist for it ("cleanup",
 # "translation"): only that tells the UI whether a file has already been
-# through the AI step — its status stays "done" either way.
+# through the AI step — its status stays "done" either way. `index_chunks`
+# does the same for the search index, which is the fourth step of a file and
+# leaves no mark on its status either: 0 means this file cannot be found yet.
 #
 # The transcript type is joined under the same names a project row uses, and
 # every one of them is NULL for a file that names no type of its own — that
@@ -279,6 +281,7 @@ def delete_project(project_id: int, delete_files: bool = True) -> None:
 FILE_SELECT = (
     "SELECT f.*, (SELECT group_concat(DISTINCT kind) FROM derived_texts "
     "WHERE file_id = f.id AND trim(content) != '') AS derived_kinds, "
+    "(SELECT count(*) FROM chunks WHERE file_id = f.id) AS index_chunks, "
     "t.key AS type_key, t.name AS type_name, t.system_prompt AS type_prompt, "
     "t.output_prompt AS type_output_prompt, t.structure AS type_structure, "
     "t.keep_sections AS type_keep_sections, t.verbatim AS type_verbatim, "

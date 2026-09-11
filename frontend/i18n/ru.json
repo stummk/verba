@@ -63,6 +63,7 @@
   "fileStep.transcribe": "Транскрипция",
   "fileStep.cleanup": "Обработка",
   "fileStep.translation": "Перевод",
+  "fileStep.index": "Поисковый индекс",
   "fileStep.idle": "{step} — ещё не выполнено",
   "fileStep.queued": "{step} — в очереди",
   "fileStep.queuedAt": "{step} — в очереди (позиция {pos})",

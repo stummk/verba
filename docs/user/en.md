@@ -378,7 +378,7 @@ come and when the server is storing the file.
 **Every file is a card.** The file list is a list of cards. The top line
 carries the selection checkbox, the file name and — at the far right — the
 three-dot menu; the line below it carries the language and the running time on
-the left and the three round step badges at the right edge of the card. The
+the left and the four round step badges at the right edge of the card. The
 badges sit one line lower for a reason: the stop button comes and goes in the
 corner above them, and the badges must not jump around when it does.
 **Clicking the card opens the editor**; everything else on it (checkbox,
@@ -394,10 +394,10 @@ which every selected file is one section — like the export of the whole
 transcript, just without the files that were not selected; files without a
 transcript are skipped and the bar says how many) and **Delete**. The selection survives while jobs run and the cards update.
 
-**The three step badges.** On the right of every card stand three round badges
-— **transcription**, **cleanup**, **translation** — always all three, even for
-a step that has not run. That is the point: the card says what is still
-missing as clearly as what is done.
+**The four step badges.** On the right of every card stand four round badges
+— **transcription**, **cleanup**, **translation**, **search index** — always
+all of them, even for a step that has not run. That is the point: the card
+says what is still missing as clearly as what is done.
 
 | Look | Meaning |
 | --- | --- |
@@ -411,6 +411,11 @@ The words are in the **tooltip**: hovering it (or tapping it on a phone) names
 the step and, while it runs, the percentage and the sub-step — e.g.
 `Aufbereitung — 40 % · Bereinigung 2/5` or
 `Transkription — wartet (Position 3)`.
+
+The last badge, the **magnifier**, is the search index. Verba builds it by
+itself — after the transcription and after every change to the text — so there
+is nothing to start here. Grey means this file cannot be found through
+**Search** yet; green means it can.
 
 **The actions live in the three-dot menu** on the right of the card — and in
 the menu the right mouse button opens, which shows the same list —, each with
@@ -1199,6 +1204,8 @@ honestly instead of guessing.
 
 New transcriptions, segment edits and every saved cleanup or translation are
 indexed automatically; deleted files disappear from the index immediately.
+Whether a single file is in the index is what the fourth step badge on its
+card (the magnifier) says.
 After an update of Verba the index can be older than what it is meant to know
 — the settings say so then, and the rebuild button takes the missing texts
 in. **Settings → Search** shows the index

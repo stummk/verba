@@ -1,5 +1,6 @@
-// The three steps a file goes through — transcription, AI cleanup, translation
-// — as one round badge each, always all three, always in the same order.
+// The steps a file goes through — transcription, AI cleanup, translation,
+// search index — as one round badge each, always all of them, always in the
+// same order.
 //
 // A row that only showed what had already happened looked identical before and
 // after a step, and said nothing about what was still missing. The badge says
@@ -19,6 +20,7 @@ const STEPS = [
   { key: "transcribe", icon: "audioToText" },
   { key: "cleanup", icon: "spellcheck" },
   { key: "translation", icon: "translate" },
+  { key: "index", icon: "search" },
 ];
 
 // The pipeline payload calls the translation step "translate", the derived
@@ -28,7 +30,7 @@ const PAYLOAD_STEP = { cleanup: "cleanup", translation: "translate" };
 /**
  * The badges of one file.
  *
- * @param {object} fileRow the file, with `status` and `derived_kinds`
+ * @param {object} fileRow the file, with `status`, `derived_kinds` and `index_chunks`
  * @param {{job?: object|null, failed?: object|null, detail?: string,
  *          queuePosition?: number|null}} context
  *   `job` is the active job of this file, `failed` the last one that failed,
@@ -47,6 +49,7 @@ export function stepBadges(fileRow, context = {}) {
 
 function stepState(key, fileRow, { job, failed }) {
   if (key === "transcribe") return transcribeState(fileRow, job, failed);
+  if (key === "index") return indexState(fileRow, job, failed);
   return llmState(key, fileRow, job, failed);
 }
 
@@ -60,6 +63,24 @@ function transcribeState(fileRow, job, failed) {
   if (fileRow.status === "done") return { state: "done" };
   if (fileRow.status === "failed") return { state: "failed" };
   if (failed && TRANSCRIBE_KINDS.includes(failed.kind)) return { state: "failed" };
+  return { state: "idle" };
+}
+
+// The search index is the one step the file status says nothing about: it runs
+// after the transcription and after every edit of it, and `index_chunks` is
+// what a file row reports about it — no chunk, no hit in the search.
+//
+// A full reindex carries no file_id and therefore never reaches a card; it
+// leaves the badge at what the file already had, which is what it will have
+// again once the rebuild reaches it.
+function indexState(fileRow, job, failed) {
+  if (job?.kind === "index_file") {
+    return job.status === "queued"
+      ? { state: "queued" }
+      : { state: "running", percent: job.progress ?? 0 };
+  }
+  if ((fileRow.index_chunks ?? 0) > 0) return { state: "done" };
+  if (failed?.kind === "index_file") return { state: "failed" };
   return { state: "idle" };
 }
 

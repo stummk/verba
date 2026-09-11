@@ -246,15 +246,19 @@ def test_the_file_list_is_a_list_of_cards():
     assert 'id="file-select-all"' in source
 
 
-def test_every_file_card_shows_all_three_steps_as_badges():
-    """Always all three, so a card says what is missing, not only what is done."""
+def test_every_file_card_shows_all_its_steps_as_badges():
+    """Always all of them, so a card says what is missing, not only what is done."""
     steps = (FRONTEND / "js" / "file-steps.js").read_text(encoding="utf-8")
     for key, icon in (
         ("transcribe", "audioToText"),
         ("cleanup", "spellcheck"),
         ("translation", "translate"),
+        ("index", "search"),
     ):
         assert f'{{ key: "{key}", icon: "{icon}" }}' in steps
+    # the search index leaves no mark on the file status — the chunk count is
+    # the only thing that says whether this file can be found
+    assert "fileRow.index_chunks" in steps
 
     # the state is the whole message: grey / blue ring / green / red
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
@@ -269,6 +273,7 @@ def test_every_file_card_shows_all_three_steps_as_badges():
             "transcribe",
             "cleanup",
             "translation",
+            "index",
             "idle",
             "queued",
             "queuedAt",

@@ -87,6 +87,33 @@ def test_index_file_writes_chunks_fts_and_vectors(tmp_path):
         assert vectors["n"] == 1
 
 
+def test_a_file_row_reports_whether_it_is_indexed(tmp_path):
+    """The card's search badge reads `index_chunks` — nothing else says it."""
+    file_row, project = make_done_file(tmp_path, segments=(("", "Die Katze schläft.", 0, 3),))
+    assert file_row["index_chunks"] == 0
+
+    vectorstore.index_file(file_row["id"])
+    assert workspace.get_file(file_row["id"])["index_chunks"] == 1
+    assert workspace.list_files(project["id"])[0]["index_chunks"] == 1
+
+    vectorstore.remove_file(file_row["id"])
+    assert workspace.get_file(file_row["id"])["index_chunks"] == 0
+
+
+def test_the_index_job_announces_the_file_it_indexed(monkeypatch, tmp_path):
+    """No file field changes, so without this event the badge stays grey."""
+    file_row, _ = make_done_file(tmp_path, segments=(("", "Der Hund bellt.", 0, 3),))
+    events = []
+    monkeypatch.setattr(
+        workspace.hub, "publish", lambda kind, data=None, **kw: events.append((kind, data))
+    )
+    vectorstore.handle_index_file_job(
+        {"payload": {"file_id": file_row["id"]}}, NO_CANCEL, lambda p, m: None
+    )
+    updates = [data for kind, data in events if kind == "file.update"]
+    assert updates and updates[-1]["index_chunks"] == 1
+
+
 def test_chunks_keep_timestamps_per_chunk(tmp_path):
     long_text = "Wort " * 120  # ~600 chars per segment → several chunks
     file_row, _ = make_done_file(

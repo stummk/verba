@@ -939,6 +939,9 @@ def handle_index_file_job(
     file_id = int(job["payload"]["file_id"])
     report(10, "Indiziere für die Suche ...")
     count = index_file(file_id)
+    # nothing about the file itself changed, so no other event tells the UI
+    # that it can be found now — the row carries `index_chunks` for its badge
+    workspace.emit_file_update(file_id)
     report(100, f"{count} Abschnitte indiziert")
 
 
