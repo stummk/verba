@@ -18,7 +18,7 @@
   "common.help": "Show explanation",
   "confirm.deleteTitle": "Really delete?",
   "common.retry": "Try again",
-  "common.withShortcut": "{label} — key {key}",
+  "common.withShortcut": "{label} ({key})",
   "common.keySpace": "Space",
   "picker.language": "Choose a language",
   "picker.filter": "Search for a language …",

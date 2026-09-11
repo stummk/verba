@@ -18,7 +18,7 @@
   "common.help": "Показать пояснение",
   "confirm.deleteTitle": "Действительно удалить?",
   "common.retry": "Повторить",
-  "common.withShortcut": "{label} — клавиша {key}",
+  "common.withShortcut": "{label} ({key})",
   "common.keySpace": "Пробел",
   "picker.language": "Выбор языка",
   "picker.filter": "Поиск языка …",

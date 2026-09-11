@@ -18,7 +18,7 @@
   "common.help": "Erklärung anzeigen",
   "confirm.deleteTitle": "Wirklich löschen?",
   "common.retry": "Erneut versuchen",
-  "common.withShortcut": "{label} — Taste {key}",
+  "common.withShortcut": "{label} ({key})",
   "common.keySpace": "Leertaste",
   "picker.language": "Sprache wählen",
   "picker.filter": "Sprache suchen …",
