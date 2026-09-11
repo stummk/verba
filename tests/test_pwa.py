@@ -250,7 +250,7 @@ def test_every_file_card_shows_all_three_steps_as_badges():
     """Always all three, so a card says what is missing, not only what is done."""
     steps = (FRONTEND / "js" / "file-steps.js").read_text(encoding="utf-8")
     for key, icon in (
-        ("transcribe", "speechToText"),
+        ("transcribe", "audioToText"),
         ("cleanup", "spellcheck"),
         ("translation", "translate"),
     ):

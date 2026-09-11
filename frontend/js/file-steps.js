@@ -16,7 +16,7 @@ const TRANSCRIBE_KINDS = ["transcribe", "transcribe_range", "api_transcribe"];
 // The badge order is the order of the workflow, which is also the order the
 // pipeline runs its steps in.
 const STEPS = [
-  { key: "transcribe", icon: "speechToText" },
+  { key: "transcribe", icon: "audioToText" },
   { key: "cleanup", icon: "spellcheck" },
   { key: "translation", icon: "translate" },
 ];

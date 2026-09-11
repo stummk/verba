@@ -21,7 +21,7 @@ const SECTION_ICONS = {
   transcripts: "folder",
   types: "category",
   import: "upload",
-  transcribe: "speechToText",
+  transcribe: "audioToText",
   speakers: "people",
   ai: "sparkle",
   editor: "editNote",
