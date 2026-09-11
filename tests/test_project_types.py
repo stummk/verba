@@ -1,7 +1,23 @@
 from __future__ import annotations
 
-from verba import db
+import pytest
+
+from verba import config, db
 from verba.services import project_types
+
+
+@pytest.fixture(autouse=True)
+def browse_root(tmp_path):
+    """Let the import reach the temporary directory this test writes into.
+
+    Without a configured root the import falls back to the home directory —
+    and pytest's temp dir lies inside it on Windows but not on Linux, so the
+    one test here that imports a file passed on the one and 403'd on the other.
+    """
+    settings = config.get_settings()
+    settings.general.browse_roots = [str(tmp_path)]
+    config.save_settings(settings)
+
 
 BUILTIN_NAMES = {
     "Song",
@@ -92,9 +108,13 @@ def test_usage_counts_transcripts_and_files_apart(client, tmp_path):
     ).json()
     source = tmp_path / "a.mp3"
     source.write_bytes(b"x")
-    [row] = client.post(
+    imported = client.post(
         f"/api/projects/{project['id']}/files/import", json={"paths": [str(source)]}
-    ).json()
+    )
+    # said outright: a refused import used to arrive as a TypeError three
+    # lines down, which says nothing about the import
+    assert imported.status_code == 200, imported.text
+    [row] = imported.json()
     client.put(f"/api/files/{row['id']}/type", json={"type_id": song["id"]})
 
     usage = client.get("/api/types/usage").json()
