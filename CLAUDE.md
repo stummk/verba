@@ -62,7 +62,15 @@ report that the other platform is covered by CI.
   - `logging_setup.py` — log rotation (retention from settings)
   - `procutil.py` — every subprocess spawn goes through here: a child console
     program would otherwise flash its own window on a Windows build that has
-    no console (nvidia-smi, ffmpeg, pip, llama-server)
+    no console (nvidia-smi, ffmpeg, pip, llama-server). `kill_with_parent=True`
+    also ties a child to this process' lifetime — a Windows job object with
+    `KILL_ON_JOB_CLOSE`, because there a process is regularly terminated
+    rather than asked to stop, and llama-server would keep its model. The
+    POSIX counterpart (`PR_SET_PDEATHSIG`) hangs off the *spawning thread*
+    and is therefore not used; systemd's cgroup and the leftover check at the
+    next start cover that side. `is_running`/`terminate` are for a process
+    that is nobody's child any more — a pid is only ever acted on together
+    with the name behind it
   - `setup_check.py` — first-run checks + automatic installation (ffmpeg, the
     CUDA libraries via `services/cudalibs.py`, pip groups); a single component
     can be installed on its own (`run_cuda_libs`) without ticking the wizard off
@@ -70,7 +78,12 @@ report that the other platform is covered by CI.
     an event about a transcript passes `project_id`/`file_id` and then only reaches
     clients that may see it — otherwise the status line names foreign files
   - `lifecycle.py` — process lifetime: desktop mode stops when the last UI
-    WebSocket stays away (grace period for reloads); server mode keeps running
+    WebSocket stays away (grace period for reloads); server mode keeps running.
+    The exit is asked of the uvicorn server handed over by `run.py`
+    (`bind_server`), never of a signal — `os.kill` is TerminateProcess on
+    Windows, so the lifespan's shutdown half would not run at all. That half
+    is where `release_local_models()` gives llama-server, the Whisper model
+    and the embedding model their memory back
   - `core/jobs.py` — persistent JobQueue: two lanes (main/llm), FIFO per session,
     priority for small jobs, LLM-location scheduling (remote → parallel,
     local → phased batches with model swap), cancellation, requeue after restart;

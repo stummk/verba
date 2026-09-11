@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import sys
 import tarfile
+import threading
 import time
 import zipfile
 from pathlib import Path
@@ -8,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from verba import config
+from verba import config, procutil
 from verba.services import llamacpp
 
 
@@ -784,3 +786,130 @@ def test_the_log_tells_the_whole_story(http_source, monkeypatch, package_manager
     assert "version: 0.3.0-dev (build 10621)" in log
     assert "llama.cpp installiert:" in log
     assert llamacpp.install_state()["percent"] == 100
+
+
+# ── a server a previous run left behind ───────────────────────────────
+
+
+def test_a_leftover_server_is_stopped_at_the_next_start(monkeypatch):
+    llamacpp._remember_server(4711)
+    stopped: list[int] = []
+    monkeypatch.setattr(procutil, "is_running", lambda pid, name: pid == 4711)
+    monkeypatch.setattr(procutil, "terminate", lambda pid: stopped.append(pid) or True)
+
+    llamacpp.reap_stale_server()
+
+    assert stopped == [4711]
+    assert not llamacpp._pid_file().exists()  # the note is used up
+
+
+def test_a_pid_that_is_something_else_now_is_left_alone(monkeypatch):
+    """Pids come round again: the note alone is never reason enough."""
+    llamacpp._remember_server(4711)
+    stopped: list[int] = []
+    monkeypatch.setattr(procutil, "is_running", lambda pid, name: False)
+    monkeypatch.setattr(procutil, "terminate", lambda pid: stopped.append(pid) or True)
+
+    llamacpp.reap_stale_server()
+
+    assert stopped == []
+    assert not llamacpp._pid_file().exists()
+
+
+def test_the_leftover_check_looks_for_a_llama_server(monkeypatch):
+    llamacpp._remember_server(4711)
+    asked: list[tuple[int, str]] = []
+    monkeypatch.setattr(procutil, "is_running", lambda pid, name: bool(asked.append((pid, name))))
+
+    llamacpp.reap_stale_server()
+
+    assert asked == [(4711, "llama-server.exe" if sys.platform == "win32" else "llama-server")]
+
+
+def test_without_a_note_nothing_is_looked_for(monkeypatch):
+    llamacpp._pid_file().unlink(missing_ok=True)
+    monkeypatch.setattr(
+        procutil, "is_running", lambda pid, name: pytest.fail("nothing to go looking for")
+    )
+
+    llamacpp.reap_stale_server()
+
+
+def test_a_stopped_server_leaves_no_note_behind(monkeypatch):
+    """Stopping is the normal case — the next start must not go hunting."""
+    llamacpp._remember_server(4711)
+    monkeypatch.setattr(
+        llamacpp,
+        "_server_process",
+        SimpleNamespace(terminate=lambda: None, wait=lambda timeout: 0),
+    )
+
+    llamacpp.stop_server()
+
+    assert not llamacpp._pid_file().exists()
+
+
+def test_the_server_is_tied_to_this_process(monkeypatch, tmp_path):
+    """llama-server holds the whole model: it must not survive Verba."""
+    binary = tmp_path / "llama-server"
+    binary.write_text("", encoding="utf-8")
+    model = tmp_path / "model.gguf"
+    model.write_text("", encoding="utf-8")
+    monkeypatch.setattr(llamacpp, "server_binary", lambda: binary)
+    monkeypatch.setattr(llamacpp, "_pick_model_file", lambda: model)
+    monkeypatch.setattr(llamacpp, "file_needs_mb", lambda path: 100)
+    monkeypatch.setattr(llamacpp.hardware, "probe", lambda fresh=False: machine(8000))
+    seen: dict = {}
+
+    def fake_popen(cmd, **kwargs):
+        seen.update(kwargs)
+        return SimpleNamespace(pid=4242, poll=lambda: 1, stderr=None)
+
+    monkeypatch.setattr(procutil, "popen", fake_popen)
+    monkeypatch.setattr(llamacpp, "_drain_stderr", lambda process: [])
+
+    with pytest.raises(RuntimeError):  # it "exits" straight away; the spawn is the point
+        llamacpp.ensure_running()
+
+    assert seen["kill_with_parent"] is True
+
+
+def test_a_server_that_never_becomes_ready_tears_itself_down(monkeypatch, tmp_path):
+    """The teardown after a timeout is the same `stop_server` everyone calls,
+    and it is reached with the lock already held — which is why that lock is
+    reentrant. Otherwise the start hangs, and with it the shutdown that later
+    wants to stop the very same server."""
+    binary = tmp_path / "llama-server"
+    binary.write_text("", encoding="utf-8")
+    model = tmp_path / "model.gguf"
+    model.write_text("", encoding="utf-8")
+    monkeypatch.setattr(llamacpp, "server_binary", lambda: binary)
+    monkeypatch.setattr(llamacpp, "_pick_model_file", lambda: model)
+    monkeypatch.setattr(llamacpp, "file_needs_mb", lambda path: 100)
+    monkeypatch.setattr(llamacpp.hardware, "probe", lambda fresh=False: machine(8000))
+    monkeypatch.setattr(llamacpp, "SERVER_STARTUP_TIMEOUT_S", 0)  # it is never ready
+    stopped: list[str] = []
+    process = SimpleNamespace(
+        pid=4242,
+        poll=lambda: None,
+        terminate=lambda: stopped.append("terminate"),
+        wait=lambda timeout: 0,
+    )
+    monkeypatch.setattr(procutil, "popen", lambda cmd, **kwargs: process)
+    monkeypatch.setattr(llamacpp, "_drain_stderr", lambda process: [])
+    outcome: list[BaseException] = []
+
+    def attempt() -> None:
+        try:
+            llamacpp.ensure_running()
+        except BaseException as exc:  # noqa: BLE001 — the thread reports, the test judges
+            outcome.append(exc)
+
+    thread = threading.Thread(target=attempt, daemon=True)
+    thread.start()
+    thread.join(timeout=20)
+
+    assert not thread.is_alive(), "the start deadlocked on its own lock"
+    assert isinstance(outcome[0], RuntimeError)
+    assert stopped == ["terminate"]
+    assert not llamacpp._pid_file().exists()

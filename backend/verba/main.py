@@ -60,6 +60,9 @@ async def _lifespan(app: FastAPI):
     if reclaimed:
         logger.info("database compacted at startup, %.1f MiB reclaimed", reclaimed / 1048576)
     seed_builtin_types()
+    # before the first job can ask for the LLM: a previous run may have been
+    # killed with its llama-server still holding the model and the port
+    llamacpp.reap_stale_server()
     job_queue.register("transcribe", handle_transcribe_job)
     job_queue.register("transcribe_range", handle_transcribe_range_job)
     job_queue.register("audio_edit", handle_audio_edit_job)
@@ -87,8 +90,10 @@ async def _lifespan(app: FastAPI):
         config.data_dir(),
     )
     yield
+    # the workers first — nothing may load a model after this — and only then
+    # the memory of the engines back to the machine (lifecycle.py)
     job_queue.stop()
-    llamacpp.stop_server()
+    lifecycle.release_local_models()
 
 
 def create_app() -> FastAPI:

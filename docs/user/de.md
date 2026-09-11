@@ -57,6 +57,14 @@ geschlossen ist, hält er sich noch wenige Sekunden für ein Neuladen offen und
 beendet sich dann von selbst. Im Servermodus bleibt Verba dagegen weiter
 aktiv, bis der Dienst gestoppt wird.
 
+Beim Beenden gibt Verba den Speicher der lokalen Modelle zurück: der lokale
+Sprachmodell-Server wird gestoppt, das Whisper-Modell und das Modell der Suche
+werden entladen. Nach dem Schließen des Fensters bleibt also kein Modell im
+Arbeitsspeicher oder im Grafikspeicher liegen. Wird Verba hart beendet
+(Task-Manager, Stromausfall), bleibt dafür keine Gelegenheit — unter Windows
+nimmt Verba den KI-Server trotzdem mit, und ein dennoch übrig gebliebener wird
+beim nächsten Start gestoppt.
+
 Verba ist eine **PWA**: Im Browser lässt sich die App „installieren" (Symbol in
 der Adressleiste bzw. „Zum Startbildschirm hinzufügen") und fühlt sich dann wie
 eine eigenständige App an. Die Oberfläche lädt auch ohne Verbindung; sobald der

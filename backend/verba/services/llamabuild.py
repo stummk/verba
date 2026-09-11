@@ -401,6 +401,8 @@ def _run_streaming(cmd: list[str], cwd: Path, on_line: Any) -> int:
         text=True,
         errors="replace",
         bufsize=1,
+        # a compiler that outlives Verba keeps every core it was given
+        kill_with_parent=True,
     )
     timer = threading.Timer(BUILD_TIMEOUT_S, process.kill)
     timer.daemon = True

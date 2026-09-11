@@ -296,6 +296,7 @@ def main() -> None:
 
     import uvicorn
 
+    from verba import lifecycle
     from verba.main import create_app
 
     config = uvicorn.Config(
@@ -306,6 +307,10 @@ def main() -> None:
         log_config=None,  # logging is configured by the app itself (with rotation)
     )
     server = uvicorn.Server(config)
+    # closing the window, the "quit" button and an installed update all end
+    # this process through the server object rather than through a signal —
+    # a signal is not one on Windows, and the models would stay in memory
+    lifecycle.bind_server(server)
     # the sockets are already bound (see bind_sockets): desktop mode serves
     # the IPv4 and IPv6 loopback simultaneously
     server.run(sockets=sockets)

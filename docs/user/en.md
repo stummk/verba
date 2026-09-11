@@ -56,6 +56,13 @@ Verba tab (or the whole browser) is gone, it waits a few seconds for a reload
 and then exits by itself. In server mode, Verba keeps running until its
 service is stopped.
 
+Verba gives the memory of the local models back when it ends: the local
+language model server is stopped, the Whisper model and the model behind the
+search are unloaded. Once the window is closed, no model is left in RAM or in
+the graphics memory. A hard end (Task Manager, a power cut) leaves no
+opportunity for that — on Windows Verba takes the AI server with it anyway,
+and one that is left behind regardless is stopped at the next start.
+
 Verba is a **PWA**: the browser can "install" the app (icon in the address bar
 or "Add to home screen"), after which it feels like a standalone app. The
 interface also loads without a connection; as soon as the server is reachable

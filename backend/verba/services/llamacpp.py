@@ -1268,13 +1268,57 @@ def delete_model(filename: str) -> None:
 
 # ── managed server ────────────────────────────────────────────────────
 
-_server_lock = threading.Lock()
+# reentrant: a start that never becomes ready tears itself down again, and
+# that teardown is the same `stop_server` everybody else calls
+_server_lock = threading.RLock()
 _server_process: subprocess.Popen | None = None
 _server_model: str = ""
 
 
 def active_model_name() -> str:
     return _server_model
+
+
+def _pid_file() -> Path:
+    """Where the running server's pid is noted down for the next start."""
+    return config.data_dir() / "llama-server.pid"
+
+
+def _remember_server(pid: int) -> None:
+    try:
+        _pid_file().write_text(str(pid), encoding="utf-8")
+    except OSError as exc:  # the server runs; only the note failed
+        logger.warning("could not note the llama-server pid: %s", exc)
+
+
+def _forget_server() -> None:
+    try:
+        _pid_file().unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("could not remove the llama-server pid file: %s", exc)
+
+
+def reap_stale_server() -> None:
+    """Stop a llama-server that a previous run could not stop itself.
+
+    Verba stops it on the way out, and on Windows it is tied to the process
+    anyway (`procutil`), but nothing of that survives a machine losing power
+    mid-job or a kill that leaves no chance to act. What is left behind holds
+    its GGUF in memory and, worse, the port this run wants — so it is looked
+    for before anything asks for the LLM.
+
+    The noted pid is only acted on when there really is a llama-server behind
+    it: pids are handed out again, and the next owner is nobody's business.
+    """
+    marker = _pid_file()
+    try:
+        pid = int(marker.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return  # no note, or one nobody can read: nothing to reap
+    if procutil.is_running(pid, _server_exe()):
+        logger.info("stopping the llama-server of a previous run (pid %d)", pid)
+        procutil.terminate(pid)
+    _forget_server()
 
 
 def _pick_model_file() -> Path:
@@ -1384,14 +1428,19 @@ def ensure_running() -> str:
             stderr=subprocess.PIPE,
             text=True,
             errors="replace",
+            # it holds the whole model: it must not outlive Verba, and where
+            # that cannot be enforced the note tells the next start about it
+            kill_with_parent=True,
         )
         _server_model = model_file.stem
+        _remember_server(_server_process.pid)
         tail = _drain_stderr(_server_process)
 
         deadline = time.monotonic() + SERVER_STARTUP_TIMEOUT_S
         while time.monotonic() < deadline:
             if _server_process.poll() is not None:
                 _server_process = None
+                _forget_server()
                 raise RuntimeError(_startup_failure(model_file, tail, on_gpu))
             try:
                 response = httpx.get(f"http://127.0.0.1:{SERVER_PORT}/health", timeout=2)
@@ -1442,6 +1491,7 @@ def stop_server() -> None:
             _server_process.kill()
         _server_process = None
         _server_model = ""
+        _forget_server()
         hub.publish("engine.status", {"engine": "llm", "state": "stopped", "detail": ""})
 
 
