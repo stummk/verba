@@ -7,7 +7,7 @@ import re
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..services import llamacpp, whisper
+from ..services import diarize, llamacpp, whisper
 from .deps import AdminUser
 
 router = APIRouter(prefix="/api/models", tags=["models"])
@@ -117,3 +117,36 @@ def stop_llm_server(user: dict = AdminUser) -> dict:
     """Stop the managed llama-server (frees VRAM/RAM)."""
     llamacpp.stop_server()
     return {"stopped": True}
+
+
+# ── speaker recognition (sherpa-onnx) ─────────────────────────────────
+
+
+@router.get("/speakers")
+def speaker_status() -> dict:
+    """Library, the two models, what is being downloaded right now."""
+    return diarize.status()
+
+
+@router.post("/speakers/download", status_code=202)
+def download_speaker_model(body: DownloadRequest, user: dict = AdminUser) -> dict:
+    """Fetch the segmentation model or one embedding model."""
+    name = body.name.strip()
+    try:
+        started = diarize.start_download(name)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not started:
+        raise HTTPException(status_code=409, detail="Dieses Modell wird bereits geladen")
+    return {"started": True, "name": name}
+
+
+@router.delete("/speakers")
+def delete_speaker_model(name: str, user: dict = AdminUser) -> dict:
+    try:
+        diarize.delete_model(name.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"deleted": True}

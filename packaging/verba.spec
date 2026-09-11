@@ -75,6 +75,8 @@ excludes = [
     "tokenizers",
     "huggingface_hub",
     "sqlite_vec",
+    "sherpa_onnx",
+    "_sherpa_onnx",
     "fpdf",
     "av",
     "onnxruntime",

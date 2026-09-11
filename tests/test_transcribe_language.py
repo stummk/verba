@@ -31,6 +31,7 @@ def noop_report(percent: int, message: str = "") -> None:
 class FakeSegment:
     def __init__(self, start: float, end: float, text: str) -> None:
         self.start, self.end, self.text = start, end, text
+        self.words: list[object] = []  # only filled where the speakers are recognised
 
 
 class FakeInfo:
@@ -44,9 +45,11 @@ class FakeModel:
     def __init__(self, segments: list[FakeSegment]) -> None:
         self.segments = segments
         self.asked_for: object = "not called"
+        self.word_timestamps: object = "not called"
 
-    def transcribe(self, path, language=None, beam_size=5):
+    def transcribe(self, path, language=None, beam_size=5, word_timestamps=False):
         self.asked_for = language
+        self.word_timestamps = word_timestamps
         return iter(self.segments), FakeInfo("de", 6.0)
 
 

@@ -593,6 +593,9 @@ details.advanced .form-grid { margin-top: .25rem; }
   box-shadow: var(--elev-3);
 }
 .menu-sheet.up { top: auto; bottom: calc(100% + .25rem); }
+/* the same sheet opened at the pointer: it hangs off the body, so it is placed
+   against the viewport and has to clear everything the page can raise */
+.menu-sheet.floating { position: fixed; right: auto; bottom: auto; z-index: 60; }
 .menu-item {
   display: flex;
   align-items: center;

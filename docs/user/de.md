@@ -311,6 +311,12 @@ davor — er passt nirgends ganz und läuft wie bisher über. Die Option gehört
 zum Typ, gilt also nur für die Transkripte, die ihn verwenden, und ist bei
 allen Standardtypen aus.
 
+Dazu kommt **Sprecher automatisch erkennen**, bei
+**Interview/Dialog**, **Protokoll** und **Rollenspiel** an und bei den
+einstimmigen Typen aus. Ist sie an, wird nach der Transkription erkannt, wer
+wann spricht, und ein Segment mit einem Sprecherwechsel an dieser Stelle
+geteilt — Einzelheiten im Abschnitt „Sprechererkennung".
+
 Die beiden Prompts:
 
 - **Bereinigungsprompt** — sagt der KI, wie das Transkript selbst aufbereitet
@@ -389,7 +395,10 @@ runden Schritt-Symbolen rechts am Kartenrand. Dass die Symbole eine Zeile
 tiefer stehen, hat einen Grund: in der Ecke über ihnen kommt und geht der
 Stopp-Knopf, und die Symbole sollen dabei nicht hin- und herspringen.
 **Ein Klick auf die Karte öffnet den Editor**; alles andere auf der Karte
-(Kästchen, Sprachchip, Stopp-Knopf, Menü) tut nur das, was es sagt.
+(Kästchen, Sprachchip, Stopp-Knopf, Menü) tut nur das, was es sagt. Die
+**rechte Maustaste** irgendwo auf der Karte öffnet dasselbe Menü dort, wo der
+Zeiger steht — in einer langen Liste ist das ein gutes Stück näher als die
+Ecke.
 
 **Mehrere Dateien auf einmal.** Jede Karte trägt links oben ein
 Kästchen, die Zeile *Alle auswählen* über der Liste wählt alle aus. Sobald etwas
@@ -419,16 +428,18 @@ nennt den Schritt und, wenn er läuft, Prozent und Teilschritt —
 z. B. `Aufbereitung — 40 % · Bereinigung 2/5` oder
 `Transkription — wartet (Position 3)`.
 
-**Die Aktionen stehen im Drei-Punkte-Menü** rechts auf der Karte, jede mit
-Symbol und Text: *Transkribieren* bzw. *Erneut*, *KI-Aufbereitung*,
+**Die Aktionen stehen im Drei-Punkte-Menü** rechts auf der Karte — und im
+Menü der rechten Maustaste, das dieselbe Liste zeigt —, jede mit
+Symbol und Text: *Transkribieren*, *KI-Aufbereitung*,
 *Im Editor öffnen*, *Als PDF exportieren*, *Löschen*. Läuft ein Schritt, steht
 daneben ein **Stopp-Knopf** direkt auf der Karte — abbrechen ist das eine,
 was dann dringend ist.
 
 ## Transkribieren {#transcribe}
 
-- **Einzelne Datei:** *Transkribieren* im Drei-Punkte-Menü der Karte (fertige
-  Dateien bieten dort stattdessen *Erneut* für einen zweiten Lauf)
+- **Einzelne Datei:** *Transkribieren* im Drei-Punkte-Menü der Karte — bei
+  einer bereits fertigen Datei ist das der zweite Lauf, der ihre Segmente
+  ersetzt
 - **Alles:** „Alle transkribieren" in Schritt 2 der Aktionskarte — der Knopf
   nimmt sich die noch offenen Dateien. Sind schon alle transkribiert, bietet er
   einen zweiten Lauf über die ganze Liste an und fragt vorher nach, denn dabei
@@ -485,6 +496,96 @@ die Hardware nie überlastet wird — auch wenn mehrere Personen gleichzeitig
 arbeiten. Wartende Dateien zeigen ihre Position an; kleine Aufträge (Auswahl
 transkribieren, Audio-Schnitt) werden bevorzugt eingeschoben, und die
 Reihenfolge bleibt fair pro Nutzer.
+
+## Sprechererkennung {#speakers}
+
+Whisper hört Wörter, keine Personen. Es setzt eine Segmentgrenze, wo eine
+Sprechpause ist — und in einem Gespräch fällt die Pause regelmäßig **nicht**
+mit dem Sprecherwechsel zusammen. Ein Segment enthält dann das Ende des einen
+Satzes und den Anfang der Antwort, und das Transkript liest sich wie eine
+einzige Stimme, obwohl zwei geredet haben.
+
+Die Sprechererkennung ist der zweite Durchgang, der das auseinandernimmt:
+
+- Jedes Segment bekommt seinen Sprecher — **Sprecher 1**, **Sprecher 2**, …,
+  durchnummeriert danach, wer zuerst spricht.
+- **Ein Segment, in dem der Sprecher wechselt, wird an dieser Stelle geteilt.**
+  Aus einem Segment mit zwei Stimmen werden zwei Segmente mit je einer.
+
+Die Namen sind Platzhalter: Die Erkennung kann hören, dass zwei verschiedene
+Personen reden, aber nicht, wie sie heißen. Wer sie umbenennt, wird gefragt, ob
+die anderen Segmente derselben Person mitkommen sollen — einmal antworten
+statt zweihundert Zeilen von Hand ändern.
+
+### Wo sie eingeschaltet wird
+
+Ob die Erkennung nach jeder Transkription automatisch läuft, entscheidet der
+**Transkripttyp** (Abschnitt „Transkripttypen") mit dem Schalter **Sprecher
+automatisch erkennen**. Bei **Interview/Dialog**, **Protokoll** und
+**Rollenspiel** ist er an, bei **Lied**, **Gedicht** und **Rede** aus: Bei
+einer einzelnen Stimme wäre jeder erkannte „zweite Sprecher" ein Fehler.
+
+Unabhängig davon startet im **Editor** der Knopf **Sprecher erkennen** die
+Erkennung für die geöffnete Aufnahme — auch bei einem Typ, der sie nicht
+automatisch vorsieht. Das ist der Weg für die eine Aufnahme, die sich als
+Gespräch entpuppt.
+
+### Anzahl Sprecher
+
+Wie viele Personen zu hören sind, ermittelt die Erkennung immer selbst — die
+Zahl wird nirgends angegeben. Was sich daran drehen lässt, ist die
+**Trennschärfe** in den Einstellungen: Sie sagt, wie verschieden zwei Stimmen
+klingen müssen, um als zwei Personen zu gelten. Werden zwei ähnliche Stimmen
+zu einer zusammengefasst, hilft ein niedrigerer Wert; entstehen Sprecher, die
+es nicht gibt, ein höherer.
+
+### Einrichten
+
+Die Erkennung braucht eine eigene Komponente und zwei Modelldateien
+(zusammen etwa 35 MB), beides in **Einstellungen → Transkription →
+Sprechererkennung**:
+
+- Die Komponente wird bei der Ersteinrichtung mitinstalliert. Fehlt sie, sagt
+  die Seite das und der Knopf im Editor verweigert freundlich.
+- Das **Segmentierungsmodell** findet die Sprechabschnitte und ist ohne
+  Alternative. Das **Sprechermodell** erkennt die Stimmen wieder; hier ist die
+  Größe eine Wahl: Das Standardmodell reicht für deutlich verschiedene
+  Stimmen, die größeren helfen bei ähnlichen Stimmen, vielen Sprechern oder
+  schlechter Aufnahmequalität. Die Sprache der Aufnahme spielt keine Rolle —
+  eine Stimme ist eine Stimme.
+
+Gerechnet wird auf dem Prozessor, ohne Grafikkarte, ohne Konto und ohne
+Internet, sobald die Modelle geladen sind. Eine Stunde Aufnahme dauert je nach
+Rechner wenige Minuten.
+
+### Wann der Schnitt genau sitzt — und wann er geschätzt ist
+
+Läuft die Erkennung nach einer Transkription, hat Whisper dabei zusätzlich
+festgehalten, **wann jedes Wort gesagt wurde**. Der Schnitt fällt dann genau
+zwischen zwei Wörter, und kein Zeichen geht verloren.
+
+Für ein Transkript, das ohne diese Zeiten entstanden ist — eine alte Aufnahme,
+oder eines, dessen Text von Hand geändert wurde — wird die Schnittstelle im
+Text **geschätzt**: aus dem Anteil der Zeit, der bis zum Sprecherwechsel
+vergangen ist, und dann auf das nächste Satzende verschoben. Bei einem
+Sprecherwechsel am Satzende — dem Normalfall im Gespräch — trifft das genau;
+bei einem Wechsel mitten im Satz kann ein Halbsatz auf der falschen Seite
+landen. Wer es genau braucht, transkribiert die Datei neu und lässt die
+Erkennung danach laufen.
+
+Zu kurze Wechsel werden bewusst ignoriert: Ein einzelnes Wort, das der
+Erkennung nach von der anderen Person kommt, mitten in einem Satz derselben
+Stimme, ist ein Wackler der Erkennung und kein Sprecherwechsel — dafür wird
+kein Satz zerschnitten.
+
+### Was danach damit passiert
+
+- Die **Gliederungen** *Dialog* und *Drehbuch* bauen das PDF aus genau diesen
+  Segmenten samt Sprechernamen auf (Abschnitt „PDF-Export").
+- Die **Suche** kann auf einen Sprecher eingeschränkt werden
+  (Abschnitt „Suche").
+- Die **KI-Aufbereitung** und der Suchindex warten auf die Erkennung: Sie lesen
+  die Segmente, die sie gerade umschreibt.
 
 ## KI-Aufbereitung (Bereinigung & Übersetzung) {#ai}
 
@@ -639,6 +740,11 @@ transkribierten Datei öffnet den Editor — einen
   Browser es sofort herunter — im Editor gibt es keine Liste der Exporte, aus
   der man es sonst holen müsste. Es liegt trotzdem wie immer im Ordner
   `exports/` und im Abschnitt **Exporte (PDF)** des Transkripts.
+- **Sprecher erkennen**: Der Knopf mit den zwei Personen unter der Wellenform
+  startet die Sprechererkennung für diese Aufnahme — auch dann, wenn ihr Typ
+  sie nicht automatisch vorsieht. Wie viele Personen reden, wird dabei selbst
+  ermittelt. Vorhandene Sprechernamen werden ersetzt, danach wird gefragt.
+  Abschnitt „Sprechererkennung".
 - **Text und Sprecher** direkt in den Segmentzeilen bearbeiten — Änderungen werden
   automatisch gespeichert („Gespeichert"-Anzeige), **Rückgängig** hebt die letzten
   Änderungen schrittweise auf
@@ -662,8 +768,8 @@ transkribierten Datei öffnet den Editor — einen
   Sprache aus dem Dateinamen (`20260731_ru_de_…` heißt Russisch).
   Zusammen mit der Rechtschreibprüfung heißt das: Nach dem Umstellen prüft der
   Browser Segmente und bereinigten Text sofort in der neuen Sprache.
-- **Ganze Datei neu transkribieren** — die Schaltfläche mit dem Kreispfeil,
-  ohne Auswahl bedienbar: Die Datei wird komplett neu erkannt und **alle
+- **Ganze Datei neu transkribieren** — die Schaltfläche mit der Wellenform,
+  aus der Textzeilen werden, ohne Auswahl bedienbar: Die Datei wird komplett neu erkannt und **alle
   Segmente werden ersetzt**, samt eigener Änderungen an Text und Sprechern
   (deshalb die Rückfrage). Das ist der Weg, nachdem die Sprache oder das Modell
   korrigiert wurde. Bereinigung und Übersetzungen bleiben stehen, bis sie über
@@ -673,8 +779,11 @@ transkribierten Datei öffnet den Editor — einen
   Abschnitte** auswählen:
   - **Shift+Ziehen** nimmt einen weiteren Abschnitt zur Auswahl hinzu; ein Ziehen
     ohne Shift beginnt eine neue Auswahl.
-  - Die **rechte Maustaste** auf einem ausgewählten Abschnitt nimmt genau diesen
-    wieder heraus; das Kreuz hebt die ganze Auswahl auf.
+  - Die **rechte Maustaste** öffnet dort, wo der Zeiger steht, ein Menü mit
+    genau den Aktionen, die die Werkzeugleiste gerade anbietet. Sind mehrere
+    Abschnitte ausgewählt, kommen zwei dazu, die nur für den Abschnitt unter
+    dem Zeiger gelten: ihn allein abspielen und *Diesen Abschnitt abwählen*.
+    Das Kreuz hebt die ganze Auswahl auf.
   - Überlappende Abschnitte werden zu einem zusammengefasst — man kann also
     dazuziehen, ohne auf Lücken zu achten. Unter der Wellenform steht, wie viele
     Abschnitte ausgewählt sind und wie viel Zeit sie zusammen ausmachen.
@@ -703,6 +812,23 @@ transkribierten Datei öffnet den Editor — einen
     Gedacht für Stellen, die die Erkennung übersprungen hat. Die Segmente reihen
     sich nach ihrer Anfangszeit an der richtigen Stelle in die Liste ein, nicht
     an deren Ende.
+
+**Tastenkürzel.** Jede dieser Schaltflächen hat eine Taste, und die Taste
+steht in ihrem Tooltip. Sie gelten, solange der Schreibcursor nicht in einem
+Textfeld steht — beim Tippen gehört jede Taste dem Text — und sie tun genau
+das, was die Schaltfläche gerade tut: Was ausgegraut ist, reagiert auch auf
+die Taste nicht.
+
+| Taste | Aktion |
+| --- | --- |
+| Leertaste | Abspielen / Pause |
+| `R` | Ganze Datei neu transkribieren |
+| `T` | Auswahl transkribieren |
+| `N` | Leere Segmente für die Auswahl anlegen |
+| `K` | Auf Auswahl kürzen (vormerken) |
+| `X` | Auswahl entfernen (vormerken) |
+| `Z` | Schritt zurück (letzte Vormerkung) |
+| `Esc` | Auswahl aufheben |
 
 **Schneiden — wie in einem Audio-Editor.** Die Aufnahme selbst wird geändert,
 und zwar die geöffnete Datei: Es entsteht **keine zweite Datei** je Schnitt.

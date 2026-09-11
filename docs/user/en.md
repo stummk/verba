@@ -300,6 +300,12 @@ page in front of it — it fits nowhere completely and runs over as before. The
 option belongs to the type, so it only applies to the transcripts using it,
 and it is off for every built-in type.
 
+There is also **Recognise speakers automatically**, on for
+**Interview/Dialogue**, **Meeting Protocol** and **Roleplay** and off for the
+single-voice types. With it on, the transcription is followed by working out
+who speaks when, and a segment holding a speaker change is split at that
+moment — details in the section "Speaker recognition".
+
 The two prompts:
 
 - **Cleanup prompt** — tells the AI how the transcript itself is processed
@@ -376,7 +382,9 @@ the left and the three round step badges at the right edge of the card. The
 badges sit one line lower for a reason: the stop button comes and goes in the
 corner above them, and the badges must not jump around when it does.
 **Clicking the card opens the editor**; everything else on it (checkbox,
-language chip, stop button, menu) does only what it says.
+language chip, stop button, menu) does only what it says. The **right mouse
+button** anywhere on the card opens the same menu where the pointer stands —
+in a long list that is a good deal closer than the corner.
 
 **Several files at once.** Every card carries a checkbox in its top left
 corner, and the *Select all* line above the list selects them all. As soon as something is
@@ -404,16 +412,18 @@ the step and, while it runs, the percentage and the sub-step — e.g.
 `Aufbereitung — 40 % · Bereinigung 2/5` or
 `Transkription — wartet (Position 3)`.
 
-**The actions live in the three-dot menu** on the right of the card, each with
-an icon and a label: *Transcribe* or *Again*, *AI processing*,
+**The actions live in the three-dot menu** on the right of the card — and in
+the menu the right mouse button opens, which shows the same list —, each with
+an icon and a label: *Transcribe*, *AI processing*,
 *Open in the editor*, *Export as PDF*, *Delete*. While a step runs, a **stop
 button** sits next to it directly on the card — cancelling is the one thing
 that is urgent then.
 
 ## Transcribing {#transcribe}
 
-- **Single file:** *Transcribe* in the three-dot menu of the card (finished
-  files offer *Again* there instead, for a second run)
+- **Single file:** *Transcribe* in the three-dot menu of the card — on a file
+  that is already finished this is the second run, and it replaces its
+  segments
 - **Everything:** "Transcribe all" in step 2 of the action card — the button
   takes the files that are still open. Once they are all transcribed it offers a
   second run over the whole list and asks first, because that replaces the
@@ -468,6 +478,92 @@ on and how far it has got:
 oversubscribed — even with several people working at once. Waiting files show
 their queue position; small jobs (transcribing a selection, audio edits) jump
 ahead, and the order stays fair per user.
+
+## Speaker recognition {#speakers}
+
+Whisper hears words, not people. It ends a segment where there is a pause in
+the speech — and in a conversation that pause regularly does **not** coincide
+with the change of speaker. A segment then holds the end of one sentence and
+the beginning of the reply, and the transcript reads as a single voice
+although two people were talking.
+
+Speaker recognition is the second pass that takes this apart:
+
+- Every segment gets its speaker — **Speaker 1**, **Speaker 2**, …, numbered
+  by who talks first.
+- **A segment in which the speaker changes is split at that moment.** One
+  segment with two voices becomes two segments with one each.
+
+The names are placeholders: the recognition can hear that two different people
+are talking, but not what they are called. Renaming one asks whether the other
+segments of the same person should follow — answering once instead of editing
+two hundred rows by hand.
+
+### Where it is switched on
+
+Whether the recognition runs automatically after every transcription is
+decided by the **transcript type** (section "Transcript types") with the
+switch **Recognise speakers automatically**. It is on for
+**Interview/Dialogue**, **Meeting Protocol** and **Roleplay**, and off for
+**Song**, **Poem** and **Speech**: with a single voice, every recognised
+"second speaker" would be an error.
+
+Independently of that, the **Recognise speakers** button in the **editor**
+starts the recognition for the open recording — even for a type that does not
+ask for it. That is the way in for the one recording that turns out to be a
+conversation.
+
+### Number of speakers
+
+How many people can be heard is always worked out by the recognition itself —
+the number is never stated anywhere. What can be turned is the **separation
+threshold** in the settings: it says how different two voices have to sound to
+count as two people. If two similar voices are merged into one, a lower value
+helps; if speakers appear that do not exist, a higher one.
+
+### Setting it up
+
+The recognition needs a component of its own and two model files (about 35 MB
+together), both in **Settings → Transcription → Speaker recognition**:
+
+- The component is installed along with the first-run setup. If it is missing,
+  the page says so and the button in the editor refuses politely.
+- The **segmentation model** finds the stretches of speech and has no
+  alternative. The **speaker model** recognises the voices again; here size is
+  a choice: the default model is enough for clearly different voices, the
+  larger ones help with similar voices, many speakers or poor recording
+  quality. The language of the recording does not matter — a voice is a voice.
+
+Everything computes on the processor, without a graphics card, without an
+account and without an internet connection once the models are downloaded. An
+hour of audio takes a few minutes, depending on the machine.
+
+### When the cut is exact — and when it is a guess
+
+When the recognition follows a transcription, Whisper has additionally
+recorded **when each word was said**. The cut then falls exactly between two
+words and not a character is lost.
+
+For a transcript made without those timings — an old recording, or one whose
+text was edited by hand — the position in the text is **estimated**: from the
+share of the duration that has passed up to the speaker change, and then moved
+to the nearest sentence end. Where the speaker changes at the end of a
+sentence — the normal case in a conversation — that is exact; where it changes
+mid-sentence, half a clause can end up on the wrong side. Whoever needs it
+exact transcribes the file again and runs the recognition afterwards.
+
+Changes too short to be turns are deliberately ignored: a single word that the
+recognition attributes to the other person, in the middle of a sentence of the
+same voice, is the recognition wobbling and not a change of speaker — no
+sentence is cut in two for that.
+
+### What happens with it afterwards
+
+- The **Dialogue** and **Script** layouts build the PDF from exactly these
+  segments including the speaker names (section "PDF export").
+- The **search** can be narrowed to one speaker (section "Search").
+- The **AI processing** and the search index wait for the recognition: they
+  read the segments it is about to rewrite.
 
 ## AI processing (cleanup & translation) {#ai}
 
@@ -611,6 +707,11 @@ transcript and AI texts:
   the editor. Once the PDF is finished the browser downloads it right away —
   the editor has no list of exports to pick it from. It still lands in the
   `exports/` folder and in the transcript's **Exports (PDF)** section as always.
+- **Recognise speakers**: the two-people button under the waveform starts the
+  speaker recognition for this recording — even when its type does not ask for
+  it. How many people are talking is worked out on its own. Existing speaker
+  names are replaced, and you are asked before that happens. See the section
+  "Speaker recognition".
 - **Text and speaker** are edited directly in the segment rows — changes are
   saved automatically ("Saved" indicator), **Undo** reverts recent changes
   step by step
@@ -632,7 +733,8 @@ transcript and AI texts:
   is prefilled from the file name (`20260731_ru_de_…` means Russian).
   Together with the spell checking that means: after switching, the browser
   checks segments and cleaned text in the new language right away.
-- **Re-transcribe the whole file** — the button with the circular arrow, usable
+- **Re-transcribe the whole file** — the button with the waveform turning into
+  lines of text, usable
   without a selection: the file is recognised again completely and **every
   segment is replaced**, including your own edits to text and speakers (hence
   the confirmation). This is the way out after the language or the model has
@@ -642,7 +744,10 @@ transcript and AI texts:
   selected:
   - **Shift+drag** adds another passage to the selection; a drag without Shift
     starts a new one.
-  - The **right mouse button** on a selected passage takes that one back out;
+  - The **right mouse button** opens a menu where the pointer stands, with
+    exactly the actions the toolbar offers right now. With several passages
+    selected two more join them, for the passage under the pointer alone:
+    playing just that one, and *Deselect this passage*.
     the cross clears the whole selection.
   - Passages that overlap are merged into one — so one can drag on without
     minding the gaps. Below the waveform stands how many passages are selected
@@ -670,6 +775,22 @@ transcript and AI texts:
     the cursor lands in the first of them. It is meant for passages the
     recognition skipped. The segments take their place in the list by their
     start time, not at the end of it.
+
+**Keyboard shortcuts.** Every one of these buttons has a key, and the key is
+named in its tooltip. They apply while the cursor is not in a text field —
+when typing, every key belongs to the text — and they do exactly what the
+button does right now: a greyed-out button does not answer its key either.
+
+| Key | Action |
+| --- | --- |
+| Space | Play / pause |
+| `R` | Re-transcribe the whole file |
+| `T` | Transcribe the selection |
+| `N` | Create empty segments for the selection |
+| `K` | Trim to the selection (marked, not applied) |
+| `X` | Remove the selection (marked, not applied) |
+| `Z` | One step back (the last mark) |
+| `Esc` | Clear the selection |
 
 **Cutting — the way an audio editor does it.** The recording itself is changed,
 and it is the open file that changes: **no second file** appears per cut. So

@@ -29,6 +29,13 @@ const PATHS = {
     + "M13 5h9v2h-9zM13 10h9v2h-9zM13 15h6v2h-6z",
   copy:
     "M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z",
+  // transcribing a whole recording: the waveform on the left turning into the
+  // lines of text on the right. Its counterpart `speechToText` starts from a
+  // microphone and means one passage one has just listened to — the two sit
+  // next to each other in the editor, so they must not look alike.
+  audioToText:
+    "M2 9h2v6H2zM5.5 4h2v16h-2zM9 7h2v10H9z"
+    + "M13 5h9v2h-9zM13 10h9v2h-9zM13 15h6v2h-6z",
   // the way back to how a recording was imported — not the same as "undo",
   // which is the text editor's, so a clock with an arrow rather than the arrow
   restore:
@@ -92,6 +99,12 @@ const PATHS = {
     + "C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.34 9.19 6.75 8h-2c.71 1.65 1.7 3.21 2.94 4.62"
     + "l-5.05 4.98L4 19l5-5 3.11 3.11.76-2.04z"
     + "M18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z",
+  // two people: the speaker recognition, which is about who is talking
+  people:
+    "M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 "
+    + "2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14"
+    + "v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v"
+    + "-2.5c0-2.33-4.67-3.5-7-3.5z",
   // a globe, for a language that has no flag of its own
   language:
     "M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95c-.32-1.25-.78-2.45-1.38-3.56 1.84.63 3.37 1.91 4.33 3.56zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2 0 .68.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56-1.84-.63-3.37-1.9-4.33-3.56zm2.95-8H5.08c.96-1.66 2.49-2.93 4.33-3.56C8.81 5.55 8.35 6.75 8.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2 0-.68.07-1.35.16-2h4.68c.09.65.16 1.32.16 2 0 .68-.07 1.34-.16 2zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95c-.96 1.65-2.49 2.93-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2 0-.68-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z",

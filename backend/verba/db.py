@@ -65,6 +65,10 @@ CREATE TABLE IF NOT EXISTS project_types (
     -- transcript section by section (services/pipeline.py). Independent of
     -- `verbatim`, which only says what the export may do with the result.
     condense      INTEGER NOT NULL DEFAULT 0,
+    -- 1: after the transcription the speakers are recognised automatically
+    -- and a segment spanning a speaker change is split (services/diarize.py).
+    -- An interview wants that, a song does not.
+    diarize       INTEGER NOT NULL DEFAULT 0,
     builtin       INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -127,6 +131,11 @@ CREATE TABLE IF NOT EXISTS segments (
     end_s    REAL NOT NULL,
     text     TEXT NOT NULL,
     speaker  TEXT NOT NULL DEFAULT '',
+    -- When each word was said: [[start, end, "word"], ...] as JSON, written
+    -- by the transcription when the type asks for speaker recognition.
+    -- Empty for everything else — it is only ever needed to cut a segment at
+    -- a speaker change without cutting it mid-sentence (services/diarize.py).
+    words    TEXT NOT NULL DEFAULT '',
     UNIQUE (file_id, idx)
 );
 
@@ -327,11 +336,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
 
     add_missing("segments", "speaker", "speaker TEXT NOT NULL DEFAULT ''")
+    add_missing("segments", "words", "words TEXT NOT NULL DEFAULT ''")
     add_missing("project_types", "output_prompt", "output_prompt TEXT NOT NULL DEFAULT ''")
     add_missing("project_types", "structure", "structure TEXT NOT NULL DEFAULT 'paragraphs'")
     add_missing("project_types", "keep_sections", "keep_sections INTEGER NOT NULL DEFAULT 0")
     add_missing("project_types", "verbatim", "verbatim INTEGER NOT NULL DEFAULT 1")
     add_missing("project_types", "condense", "condense INTEGER NOT NULL DEFAULT 0")
+    add_missing("project_types", "diarize", "diarize INTEGER NOT NULL DEFAULT 0")
     # How the aufbereitung runs used to be read off `verbatim`, which now only
     # governs the export: a type that was not verbatim wrote a document of its
     # own over the whole recording, and keeps doing so.

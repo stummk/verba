@@ -118,6 +118,30 @@ export async function render(view) {
         ))}
         <p class="small" id="whisper-hardware"></p>
         <div id="model-list-host"></div>
+        ${raw(labelHelp(
+          `<h3 class="subhead">${t("speakers.title")}</h3>`,
+          helpText(t("speakers.intro"), t("speakers.typeHint")), "head-row sub"
+        ))}
+        <p class="small" id="speaker-status"></p>
+        <div class="form-grid">
+          <div class="setting-field">
+            ${raw(fieldLabel("diarize-model", t("speakers.model"), t("speakers.modelHint")))}
+            <select id="diarize-model"></select>
+          </div>
+          <div class="setting-field">
+            ${raw(fieldLabel(
+              "diarize-threshold", t("speakers.threshold"), t("speakers.thresholdHint")
+            ))}
+            <input id="diarize-threshold" type="number" min="0.1" max="2" step="0.05"
+                   value="${settings.diarization?.threshold ?? 0.5}">
+          </div>
+          <div class="setting-field">
+            ${raw(fieldLabel("diarize-dir", t("speakers.dir"), t("speakers.dirHint")))}
+            <input id="diarize-dir" value="${settings.diarization?.models_dir ?? ""}">
+            <p class="hint" id="diarize-dir-hint"></p>
+          </div>
+        </div>
+        <div id="speaker-model-host"></div>
       </div>
 
       <div class="card" id="card-ai">
@@ -568,6 +592,15 @@ export async function render(view) {
       if (info.error) toast(t("cuda.failed", { detail: info.error }));
       await refreshSystemInfo();
     }),
+    // the two ONNX models of the speaker recognition, downloaded from here
+    on("speaker.model", async (info) => {
+      if (!el("speaker-model-host")) return; // the view moved on
+      if (info.state === "done") toast(t("models.downloadDone", { name: info.name }));
+      if (info.state === "error") {
+        toast(t("models.downloadError", { name: info.name, detail: info.detail }));
+      }
+      await refreshSpeakerSection(info);
+    }),
     // the server updates its own packages: apt says what it does, line by line
     on("system.upgrade", async (run) => {
       if (!el("os-row")) return; // the view moved on
@@ -631,6 +664,13 @@ export async function render(view) {
       search: {
         embedding_model: el("search-embedding-model").value,
         embeddings_dir: el("search-embeddings-dir").value.trim(),
+      },
+      diarization: {
+        // the select is filled by a loader that may not have answered yet —
+        // saving before it does must not reset the chosen model
+        model: el("diarize-model").value || settings.diarization?.model || "",
+        models_dir: el("diarize-dir").value.trim(),
+        threshold: Number(el("diarize-threshold").value) || 0.5,
       },
       general: {
         ...settings.general,
@@ -707,6 +747,7 @@ export async function render(view) {
         refreshSearchStatus(),
         refreshEmbeddingModels(settings.search?.embedding_model),
         refreshLlmSection(),
+        refreshSpeakerSection(),
       ]);
       touched = false;
       markPristine(); // what is on screen is what the backend now holds
@@ -729,6 +770,7 @@ export async function render(view) {
     refreshOsUpdate(),
     refreshEmbeddingModels(settings.search?.embedding_model),
     refreshSearchStatus(),
+    refreshSpeakerSection(),
     refreshPaths(),
     refreshApiKeys(),
   ]);
@@ -944,6 +986,124 @@ function modelRow(name, { installed, downloading, custom, fit }) {
       }
     }));
   }
+  return row;
+}
+
+// ── speaker recognition (sherpa-onnx) ─────────────────────────────────
+//
+// Two models, one of them a choice: the segmentation model has no
+// alternative, the embedding model trades size for accuracy. Both are shown
+// as the same kind of row the whisper models use, because they are the same
+// kind of thing — something to download once and then forget about.
+
+async function refreshSpeakerSection(progress = null) {
+  const host = el("speaker-model-host");
+  if (!host) return; // the view moved on
+  let status;
+  try {
+    status = await api.speakerStatus();
+  } catch {
+    return;
+  }
+  if (!el("speaker-model-host")) return; // the request outlived the view
+
+  const line = el("speaker-status");
+  if (line) {
+    line.textContent = !status.available
+      ? t("speakers.libraryMissing")
+      : status.ready
+        ? t("speakers.ready")
+        : t("speakers.modelsMissing");
+  }
+
+  const select = el("diarize-model");
+  if (select) {
+    const chosen = select.value || status.selected;
+    select.replaceChildren(...status.models.map((entry) => {
+      const option = document.createElement("option");
+      option.value = entry.name;
+      option.textContent = `${entry.label} · ${entry.size_mb} MB`;
+      return option;
+    }));
+    select.value = status.models.some((entry) => entry.name === chosen)
+      ? chosen
+      : status.selected;
+  }
+
+  const hint = el("diarize-dir-hint");
+  if (hint) hint.textContent = t("speakers.dirEffective", { path: status.directory });
+
+  const rows = [
+    speakerRow({
+      name: "segmentation",
+      label: t("speakers.segmentation"),
+      size_mb: status.segmentation_mb,
+      installed: status.segmentation,
+      downloading: status.downloading.includes("segmentation"),
+      required: true,
+      progress,
+    }),
+    ...status.models.map((entry) => speakerRow({
+      ...entry,
+      label: entry.label,
+      downloading: status.downloading.includes(entry.name),
+      progress,
+    })),
+  ];
+  host.replaceChildren(...rows);
+}
+
+function speakerRow({ name, label, size_mb: sizeMb, installed, downloading, required, progress }) {
+  const row = document.createElement("div");
+  row.className = "model-row";
+  row.append(Object.assign(document.createElement("span"), {
+    className: "model-name", textContent: label,
+  }));
+  const spacer = document.createElement("span");
+  spacer.className = "spacer";
+  row.append(spacer);
+
+  if (downloading) {
+    // the percentage comes with the event, so the row that is being
+    // downloaded says how far it is rather than only that it is
+    const percent = progress?.name === name && progress.state === "running"
+      ? ` ${progress.percent} %`
+      : "";
+    row.append(Object.assign(document.createElement("span"), {
+      className: "muted small", textContent: t("models.downloading") + percent,
+    }));
+    return row;
+  }
+  if (installed) {
+    row.append(Object.assign(document.createElement("span"), {
+      className: "badge badge-done", textContent: t("models.installed"),
+    }));
+    row.append(iconButton("delete", t("common.delete"), async () => {
+      if (!await confirmDelete({ message: t("models.deleteConfirm", { name: label }) })) return;
+      try {
+        await api.speakerDeleteModel(name);
+        toast(t("models.deleted"));
+        await refreshSpeakerSection();
+      } catch (error) {
+        toast(error.message);
+      }
+    }));
+    return row;
+  }
+  if (required) {
+    row.append(Object.assign(document.createElement("span"), {
+      className: "badge", textContent: t("speakers.required"),
+    }));
+  }
+  row.append(iconButton("download", `${t("models.download")} (${sizeMb} MB)`, async () => {
+    try {
+      await api.speakerDownload(name);
+      toast(t("models.downloadStarted", { name: label }));
+      await refreshSpeakerSection();
+    } catch (error) {
+      toast(error.message);
+    }
+  }));
   return row;
 }
 

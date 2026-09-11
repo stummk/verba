@@ -75,6 +75,33 @@ def extract_range(source: Path, start_s: float, end_s: float, target_wav: Path) 
     )
 
 
+def to_mono_16k(source: Path, target_wav: Path, rate: int = 16000) -> None:
+    """The whole recording as mono WAV at `rate` — what a model wants to read.
+
+    Same conversion `extract_range` does for a selection, for the file as a
+    whole: the speaker recognition reads the samples itself
+    (services/diarize.py) and every one of these models is trained on 16 kHz.
+    """
+    _run(
+        [
+            _ffmpeg(),
+            "-y",
+            "-i",
+            str(source),
+            "-ar",
+            str(rate),
+            "-ac",
+            "1",
+            # stated, not left to ffmpeg: a 24-bit source would otherwise
+            # produce a 24-bit WAV, and the reader on the other side wants
+            # plain 16-bit samples (services/diarize.py)
+            "-c:a",
+            "pcm_s16le",
+            str(target_wav),
+        ]
+    )
+
+
 # ── the cut itself ────────────────────────────────────────────────────
 
 

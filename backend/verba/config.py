@@ -291,6 +291,110 @@ class SearchSettings(BaseModel):
         return DEFAULT_EMBEDDING_MODEL
 
 
+@dataclass(frozen=True)
+class SpeakerModel:
+    """One selectable speaker-embedding model for the speaker recognition.
+
+    The recognition needs two networks: one that says *when* somebody speaks
+    (the segmentation model, which is not a choice — there is one) and one
+    that says *who* (this one). Only the second is worth choosing, because it
+    is where size buys accuracy.
+    """
+
+    name: str  # the file name in the models directory, and in the release
+    label: str
+    size_mb: int
+    speed: Literal["fast", "balanced", "quality"]
+
+
+#: Where the ONNX models come from — the sherpa-onnx releases, which is also
+#: where the library that runs them is maintained.
+SPEAKER_MODEL_URL = (
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/"
+)
+#: The segmentation model, as an archive holding model.onnx. No choice: one
+#: model, and a wrong one here would cost every turn boundary.
+SEGMENTATION_URL = (
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/"
+    "sherpa-onnx-pyannote-segmentation-3-0.tar.bz2"
+)
+SEGMENTATION_ARCHIVE_MB = 8
+SEGMENTATION_FILE = "sherpa-onnx-pyannote-segmentation-3-0.onnx"
+
+# A curated list, for the same reason the embedding models are curated: a name
+# typed by hand would only fail once the download 404s. All three run on the
+# CPU and none of them cares which language is being spoken — a voice is a
+# voice — so they differ in size and accuracy alone.
+SPEAKER_MODELS: tuple[SpeakerModel, ...] = (
+    SpeakerModel(
+        name="3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx",
+        label="CAM++ (Standard)",
+        size_mb=28,
+        speed="fast",
+    ),
+    SpeakerModel(
+        name="nemo_en_titanet_small.onnx",
+        label="TitaNet small",
+        size_mb=39,
+        speed="balanced",
+    ),
+    SpeakerModel(
+        name="wespeaker_en_voxceleb_resnet293_LM.onnx",
+        label="ResNet293 (beste Qualität, groß)",
+        size_mb=109,
+        speed="quality",
+    ),
+)
+
+DEFAULT_SPEAKER_MODEL = SPEAKER_MODELS[0].name
+
+
+def speaker_model(name: str = "") -> SpeakerModel:
+    """Catalog entry for a model file name; the default for anything unknown."""
+    for entry in SPEAKER_MODELS:
+        if entry.name == name:
+            return entry
+    return SPEAKER_MODELS[0]
+
+
+class DiarizationSettings(BaseModel):
+    """Speaker recognition — which model, and how eagerly it splits voices.
+
+    *Whether* it runs is not here: that is the transcript type's `diarize`
+    switch, because an interview and a song want different answers inside the
+    same installation. What is here is the how.
+
+    How *many* voices there are is nowhere: it is always worked out from the
+    recording. Stating it would be the stronger hint, but only for whoever
+    happens to know it — and a number left over from another recording is
+    worse than no number at all.
+    """
+
+    model: str = DEFAULT_SPEAKER_MODEL
+    # empty = <base>/models/speakers; a model already lying in the configured
+    # directory is used from there instead of downloaded again
+    models_dir: str = ""
+    # How different two voices have to sound to count as two people — the one
+    # knob over the automatic count, and the value sherpa-onnx itself
+    # defaults to: lower splits more eagerly, higher merges more.
+    threshold: float = Field(default=0.5, gt=0.0, le=2.0)
+
+    @field_validator("models_dir")
+    @classmethod
+    def _absolute_models_dir(cls, value: str) -> str:
+        return normalize_dir(value)
+
+    @field_validator("model")
+    @classmethod
+    def _known_model(cls, value: str) -> str:
+        """Fall back to the default instead of failing on an unknown name."""
+        if any(entry.name == value for entry in SPEAKER_MODELS):
+            return value
+        if value:
+            logger.warning("unknown speaker model %r, using the default", value)
+        return DEFAULT_SPEAKER_MODEL
+
+
 class GeneralSettings(BaseModel):
     ui_language: str = "de"
     workspaces_dir: str = ""  # empty = <project root>/workspaces
@@ -359,6 +463,7 @@ class Settings(BaseModel):
     whisper: WhisperSettings = Field(default_factory=WhisperSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
     search: SearchSettings = Field(default_factory=SearchSettings)
+    diarization: DiarizationSettings = Field(default_factory=DiarizationSettings)
     general: GeneralSettings = Field(default_factory=GeneralSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
     updates: UpdateSettings = Field(default_factory=UpdateSettings)
@@ -479,6 +584,25 @@ def embeddings_dir(settings: Settings | None = None) -> Path:
     settings = settings or get_settings()
     configured = settings.search.embeddings_dir
     path = Path(configured) if configured else default_embeddings_dir()
+    ensure_dir(path)
+    return path
+
+
+def default_speakers_dir() -> Path:
+    return base_data_dir() / "models" / "speakers"
+
+
+def speakers_dir(settings: Settings | None = None) -> Path:
+    """Directory holding the two ONNX models of the speaker recognition.
+
+    Configurable like the embeddings directory, and for the same reason: the
+    files are worth pointing at rather than downloading a second time. An
+    unreachable one is answered anyway — the recognition then finds no model
+    there and says so instead of raising out of a getter.
+    """
+    settings = settings or get_settings()
+    configured = settings.diarization.models_dir
+    path = Path(configured) if configured else default_speakers_dir()
     ensure_dir(path)
     return path
 

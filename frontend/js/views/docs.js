@@ -22,6 +22,7 @@ const SECTION_ICONS = {
   types: "category",
   import: "upload",
   transcribe: "speechToText",
+  speakers: "people",
   ai: "sparkle",
   editor: "editNote",
   whisper: "memory",
