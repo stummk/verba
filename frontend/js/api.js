@@ -72,6 +72,20 @@ function upload(path, file, onProgress = null) {
   });
 }
 
+// The tag filters as a query string: every value of a field is its own
+// parameter, which is how FastAPI reads a list. An empty set adds nothing, so
+// the unfiltered overview stays the plain URL it always was.
+function filterQuery(filters) {
+  if (!filters) return "";
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (Array.isArray(value)) value.forEach((entry) => params.append(key, String(entry)));
+    else if (value) params.set(key, String(value));
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
 export const api = {
   // authentication & users
   authState: () => request("GET", "/api/auth/state"),
@@ -115,7 +129,11 @@ export const api = {
   docsAsk: (question, lang) => request("POST", "/api/docs/ask", { question, lang }),
 
   // projects & files
-  listProjects: () => request("GET", "/api/projects"),
+  // the search header's tag filters narrow the overview: a transcript is
+  // listed while at least one of its files matches, and then counts only those
+  listProjects: (filters = null) =>
+    request("GET", `/api/projects${filterQuery(filters)}`),
+  projectFilters: () => request("GET", "/api/projects/filters"),
   createProject: (name, typeId = null, visibility = "") =>
     request("POST", "/api/projects", { name, type_id: typeId, visibility }),
   setVisibility: (id, visibility, userIds = []) =>

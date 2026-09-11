@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from ..services import auth, workspace
+from ..services import auth, filters, workspace
 from .deps import current_user, project_or_403, require_project_admin
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -45,8 +47,41 @@ def _with_shares(project: dict) -> dict:
 
 
 @router.get("")
-def list_projects(request: Request) -> list[dict]:
-    return workspace.list_projects(current_user(request))
+def list_projects(
+    request: Request,
+    # repeated parameters (?languages=de&languages=en) — FastAPI reads them,
+    # never mutates them, so the empty list default is safe
+    type_ids: Annotated[list[int], Query()] = [],  # noqa: B006
+    languages: Annotated[list[str], Query()] = [],  # noqa: B006
+    speakers: Annotated[list[str], Query()] = [],  # noqa: B006
+    statuses: Annotated[list[str], Query()] = [],  # noqa: B006
+    date_from: Annotated[str, Query(max_length=10)] = "",
+    date_to: Annotated[str, Query(max_length=10)] = "",
+) -> list[dict]:
+    """The overview, narrowed by the file filters the search header carries.
+
+    Same filter set as the search, so a transcript that disappears from the
+    overview would also have no hit in the list that replaces it.
+    """
+    return workspace.list_projects(
+        current_user(request),
+        {
+            "type_ids": type_ids,
+            "languages": languages,
+            "speakers": speakers,
+            "statuses": statuses,
+            "date_from": date_from,
+            "date_to": date_to,
+        },
+    )
+
+
+# before /{project_id}: "filters" is no integer, and the path parameter would
+# answer this route with a 422 instead
+@router.get("/filters")
+def filter_options(request: Request) -> dict:
+    """What there is to filter by — counted over the files this user may see."""
+    return filters.options(current_user(request))
 
 
 @router.post("", status_code=201)

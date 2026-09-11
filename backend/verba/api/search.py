@@ -14,8 +14,19 @@ router = APIRouter(prefix="/api/search", tags=["search"])
 
 
 class SearchRequest(BaseModel):
+    """A query plus the filter set the search header carries.
+
+    The plural fields are what the UI sends — one filter holds every value the
+    user ticked in its dialog. The singular ones are the older spelling and
+    still work; a value in both means the plural one wins.
+    """
+
     query: str = Field(min_length=1, max_length=2000)
     project_id: int | None = None
+    type_ids: list[int] = Field(default_factory=list)
+    languages: list[str] = Field(default_factory=list)
+    speakers: list[str] = Field(default_factory=list)
+    statuses: list[str] = Field(default_factory=list)
     type_id: int | None = None
     language: str = Field(default="", max_length=10)
     speaker: str = Field(default="", max_length=200)
@@ -31,6 +42,10 @@ class SearchRequest(BaseModel):
             # this search at all
             "user": user,
             "project_id": self.project_id,
+            "type_ids": self.type_ids,
+            "languages": self.languages,
+            "speakers": self.speakers,
+            "statuses": self.statuses,
             "type_id": self.type_id,
             "language": self.language,
             "speaker": self.speaker,

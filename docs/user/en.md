@@ -1164,11 +1164,32 @@ cannot be brought back.
 
 ## Search {#search}
 
-The **Search** tab searches all transcripts at once — semantically (meaning
-counts; German questions also find English or Russian content) and via full
-text (proper names and rare terms match exactly). Under **Filters** the
-search can be narrowed to one transcript, a type, language, speaker and a
-date range.
+The search no longer has a tab of its own: it sits as the **search bar** at
+the top of the **Transcripts** tab and stays there while the list scrolls
+under it. It searches all transcripts at once — semantically (meaning counts;
+German questions also find English or Russian content) and via full text
+(proper names and rare terms match exactly).
+
+**The two buttons on the left of the field.** The **magnifier** searches and
+shows the hit list. The **spark** next to it has the language model answer the
+question instead — with sources that jump to the passage they quote; it only
+appears where an LLM is set up. As long as something is being asked, the
+result takes the place of the transcript cards. A click on the **×** on the
+right of the field (or emptying the field by hand) brings them back.
+
+**The filter tags.** Below the field is a row of tags that can be pushed
+sideways: **Type**, **Date**, **Language**, **Speaker** and **State**. A click
+opens a dialog in which several values are ticked at once. For the date it is a
+calendar: the first click sets the start, the second the end, and the stretch
+between them is shown while the pointer moves; a single click plus **OK** means
+exactly that one day. Above it the quick answers for today, the last 7 or 30
+days and the current year, below it the range that is actually there. For every
+other filter only what actually occurs is on offer. After **OK** the
+filter takes effect at once: the overview keeps only transcripts that have at
+least one matching file, and their numbers count those files alone. A tag that
+is set carries an **×** on its right that clears only it; **Reset all
+filters** at the end of the row clears everything. The same filters apply to
+the hit list and to the AI answer.
 
 **The hit list.** Every file appears exactly once, with all of its matches
 below it. The card is headed by the file's **header** — the three header

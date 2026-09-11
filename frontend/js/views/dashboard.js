@@ -1,4 +1,9 @@
-// Project overview: list, create (via FAB dialog), open, rename, delete.
+// Project overview: list, create (via FAB dialog), open, rename, delete —
+// and the search that used to have a tab of its own.
+//
+// The search header sits above the cards and stays there while they scroll
+// (js/search-header.js). Its tag filters narrow the list; a query replaces
+// it with the hit list until the field is cleared again.
 
 import { api } from "../api.js";
 import { dragScroll, el, esc, html, raw, toast } from "../dom.js";
@@ -7,6 +12,13 @@ import { fieldLabel } from "../help.js";
 import { t } from "../i18n.js";
 import { isActive } from "../jobs.js";
 import { viewGuard } from "../navigation.js";
+import {
+  filtersAreEmpty,
+  headerMarkup,
+  mountSearchHeader,
+  projectFilterQuery,
+  searchIsActive,
+} from "../search-header.js";
 import { on } from "../ws.js";
 
 let fabHandler = null;
@@ -25,7 +37,7 @@ let syncVisibilityDialog = () => {};
 export async function render(view, systemStatus) {
   const stillCurrent = viewGuard();
   const [projects, types, jobs, authState] = await Promise.all([
-    api.listProjects(),
+    api.listProjects(projectFilterQuery()),
     api.listTypes(),
     api.listJobs(true).catch(() => []),
     api.authState().catch(() => ({ enabled: false, user: null })),
@@ -42,10 +54,11 @@ export async function render(view, systemStatus) {
   const activeJobs = new Map(jobs.filter(isActive).map((job) => [job.id, job]));
 
   view.replaceChildren(html`
-    <h1>${t("dashboard.title")}</h1>
+    ${raw(headerMarkup())}
     <div id="setup-hint"></div>
     <div id="update-hint"></div>
     <div id="restart-hint"></div>
+    <div id="search-output"></div>
     <div id="project-list"></div>
     <dialog id="create-dialog">
       <h2>${t("dashboard.create")}</h2>
@@ -160,6 +173,11 @@ export async function render(view, systemStatus) {
   deleteDialog = el("delete-dialog");
 
   renderList(projects, activeJobs);
+  applySearchMode();
+
+  // The header is mounted last: it asks the backend for the filter options and
+  // the index status, and the cards are already standing while it does.
+  mountSearchHeader(el("search-output"), refreshProjects, applySearchMode);
 
   unsubscribers.forEach((off) => off());
   unsubscribers = [
@@ -302,11 +320,28 @@ async function openVisibilityDialog(project) {
 }
 
 async function refreshProjects() {
-  const fresh = await api.listProjects().catch(() => null);
+  const fresh = await api.listProjects(projectFilterQuery()).catch(() => null);
   if (!fresh) return;
   const jobs = await api.listJobs(true).catch(() => []);
   const activeJobs = new Map(jobs.filter(isActive).map((job) => [job.id, job]));
   renderList(fresh, activeJobs);
+}
+
+/**
+ * Cards or hits — the page shows one of the two, never both.
+ *
+ * A standing query owns the space below the header; the project list is not
+ * emptied but hidden, so clearing the field puts it back without another
+ * round trip.
+ */
+function applySearchMode() {
+  const list = el("project-list");
+  if (!list) return;
+  list.hidden = searchIsActive();
+  for (const id of ["setup-hint", "update-hint", "restart-hint"]) {
+    const hint = el(id);
+    if (hint) hint.hidden = searchIsActive();
+  }
 }
 
 function defaultProjectName() {
@@ -346,7 +381,10 @@ function renderList(projects, activeJobs = new Map()) {
   const list = el("project-list");
   if (!list) return;
   if (!projects.length) {
-    list.replaceChildren(html`<div class="card"><p class="muted">${t("dashboard.empty")}</p></div>`);
+    // "nothing here yet" and "nothing matches the chips" are two different
+    // answers, and only one of them is worth clearing a filter for
+    const message = filtersAreEmpty() ? t("dashboard.empty") : t("filters.noMatch");
+    list.replaceChildren(html`<div class="card"><p class="muted">${message}</p></div>`);
     return;
   }
   const running = new Map();

@@ -672,11 +672,15 @@ FILE_COLUMNS = (
 def _filter_clause(filters: dict[str, Any], speaker_sql: str) -> tuple[str, list[Any]]:
     """The shared file/project filters; `speaker_sql` differs per hit source.
 
-    The visibility of the transcript is one of them, and not an optional one:
+    The set the search header carries (types, languages, speakers, statuses,
+    a date range) is the overview's own — `services/filters.py` builds it, so
+    a filter narrows the hit list exactly as it narrows the transcript cards.
+    Only the visibility of the transcript is added here, and not optionally:
     the search runs across every project at once, so this is the place where a
     private transcript would otherwise show up in somebody else's hit list.
     """
     from .auth import visibility_clause  # local import: auth imports the db layer
+    from .filters import clause as filter_clause
 
     sql = ""
     params: list[Any] = []
@@ -687,22 +691,34 @@ def _filter_clause(filters: dict[str, Any], speaker_sql: str) -> tuple[str, list
     if filters.get("project_id"):
         sql += " AND f.project_id = ?"
         params.append(filters["project_id"])
-    if filters.get("type_id"):
-        sql += " AND COALESCE(f.type_id, p.type_id) = ?"
-        params.append(filters["type_id"])
-    if filters.get("language"):
-        sql += " AND f.language = ?"
-        params.append(filters["language"])
-    if filters.get("speaker"):
-        sql += f" AND {speaker_sql}"
-        params.append(f"%{filters['speaker']}%")
-    if filters.get("date_from"):
-        sql += " AND f.recorded_at >= ?"
-        params.append(filters["date_from"])
-    if filters.get("date_to"):
-        sql += " AND f.recorded_at <= ?"
-        params.append(filters["date_to"])
-    return sql, params
+    shared_sql, shared_params = filter_clause(
+        _as_file_filters(filters), speaker_sql, lambda name: f"%{name}%"
+    )
+    return sql + shared_sql, [*params, *shared_params]
+
+
+def _as_file_filters(filters: dict[str, Any]) -> dict[str, Any]:
+    """The search request's filters as the shared clause builder wants them.
+
+    The public API still speaks of one type, one language, one speaker — a
+    single value is simply a list of one, so both spellings reach the same SQL.
+    """
+    from .filters import normalise
+
+    return normalise(
+        {
+            "type_ids": filters.get("type_ids") or _single(filters.get("type_id")),
+            "languages": filters.get("languages") or _single(filters.get("language")),
+            "speakers": filters.get("speakers") or _single(filters.get("speaker")),
+            "statuses": filters.get("statuses") or [],
+            "date_from": filters.get("date_from") or "",
+            "date_to": filters.get("date_to") or "",
+        }
+    )
+
+
+def _single(value: Any) -> list[Any]:
+    return [value] if value else []
 
 
 def _match_offset(text: str, terms: list[str]) -> int | None:

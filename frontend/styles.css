@@ -1470,9 +1470,203 @@ dialog textarea {
   .type-prompt { min-height: 22rem; }
 }
 
+/* ── search header (in the transcript overview) ────────────────────── */
+/* Stays under the top bar while the list scrolls: it carries the query the
+   result belongs to and the chips that narrow it, and both have to stay
+   readable at the bottom of a long list. It bleeds to the edges of the view
+   (negative margins against its padding), so nothing scrolls past beside it. */
+.search-header {
+  position: sticky;
+  top: var(--top-bar-h);
+  z-index: 4;
+  margin: 0 -1rem .75rem;
+  padding: .5rem 1rem .6rem;
+  background: var(--md-surface);
+}
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: .15rem;
+  padding: .15rem .35rem;
+  border-radius: var(--shape-full);
+  background: var(--md-surface-container-high);
+}
+.search-bar:focus-within { outline: .125rem solid var(--md-primary); outline-offset: -.125rem; }
+.search-bar input[type="search"] {
+  flex: 1 1 4rem;
+  min-width: 0;
+  border: none;
+  background: none;
+  padding: .55rem .35rem;
+}
+.search-bar input[type="search"]:focus { outline: none; }
+/* the field brings its own × on WebKit, which would stand next to ours */
+.search-bar input[type="search"]::-webkit-search-cancel-button { display: none; }
+.search-bar-btn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--md-on-surface-variant);
+}
+.search-bar-btn:hover { background: var(--md-surface-container); box-shadow: none; filter: none; }
+#search-run { color: var(--md-primary); }
+#search-ask { color: var(--md-primary); }
+.search-bar-btn.busy { animation: pulse 1.1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .search-bar-btn.busy { animation: none; } }
+
+/* the tag filters: one row, scrolling sideways rather than wrapping — a
+   second line would move the list every time a chip changes its label */
+.filter-chips {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  margin-top: .5rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  /* the focus ring of a chip must not be cut off by the scroll box */
+  padding: .2rem .1rem;
+}
+.filter-chips::-webkit-scrollbar { display: none; }
+.filter-chips.scrollable { cursor: grab; }
+.filter-chips.dragging { cursor: grabbing; user-select: none; }
+.filter-chip, .filter-chip-reset { flex: 0 0 auto; }
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  border: .0625rem solid var(--md-outline);
+  border-radius: var(--shape-sm);
+  background: var(--md-surface);
+  max-width: 14rem;
+}
+.filter-chip.active {
+  border-color: transparent;
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+.filter-chip-main {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  min-width: 0;
+  padding: .35rem .7rem;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font-size: .82rem;
+  font-weight: 550;
+}
+.filter-chip-main:hover { background: var(--md-surface-container); box-shadow: none; filter: none; }
+.filter-chip.active .filter-chip-main:hover { background: transparent; }
+.filter-chip-main svg { flex: none; width: 1.05rem; height: 1.05rem; }
+.filter-chip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filter-chip-clear {
+  display: grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  margin-right: .2rem;
+  padding: 0;
+  border-radius: 50%;
+  background: none;
+  color: inherit;
+}
+.filter-chip-clear svg { width: .95rem; height: .95rem; }
+.filter-chip-clear:hover { background: var(--md-surface-container-high); box-shadow: none; filter: none; }
+.filter-chip-reset {
+  background: none;
+  color: var(--md-primary);
+  font-size: .8rem;
+  padding: .35rem .7rem;
+}
+.filter-chip-reset:hover { background: var(--md-surface-container-high); box-shadow: none; }
+
+/* the dialog behind a chip: the ticks, and for the date the range */
+.filter-dialog { min-width: min(22rem, 90vw); }
+.filter-options { max-height: 50vh; overflow-y: auto; margin-top: .6rem; }
+.filter-option {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  margin: 0;
+  padding: .45rem .25rem;
+  font-size: .9rem;
+  font-weight: 400;
+  color: var(--md-on-surface);
+  cursor: pointer;
+  border-radius: var(--shape-xs);
+}
+.filter-option:hover { background: var(--md-surface-container); }
+.filter-option input { width: auto; flex: none; }
+.filter-option-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.filter-option-count { flex: none; }
+.filter-date-presets { display: flex; flex-wrap: wrap; gap: .4rem; }
+
+/* the date range: a calendar, because a range is two days and everything
+   between them — the stretch is drawn, not described */
+.daterange { margin-top: .9rem; }
+.daterange-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.daterange-title { font-weight: 600; font-size: .95rem; text-transform: capitalize; }
+.daterange-nav {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--md-on-surface-variant);
+}
+.daterange-nav:hover { background: var(--md-surface-container); box-shadow: none; filter: none; }
+/* no column gap: the days of a range have to touch, or the stretch between
+   them breaks into a row of separate blocks */
+.daterange-grid { display: grid; grid-template-columns: repeat(7, 1fr); margin-top: .6rem; }
+.daterange-weekday {
+  text-align: center;
+  padding: .3rem 0 .45rem;
+  font-size: .7rem;
+  font-weight: 600;
+  color: var(--md-on-surface-variant);
+}
+.daterange-day {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  width: 100%;
+  padding: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--md-on-surface);
+  font-size: .82rem;
+  font-weight: 400;
+}
+.daterange-day:hover { background: var(--md-surface-container); box-shadow: none; filter: none; }
+.daterange-day.other { color: var(--md-on-surface-variant); opacity: .45; }
+.daterange-day.today { text-decoration: underline; font-weight: 700; }
+.daterange-day.inside {
+  border-radius: 0;
+  background: var(--md-secondary-container);
+  color: var(--md-on-secondary-container);
+}
+.daterange-day.edge { background: var(--md-primary); color: var(--md-on-primary); font-weight: 600; }
+/* the two ends keep their round side outwards and grow square towards the
+   stretch, so the range reads as one band */
+.daterange-day.edge.start { border-radius: 50% 0 0 50%; }
+.daterange-day.edge.end { border-radius: 0 50% 50% 0; }
+.daterange-day.edge:hover { background: var(--md-primary); }
+.daterange-summary { margin: .7rem 0 0; font-size: .85rem; font-weight: 550; text-align: center; }
+
+@media (min-width: 52.5em) {
+  .search-header { margin: 0 -2rem 1rem; padding: .75rem 2rem .7rem; }
+}
+
 /* ── phase 7: semantic search ──────────────────────────────────────── */
-.search-form { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
-.search-form input[type="search"] { flex: 1 1 10rem; min-width: 0; }
 /* one card per file: heading, then its hits in timeline order */
 .search-file-head {
   display: flex;

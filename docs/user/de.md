@@ -1216,11 +1216,33 @@ Gelöschtes lässt sich nicht zurückholen.
 
 ## Suche {#search}
 
-Der Tab **Suche** durchsucht alle Transkripte gleichzeitig — semantisch (die
+Die Suche hat keinen eigenen Tab mehr: Sie sitzt als **Suchleiste** oben im
+Tab **Transkripte** und bleibt dort stehen, während die Liste darunter
+scrollt. Sie durchsucht alle Transkripte gleichzeitig — semantisch (die
 Bedeutung zählt; deutsche Fragen finden auch englische oder russische Inhalte)
-und per Volltext (Eigennamen und seltene Begriffe treffen exakt). Unter
-**Filter** lässt sich die Suche auf ein Transkript, einen Typ, Sprache,
-Sprecher und einen Zeitraum einschränken.
+und per Volltext (Eigennamen und seltene Begriffe treffen exakt).
+
+**Die beiden Knöpfe links im Suchfeld.** Die **Lupe** sucht und zeigt die
+Trefferliste. Der **Funke** daneben lässt stattdessen das Sprachmodell die
+Frage beantworten — mit Quellenangaben, die an die zitierte Stelle springen;
+er erscheint nur, wenn ein LLM eingerichtet ist. Solange etwas gesucht ist,
+tritt das Ergebnis an die Stelle der Transkriptkarten. Ein Klick auf das **×**
+rechts im Feld (oder das Leeren des Feldes von Hand) bringt die Karten zurück.
+
+**Die Filter-Tags.** Unter dem Suchfeld steht eine Reihe von Tags, die sich
+seitwärts schieben lässt: **Typ**, **Datum**, **Sprache**, **Sprecher** und
+**Status**. Ein Klick öffnet einen Dialog, in dem sich mehrere Werte auf
+einmal ankreuzen lassen. Beim Datum ist es ein Kalender: der erste Klick setzt
+den Beginn, der zweite das Ende, und der Zeitraum dazwischen wird schon beim
+Überfahren angezeigt; ein einzelner Klick plus **OK** meint genau diesen einen
+Tag. Darüber die Schnellwahl für heute, die letzten 7 oder 30 Tage und das
+laufende Jahr, darunter der Hinweis, welcher Zeitraum überhaupt vorliegt. Bei
+allen anderen Filtern steht nur zur Auswahl, was tatsächlich vorkommt. Nach **OK** greift der Filter
+sofort: In der Übersicht bleiben nur Transkripte stehen, die mindestens eine
+passende Datei haben, und ihre Zahlen zählen nur noch diese Dateien. Ein
+gesetzter Tag trägt rechts ein **×**, das nur ihn zurücksetzt; **Alle Filter
+zurücksetzen** am Ende der Reihe räumt alle ab. Dieselben Filter gelten für
+die Trefferliste und für die KI-Antwort.
 
 **Die Trefferliste.** Jede Datei steht genau einmal in der Liste, darunter
 alle ihre Fundstellen. Überschrieben ist die Karte mit der **Kopfzeile** der

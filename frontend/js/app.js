@@ -11,7 +11,6 @@ import * as docs from "./views/docs.js";
 import * as editor from "./views/editor.js";
 import { renderLogin, renderPasswordChange } from "./views/login.js";
 import * as project from "./views/project.js";
-import * as search from "./views/search.js";
 import * as settings from "./views/settings.js";
 import * as setup from "./views/setup.js";
 import * as types from "./views/types.js";
@@ -22,7 +21,6 @@ const routes = {
   project: { module: project, title: null, fab: true },
   editor: { module: editor, title: null, fab: false },
   types: { module: types, title: "types.title", fab: true },
-  search: { module: search, title: "search.title", fab: false },
   settings: { module: settings, title: "settings.title", fab: false },
   setup: { module: setup, title: "setup.title", fab: false, admin: true },
   docs: { module: docs, title: "docs.title", fab: false },
@@ -45,9 +43,15 @@ function isAdmin() {
   return !authState.enabled || authState.user?.role === "admin";
 }
 
+// The search used to be a tab of its own and is now the header of the
+// transcript overview — an old link (or a pinned PWA shortcut) still has to
+// land somewhere sensible, which is exactly where the search moved to.
+const MOVED_ROUTES = { search: "dashboard" };
+
 function parseHash() {
   const segments = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
-  return { route: segments[0] || "dashboard", params: segments.slice(1) };
+  const route = segments[0] || "dashboard";
+  return { route: MOVED_ROUTES[route] ?? route, params: segments.slice(1) };
 }
 
 let systemStatus = null;

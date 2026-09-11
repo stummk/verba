@@ -22,7 +22,7 @@ from typing import Any, BinaryIO
 from .. import config, db
 from ..core.jobs import JobCancelled
 from ..events import hub
-from . import maintenance
+from . import filters, maintenance
 from .media import is_audio_file, probe_duration
 from .metadata import (
     extract_metadata,
@@ -170,12 +170,27 @@ def update_project(project_id: int, changes: dict[str, Any]) -> dict[str, Any] |
     return get_project(project_id)
 
 
-def list_projects(user: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    """Every transcript this user may see (all of them while auth is off)."""
+def list_projects(
+    user: dict[str, Any] | None = None, file_filters: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
+    """Every transcript this user may see (all of them while auth is off).
+
+    With a file filter set, a transcript is only listed while at least one of
+    its files matches, and everything the card counts — the files, the ones
+    that are done, the types standing next to the project's own — counts the
+    matching files alone. A filtered overview that still showed the full
+    numbers would say a transcript has twenty files when the filter found one.
+    """
     from .auth import visibility_clause  # local import: auth imports this module
 
     clause, params = visibility_clause(user)
     where = f"WHERE {clause}" if clause else ""
+    narrow, narrow_params = filters.clause(filters.normalise(file_filters))
+    # the filter belongs to the join, not to the WHERE: an outer join whose
+    # condition moves into the WHERE stops being an outer join, and a
+    # transcript without files would drop out of its own overview
+    join = f"LEFT JOIN files f ON f.project_id = p.id{narrow}"
+    having = "HAVING COUNT(f.id) > 0" if narrow else ""
     with db.get_conn() as conn:
         rows = conn.execute(
             f"""
@@ -185,18 +200,23 @@ def list_projects(user: dict[str, Any] | None = None) -> list[dict[str, Any]]:
             FROM projects p
             LEFT JOIN project_types t ON t.id = p.type_id
             LEFT JOIN users u ON u.id = p.owner_id
-            LEFT JOIN files f ON f.project_id = p.id
+            {join}
             {where}
-            GROUP BY p.id ORDER BY p.created_at DESC
-            """,
-            params,
+            GROUP BY p.id {having} ORDER BY p.created_at DESC
+            """,  # noqa: S608 — every value is a placeholder
+            [*narrow_params, *params],
         ).fetchall()
         projects = db.rows_to_dicts(rows)
-        _attach_file_types(conn, projects)
+        _attach_file_types(conn, projects, narrow, narrow_params)
     return projects
 
 
-def _attach_file_types(conn, projects: list[dict[str, Any]]) -> None:
+def _attach_file_types(
+    conn,
+    projects: list[dict[str, Any]],
+    narrow: str = "",
+    narrow_params: list[Any] | None = None,
+) -> None:
     """Give every project the transcript types its files name themselves.
 
     The project's own type is the rule, `file_types` the exceptions standing
@@ -210,9 +230,10 @@ def _attach_file_types(conn, projects: list[dict[str, Any]]) -> None:
     marks = ", ".join("?" for _ in ids)
     rows = conn.execute(
         "SELECT DISTINCT f.project_id, t.id, t.name FROM files f "
+        "JOIN projects p ON p.id = f.project_id "
         "JOIN project_types t ON t.id = f.type_id "
-        f"WHERE f.project_id IN ({marks}) ORDER BY t.name",  # noqa: S608 — placeholders only
-        ids,
+        f"WHERE f.project_id IN ({marks}){narrow} ORDER BY t.name",  # noqa: S608 — placeholders
+        [*ids, *(narrow_params or [])],
     ).fetchall()
     by_project: dict[int, list[dict[str, Any]]] = {}
     for row in rows:
