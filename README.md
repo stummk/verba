@@ -18,8 +18,10 @@ programs. Everything runs locally — no cloud required.
   LLM (managed llama.cpp server) or an OpenAI-compatible endpoint
 - Transcript types with their own prompts (interview, song, role play, …) and
   type-aware **PDF export** (single or compiled)
-- **Semantic search** across all transcripts (hybrid: full text + embeddings,
-  timestamp jump marks, AI answers with sources)
+- **Semantic search** across all transcripts, in the header of the transcript
+  overview (hybrid: full text + embeddings, timestamp jump marks, AI answers
+  with sources). Tag filters for type, date, language, speaker and state
+  narrow the list of transcripts and the hits by the same rule
 - **Public API**: `POST /v1/audio/transcriptions` in the OpenAI wire format,
   API key management in the settings
 - **Optional user management**: off by default (local use), switched on with one
@@ -30,13 +32,15 @@ programs. Everything runs locally — no cloud required.
 
 ## Screenshots
 
-![Editor with waveform timeline, speakers and AI text panels](docs/screenshots/editor.png)
+![Editor with waveform timeline, segments with speakers, and the cleaned-up text next to its translation](docs/screenshots/editor.png)
 
-| Transcript project | Semantic search |
+| Transcript overview with search header and tag filters | A query puts the hits in place of the cards |
 |---|---|
-| ![Transcript view with workflow tabs and per-file actions](docs/screenshots/project.png) | ![Semantic search with timestamped hits](docs/screenshots/search.png) |
+| ![Transcript overview: search bar, filter chips and one card per transcript](docs/screenshots/overview.png) | ![Search results grouped per file, with timestamps, speakers and the query terms marked](docs/screenshots/search.png) |
+| **A filter narrows the overview to matching transcripts** | **The files of one transcript, with their steps** |
+| ![The type filter set: only transcripts with a matching file are left](docs/screenshots/filtered.png) | ![File cards with language, duration and the state of every processing step](docs/screenshots/project.png) |
 
-<img src="docs/screenshots/mobile.png" alt="Mobile editor — Verba as a PWA on the phone" width="300">
+<img src="docs/screenshots/mobile.png" alt="The search on a phone — Verba as a PWA" width="300">
 
 ## Installation
 

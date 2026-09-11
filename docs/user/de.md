@@ -245,6 +245,10 @@ selbst.
   wie die KI-Aufbereitung den Text behandelt. Ohne Typ liefert das Transkript reinen,
   unformatierten Text.
 - Transkripte löschen entfernt auf Wunsch auch den Workspace-Ordner.
+- Über der Liste steht die **Suchleiste** mit den **Filter-Tags**; sie
+  blendet Transkripte aus, die keine passende Datei haben, und die
+  Zahlen auf der Karte zählen dann nur noch die passenden Dateien
+  (Abschnitt „Suche").
 
 Beim Import liest Verba **Metadaten** automatisch aus: Titel und Datum aus
 MP3-Tags sowie aus Dateinamen nach dem Schema `JJJJMMTT_Titel` (z. B.

@@ -235,6 +235,9 @@ yourself first.
   steers how the AI processing treats the text. Without a type the transcript
   yields plain, unformatted text.
 - Deleting a transcript can optionally remove the workspace folder too.
+- Above the list sit the **search bar** and its **tag filters**; they hide
+  transcripts without a matching file, and the numbers on a card then
+  count only the matching files (section “Search”).
 
 On import Verba extracts **metadata** automatically: title and date from MP3
 tags and from filenames following the `YYYYMMDD_Title` scheme (e.g.
