@@ -77,6 +77,44 @@ def test_project_gets_type_and_survives_type_deletion(client):
     assert detail["type_name"] is None
 
 
+def test_usage_counts_transcripts_and_files_apart(client, tmp_path):
+    """The numbers the delete confirmation names.
+
+    Counted apart because the deletion does two different things: the
+    transcript is left without a type, the file falls back to the type of its
+    transcript — which is another type, not none.
+    """
+    types = client.get("/api/types").json()
+    protocol = next(t for t in types if t["key"] == "protocol")
+    song = next(t for t in types if t["key"] == "song")
+    project = client.post(
+        "/api/projects", json={"name": "Sitzung", "type_id": protocol["id"]}
+    ).json()
+    source = tmp_path / "a.mp3"
+    source.write_bytes(b"x")
+    [row] = client.post(
+        f"/api/projects/{project['id']}/files/import", json={"paths": [str(source)]}
+    ).json()
+    client.put(f"/api/files/{row['id']}/type", json={"type_id": song["id"]})
+
+    usage = client.get("/api/types/usage").json()
+    assert usage[str(protocol["id"])] == {"projects": 1, "files": 0}
+    assert usage[str(song["id"])] == {"projects": 0, "files": 1}
+    # a type nobody uses is simply absent — the UI reads that as zero
+    poem = next(t for t in types if t["key"] == "poem")
+    assert str(poem["id"]) not in usage
+
+
+def test_usage_forgets_a_type_that_was_deleted(client):
+    types = client.get("/api/types").json()
+    song = next(t for t in types if t["key"] == "song")
+    client.post("/api/projects", json={"name": "Lied", "type_id": song["id"]})
+    assert client.get("/api/types/usage").json()[str(song["id"])]["projects"] == 1
+
+    client.delete(f"/api/types/{song['id']}")
+    assert str(song["id"]) not in client.get("/api/types/usage").json()
+
+
 def test_project_type_can_be_changed(client):
     types = client.get("/api/types").json()
     lied = next(t for t in types if t["key"] == "song")

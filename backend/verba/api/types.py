@@ -53,6 +53,17 @@ def default_prompts() -> dict:
     }
 
 
+@router.get("/usage")
+def type_usage(user: dict = AdminUser) -> dict[str, dict[str, int]]:
+    """How many transcripts and files each type is the rule for.
+
+    Administrators only, and deliberately not a field on `GET /api/types`:
+    that list is what every type picker reads, and the count spans every
+    transcript there is — private ones of other users included.
+    """
+    return {str(type_id): counts for type_id, counts in project_types.usage().items()}
+
+
 @router.post("", status_code=201)
 def create_type(body: TypeRequest, user: dict = AdminUser) -> dict:
     return project_types.create_type(

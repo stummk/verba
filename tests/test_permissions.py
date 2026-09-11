@@ -220,6 +220,7 @@ ADMIN_ONLY = [
     ("get", "/api/apikeys", None),
     ("post", "/api/apikeys", {"name": "k"}),
     ("post", "/api/types", {"name": "Neu"}),
+    ("get", "/api/types/usage", None),
     ("post", "/api/types/restore-defaults", None),
     ("post", "/api/models/download", {"name": "small"}),
     ("post", "/api/models/llm/stop", None),

@@ -335,6 +335,17 @@ list and a detail view, one at a time. The **+** button creates a new type;
 built-in types can be edited and deleted too. "Restore default types" brings
 deleted or modified defaults back (both prompts).
 
+How much hangs off a type is shown in the list as a marker and in the editor
+as a line above the fields: how many transcripts have it as their rule and how
+many files picked it for themselves. **Deleting** stays possible at any time,
+and it takes none of the work with it — cleaned texts, translations and
+finished PDFs stay as they are. It only changes what future runs follow: the
+transcripts affected are left without a type, so they work without the cleanup
+and the output prompt, without speaker recognition and with the text taken
+into the export unchanged. The files affected only lose their exception and
+follow the type of their transcript again — which may well be a different one.
+The question before the deletion names what is affected.
+
 ### A type of its own for a single file
 
 A transcript's type applies to everything in it — but a transcript holds what

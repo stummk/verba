@@ -348,6 +348,18 @@ einen neuen Typ an; auch Standardtypen lassen sich bearbeiten und löschen.
 „Standardtypen wiederherstellen" bringt gelöschte oder veränderte Standards
 zurück (beide Prompts).
 
+Wie viel an einem Typ hängt, zeigt die Liste als Marke und der Editor als
+Zeile über den Feldern: wie viele Transkripte ihn als Vorgabe haben und wie
+viele Dateien ihn für sich selbst gewählt haben. **Löschen** bleibt trotzdem
+jederzeit möglich, und es nimmt nichts von der geleisteten Arbeit mit —
+bereinigte Texte, Übersetzungen und fertige PDFs bleiben unverändert. Es
+ändert nur, wonach sich künftige Läufe richten: Die betroffenen Transkripte
+stehen danach ohne Typ da, arbeiten also ohne Bereinigungs- und ohne
+Ausgabeformat-Prompt, ohne Sprechererkennung und mit unveränderter Übernahme
+in den Export. Die betroffenen Dateien verlieren nur ihre Ausnahme und folgen
+wieder dem Typ ihres Transkripts — der ein ganz anderer sein kann. Die Abfrage
+vor dem Löschen nennt, was betroffen ist.
+
 ### Ein eigener Typ für eine einzelne Datei
 
 Der Typ des Transkripts gilt für alles, was darin liegt — aber ein Transkript

@@ -392,6 +392,29 @@ def list_types(*, include_legacy: bool = True) -> list[dict[str, Any]]:
     return db.rows_to_dicts(rows)
 
 
+def usage() -> dict[int, dict[str, int]]:
+    """How many transcripts and files each type is the rule for, by type id.
+
+    The two are counted apart because deleting a type does two different
+    things to them: a project is left without a type at all, while a file
+    only loses its exception and falls back to whatever its project says
+    (`for_file`) — which is another type, not none. The delete confirmation
+    names both numbers, so it stops promising one consequence for both.
+    """
+    counts: dict[int, dict[str, int]] = {}
+    with db.get_conn() as conn:
+        for table in ("projects", "files"):
+            # the table name comes from the literal tuple above, never from input
+            rows = conn.execute(
+                f"SELECT type_id, COUNT(*) AS count FROM {table} "
+                "WHERE type_id IS NOT NULL GROUP BY type_id"
+            ).fetchall()
+            for row in rows:
+                entry = counts.setdefault(row["type_id"], {"projects": 0, "files": 0})
+                entry[table] = row["count"]
+    return counts
+
+
 def get_type(type_id: int) -> dict[str, Any] | None:
     with db.get_conn() as conn:
         row = conn.execute("SELECT * FROM project_types WHERE id = ?", (type_id,)).fetchone()

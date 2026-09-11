@@ -11,6 +11,9 @@ import { viewGuard } from "../navigation.js";
 
 let fabHandler = null;
 let types = [];
+// {"<type id>": {projects, files}} — how much work points at each type,
+// which is what the delete confirmation has to name
+let usage = {};
 let selected = null; // a type object, "new", or null
 let defaults = {
   output_prompt: "", structure: "paragraphs", structures: ["paragraphs"], verbatim: true,
@@ -33,9 +36,11 @@ export async function render(view) {
   const stillCurrent = viewGuard();
   const list = await api.listTypes();
   const typeDefaults = await api.typeDefaults().catch(() => defaults);
+  const typeUsage = await api.typeUsage().catch(() => ({}));
   if (!stillCurrent()) return; // the next view already owns the page
   types = list;
   defaults = typeDefaults;
+  usage = typeUsage;
 
   view.replaceChildren(html`
     ${raw(labelHelp(`<h1>${t("types.title")}</h1>`, t("types.intro"), "title-row"))}
@@ -75,6 +80,7 @@ function currentRoute() {
 
 async function reload(keepId = null) {
   types = await api.listTypes();
+  usage = await api.typeUsage().catch(() => ({}));
   select(keepId === null ? null : (types.find((type) => type.id === keepId) ?? null));
 }
 
@@ -96,6 +102,47 @@ function select(target) {
   renderDetail();
 }
 
+// What points at one type. An id the server did not mention is one nobody
+// uses — the route only answers for types that are somebody's rule.
+function usageOf(type) {
+  const counts = usage[String(type?.id)];
+  return { projects: counts?.projects ?? 0, files: counts?.files ?? 0 };
+}
+
+function inUse(counts) {
+  return counts.projects + counts.files > 0;
+}
+
+// "3 Transkripte und 1 Datei mit eigenem Typ" — only the halves that are
+// really there, each in the form its count asks for: a named zero reads like
+// a statement about something the deletion does not touch at all.
+function usageParts(counts) {
+  const parts = [];
+  if (counts.projects) {
+    parts.push(counts.projects === 1
+      ? t("types.usageProjectOne")
+      : t("types.usageProjects", { count: counts.projects }));
+  }
+  if (counts.files) {
+    parts.push(counts.files === 1
+      ? t("types.usageFileOne")
+      : t("types.usageFiles", { count: counts.files }));
+  }
+  return parts.length === 2
+    ? t("types.usageJoin", { first: parts[0], second: parts[1] })
+    : parts[0];
+}
+
+// What the deletion changes, again only where it reaches: a transcript is left
+// without a type, while a file merely loses its exception and follows its
+// transcript again — two different outcomes, and rarely both at once.
+function deleteEffects(counts) {
+  const effects = [];
+  if (counts.projects) effects.push(t("types.deleteEffectProjects"));
+  if (counts.files) effects.push(t("types.deleteEffectFiles"));
+  return effects.join(" ");
+}
+
 function renderList() {
   const host = el("types-list");
   if (!host) return;
@@ -111,6 +158,15 @@ function renderList() {
       row.append(Object.assign(document.createElement("span"), {
         className: "badge", textContent: t("types.builtin"),
       }));
+    }
+    const counts = usageOf(type);
+    if (inUse(counts)) {
+      const badge = Object.assign(document.createElement("span"), {
+        className: "badge",
+        textContent: t("types.usageBadge", { count: counts.projects + counts.files }),
+      });
+      badge.title = t("types.usageLine", { what: usageParts(counts) });
+      row.append(badge);
     }
     row.onclick = () => select(type);
     return row;
@@ -136,6 +192,7 @@ function renderDetail() {
       <span class="spacer"></span>
       <span id="type-delete-slot"></span>
     </div>
+    <p class="hint" id="type-usage"></p>
     <label for="type-name">${t("types.name")}</label>
     <input id="type-name" maxlength="100" autocomplete="off">
     ${raw(fieldLabel("type-structure", t("types.structure"), t("types.structureHint")))}
@@ -161,6 +218,15 @@ function renderDetail() {
 
   el("type-name").value = type?.name ?? "";
   el("types-back").onclick = () => select(null);
+
+  // what deleting this type would reach; a type nobody uses says so, because
+  // that is the answer the question is usually asked for
+  const counts = isNew ? { projects: 0, files: 0 } : usageOf(type);
+  const usageLine = el("type-usage");
+  usageLine.hidden = isNew;
+  usageLine.textContent = inUse(counts)
+    ? t("types.usageLine", { what: usageParts(counts) })
+    : t("types.usageNone");
 
   const structureSelect = el("type-structure");
   structureSelect.replaceChildren(...defaults.structures.map((value) => {
@@ -217,7 +283,13 @@ function renderDetail() {
   if (!isNew) {
     el("type-delete-slot").append(iconButton("delete", t("common.delete"), async () => {
       const ok = await confirmDelete({
-        message: t("types.deleteConfirm", { name: type.name }),
+        message: inUse(counts)
+          ? t("types.deleteConfirmUsed", {
+            name: type.name,
+            what: usageParts(counts),
+            effects: deleteEffects(counts),
+          })
+          : t("types.deleteConfirm", { name: type.name }),
       });
       if (!ok) return;
       try {

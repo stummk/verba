@@ -157,6 +157,8 @@ export const api = {
   // project types
   listTypes: () => request("GET", "/api/types"),
   typeDefaults: () => request("GET", "/api/types/defaults"),
+  // how many transcripts and files each type is the rule for (admin only)
+  typeUsage: () => request("GET", "/api/types/usage"),
   createType: (name, settings) => request("POST", "/api/types", { name, ...settings }),
   updateType: (id, name, settings) => request("PUT", `/api/types/${id}`, { name, ...settings }),
   deleteType: (id) => request("DELETE", `/api/types/${id}`),
