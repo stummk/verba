@@ -338,9 +338,10 @@ list and a detail view, one at a time. The **+** button creates a new type;
 built-in types can be edited and deleted too. "Restore default types" brings
 deleted or modified defaults back (both prompts).
 
-How much hangs off a type is shown in the list as a marker and in the editor
-as a line above the fields: how many transcripts have it as their rule and how
-many files picked it for themselves. **Deleting** stays possible at any time,
+How much hangs off a type is said by the question in front of the
+**deletion** — where the number decides something: how many transcripts have
+it as their rule and how many files picked it for themselves. Deleting stays
+possible at any time,
 and it takes none of the work with it — cleaned texts, translations and
 finished PDFs stay as they are. It only changes what future runs follow: the
 transcripts affected are left without a type, so they work without the cleanup
@@ -416,9 +417,11 @@ transcript, just without the files that were not selected; files without a
 transcript are skipped and the bar says how many) and **Delete**. The selection survives while jobs run and the cards update.
 
 **The four step badges.** On the right of every card stand four round badges
-— **transcription**, **cleanup**, **translation**, **search index** — always
+— **transcription**, **search index**, **cleanup**, **translation** — always
 all of them, even for a step that has not run. That is the point: the card
-says what is still missing as clearly as what is done.
+says what is still missing as clearly as what is done. They stand in the order
+Verba runs them: the index is written straight after the transcription, before
+the AI steps.
 
 | Look | Meaning |
 | --- | --- |
@@ -433,7 +436,7 @@ the step and, while it runs, the percentage and the sub-step — e.g.
 `Aufbereitung — 40 % · Bereinigung 2/5` or
 `Transkription — wartet (Position 3)`.
 
-The last badge, the **magnifier**, is the search index. Verba builds it by
+The second badge, the **magnifier**, is the search index. Verba builds it by
 itself — after the transcription and after every change to the text — so there
 is nothing to start here. Grey means this file cannot be found through
 **Search** yet; green means it can.
@@ -1173,12 +1176,13 @@ under it. It searches all transcripts at once — semantically (meaning counts;
 German questions also find English or Russian content) and via full text
 (proper names and rare terms match exactly).
 
-**The two buttons on the left of the field.** The **magnifier** searches and
+**The two buttons on the right of the field.** The **magnifier** searches and
 shows the hit list. The **spark** next to it has the language model answer the
 question instead — with sources that jump to the passage they quote; it only
-appears where an LLM is set up. As long as something is being asked, the
-result takes the place of the transcript cards. A click on the **×** on the
-right of the field (or emptying the field by hand) brings them back.
+appears where an LLM is set up. Both are greyed out while the field is empty:
+without a question there is nothing to search for. As long as something is
+being asked, the result takes the place of the transcript cards. A click on
+the **×** in the field (or emptying the field by hand) brings them back.
 
 **The filter tags.** Below the field is a row of tags that can be pushed
 sideways: **Type**, **Date**, **Language**, **Speaker** and **State**. A click

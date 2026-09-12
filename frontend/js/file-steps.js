@@ -1,5 +1,5 @@
-// The steps a file goes through — transcription, AI cleanup, translation,
-// search index — as one round badge each, always all of them, always in the
+// The steps a file goes through — transcription, search index, AI cleanup,
+// translation — as one round badge each, always all of them, always in the
 // same order.
 //
 // A row that only showed what had already happened looked identical before and
@@ -15,12 +15,14 @@ import { t } from "./i18n.js";
 const TRANSCRIBE_KINDS = ["transcribe", "transcribe_range", "api_transcribe"];
 
 // The badge order is the order of the workflow, which is also the order the
-// pipeline runs its steps in.
+// pipeline runs its steps in: the index is written straight after the
+// transcription — before the AI steps, which only add texts beside the
+// transcript the index already holds.
 const STEPS = [
   { key: "transcribe", icon: "audioToText" },
+  { key: "index", icon: "search" },
   { key: "cleanup", icon: "spellcheck" },
   { key: "translation", icon: "translate" },
-  { key: "index", icon: "search" },
 ];
 
 // The pipeline payload calls the translation step "translate", the derived

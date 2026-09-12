@@ -249,13 +249,19 @@ def test_the_file_list_is_a_list_of_cards():
 def test_every_file_card_shows_all_its_steps_as_badges():
     """Always all of them, so a card says what is missing, not only what is done."""
     steps = (FRONTEND / "js" / "file-steps.js").read_text(encoding="utf-8")
+    # in the order the pipeline runs them: the index is written straight after
+    # the transcription, before the AI steps that only add texts beside it
+    positions = []
     for key, icon in (
         ("transcribe", "audioToText"),
+        ("index", "search"),
         ("cleanup", "spellcheck"),
         ("translation", "translate"),
-        ("index", "search"),
     ):
-        assert f'{{ key: "{key}", icon: "{icon}" }}' in steps
+        entry = f'{{ key: "{key}", icon: "{icon}" }}'
+        assert entry in steps
+        positions.append(steps.index(entry))
+    assert positions == sorted(positions), "the badges no longer follow the workflow"
     # the search index leaves no mark on the file status — the chunk count is
     # the only thing that says whether this file can be found
     assert "fileRow.index_chunks" in steps

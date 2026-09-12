@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from verba import config, db
@@ -133,6 +136,32 @@ def test_usage_forgets_a_type_that_was_deleted(client):
 
     client.delete(f"/api/types/{song['id']}")
     assert str(song["id"]) not in client.get("/api/types/usage").json()
+
+
+def test_the_usage_count_is_only_asked_for_the_delete_confirmation():
+    """Nowhere else does the number decide anything.
+
+    A count in the list and under the name of every type was a figure nobody
+    was about to act on; in front of the delete it is the warning itself, and
+    asked there it is also current rather than as old as the page.
+    """
+    view = (
+        Path(__file__).resolve().parents[1] / "frontend" / "js" / "views" / "types.js"
+    ).read_text(encoding="utf-8")
+    assert view.count("api.typeUsage()") == 1
+    assert "const counts = await usageOf(type);" in view
+    assert "types.deleteConfirmUsed" in view
+    # neither the row in the list nor the editor says it any more
+    assert "usageBadge" not in view
+    assert 'id="type-usage"' not in view
+    for lang in ("de", "en", "ru"):
+        catalog = json.loads(
+            (Path(__file__).resolve().parents[1] / "frontend" / "i18n" / f"{lang}.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert "types.usageBadge" not in catalog
+        assert "types.usageLine" not in catalog
 
 
 def test_project_type_can_be_changed(client):

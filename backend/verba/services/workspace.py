@@ -24,12 +24,7 @@ from ..core.jobs import JobCancelled
 from ..events import hub
 from . import filters, maintenance
 from .media import is_audio_file, probe_duration
-from .metadata import (
-    extract_metadata,
-    format_display_date,
-    name_states_a_title,
-    plain_title,
-)
+from .metadata import extract_metadata, name_states_a_title, plain_title
 
 logger = logging.getLogger(__name__)
 
@@ -431,7 +426,12 @@ def register_file(project: dict[str, Any], target: Path, source: str = "") -> di
                 source,
                 duration,
                 meta["title"],
-                format_display_date(meta["recorded_at"]),
+                # Both columns take the ISO day, and neither is formatted here:
+                # `recorded_at` is what every date filter and every sort compares
+                # against, and the header is turned into the read form where it
+                # is printed (`pdf.py`), which leaves a date the user typed
+                # himself alone.
+                meta["recorded_at"],
                 meta.get("language", ""),
                 meta.get("target_language", ""),
                 meta["title"] or target.stem,

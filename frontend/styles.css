@@ -1513,7 +1513,11 @@ dialog textarea {
   background: transparent;
   color: var(--md-on-surface-variant);
 }
-.search-bar-btn:hover { background: var(--md-surface-container); box-shadow: none; filter: none; }
+.search-bar-btn:hover:not(:disabled) {
+  background: var(--md-surface-container);
+  box-shadow: none;
+  filter: none;
+}
 #search-run { color: var(--md-primary); }
 #search-ask { color: var(--md-primary); }
 .search-bar-btn.busy { animation: pulse 1.1s ease-in-out infinite; }

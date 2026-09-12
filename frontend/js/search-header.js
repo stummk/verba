@@ -1,9 +1,11 @@
 // The search header of the transcript overview.
 //
 // One bar at the top of the page, fixed there while the list scrolls under
-// it: the query field, the magnifier that searches every transcript and the
-// icon next to it that has the LLM answer the question instead — and below
-// both the row of tag filters (`search-filters.js`).
+// it: the query field, and at its right end the magnifier that searches every
+// transcript and the icon next to it that has the LLM answer the question
+// instead — and below both the row of tag filters (`search-filters.js`). The
+// two actions sit behind the field because that is the order they are used in,
+// and they are dead until it says what they would be about.
 //
 // Searching does not open a page of its own. As long as a query is standing,
 // the hit list takes the place of the project cards; clearing the field — by
@@ -47,12 +49,12 @@ export function headerMarkup() {
   return `
     <div class="search-header" id="search-header">
       <form class="search-bar" id="search-form" role="search">
-        <button type="submit" class="search-bar-btn" id="search-run"></button>
-        <button type="button" class="search-bar-btn" id="search-ask" hidden></button>
         <input id="search-query" type="search" autocomplete="off" enterkeyhint="search"
                placeholder="${esc(t("search.placeholder"))}"
                aria-label="${esc(t("search.title"))}">
         <button type="button" class="search-bar-btn" id="search-clear" hidden></button>
+        <button type="submit" class="search-bar-btn" id="search-run" disabled></button>
+        <button type="button" class="search-bar-btn" id="search-ask" hidden disabled></button>
       </form>
       <div class="filter-chips" id="filter-chips"></div>
     </div>
@@ -96,8 +98,18 @@ export async function mountSearchHeader(output, filtersChanged, modeChanged) {
   decorate(askButton, "sparkle", t("search.ask"));
   decorate(clearButton, "close", t("search.clear"));
 
+  // Nothing typed, nothing to ask: both actions stay dead until the field says
+  // what they would be about, so neither button can start an empty search. A
+  // button whose answer is still on its way stays dead as well.
+  let running = null;
+  function syncActions() {
+    clearButton.hidden = !query;
+    runButton.disabled = !query || running === runButton;
+    askButton.disabled = !query || running === askButton;
+  }
+
   input.value = query;
-  clearButton.hidden = !query;
+  syncActions();
 
   el("search-form").onsubmit = (event) => {
     event.preventDefault();
@@ -123,7 +135,7 @@ export async function mountSearchHeader(output, filtersChanged, modeChanged) {
 
   function onInput() {
     query = input.value.trim();
-    clearButton.hidden = !query;
+    syncActions();
     // an emptied field means "nothing asked": the old hit list would otherwise
     // keep standing under an input that no longer says what it belongs to
     if (!query && mode) {
@@ -168,8 +180,9 @@ export async function mountSearchHeader(output, filtersChanged, modeChanged) {
     if (!wasActive) onModeChange(); // the project cards make room first
     output.replaceChildren(html`<div class="card"><p class="muted small">…</p></div>`);
     const busy = which === "ask" ? askButton : runButton;
-    busy.disabled = true;
+    running = busy;
     busy.classList.add("busy");
+    syncActions();
     try {
       const payload = { query, ...asQuery() };
       if (which === "ask") {
@@ -191,8 +204,9 @@ export async function mountSearchHeader(output, filtersChanged, modeChanged) {
       onModeChange();
       toast(error.message);
     } finally {
-      busy.disabled = false;
+      running = null;
       busy.classList.remove("busy");
+      syncActions();
     }
   }
 }

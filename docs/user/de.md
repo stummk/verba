@@ -352,9 +352,9 @@ einen neuen Typ an; auch Standardtypen lassen sich bearbeiten und löschen.
 „Standardtypen wiederherstellen" bringt gelöschte oder veränderte Standards
 zurück (beide Prompts).
 
-Wie viel an einem Typ hängt, zeigt die Liste als Marke und der Editor als
-Zeile über den Feldern: wie viele Transkripte ihn als Vorgabe haben und wie
-viele Dateien ihn für sich selbst gewählt haben. **Löschen** bleibt trotzdem
+Wie viel an einem Typ hängt, sagt die Rückfrage vor dem **Löschen** — dort,
+wo die Zahl etwas entscheidet: wie viele Transkripte ihn als Vorgabe haben und
+wie viele Dateien ihn für sich selbst gewählt haben. Löschen bleibt trotzdem
 jederzeit möglich, und es nimmt nichts von der geleisteten Arbeit mit —
 bereinigte Texte, Übersetzungen und fertige PDFs bleiben unverändert. Es
 ändert nur, wonach sich künftige Läufe richten: Die betroffenen Transkripte
@@ -435,10 +435,11 @@ ohne Transkript werden übersprungen und die Leiste sagt wie viele) und
 Aufträge laufen und die Karten sich aktualisieren.
 
 **Die vier Schritt-Symbole.** Rechts auf jeder Karte stehen immer vier runde
-Symbole — **Transkription**, **Aufbereitung**, **Übersetzung**, **Suchindex**
+Symbole — **Transkription**, **Suchindex**, **Aufbereitung**, **Übersetzung**
 — auch dann, wenn ein Schritt noch nicht gelaufen ist. Genau das ist der
 Punkt: die Karte sagt ebenso deutlich, was noch fehlt, wie das, was fertig
-ist.
+ist. Sie stehen in der Reihenfolge, in der Verba sie ausführt: der Index wird
+direkt nach der Transkription geschrieben, noch vor den KI-Schritten.
 
 | Aussehen | Bedeutung |
 | --- | --- |
@@ -453,7 +454,7 @@ nennt den Schritt und, wenn er läuft, Prozent und Teilschritt —
 z. B. `Aufbereitung — 40 % · Bereinigung 2/5` oder
 `Transkription — wartet (Position 3)`.
 
-Das letzte Symbol, die **Lupe**, ist der Suchindex. Ihn baut Verba selbst —
+Das zweite Symbol, die **Lupe**, ist der Suchindex. Ihn baut Verba selbst —
 nach der Transkription und nach jeder Änderung am Text —, hier ist also
 nichts zu starten. Grau heißt: diese Datei ist über **Suche** noch nicht zu
 finden; grün: sie ist es.
@@ -1226,12 +1227,14 @@ scrollt. Sie durchsucht alle Transkripte gleichzeitig — semantisch (die
 Bedeutung zählt; deutsche Fragen finden auch englische oder russische Inhalte)
 und per Volltext (Eigennamen und seltene Begriffe treffen exakt).
 
-**Die beiden Knöpfe links im Suchfeld.** Die **Lupe** sucht und zeigt die
+**Die beiden Knöpfe rechts im Suchfeld.** Die **Lupe** sucht und zeigt die
 Trefferliste. Der **Funke** daneben lässt stattdessen das Sprachmodell die
 Frage beantworten — mit Quellenangaben, die an die zitierte Stelle springen;
-er erscheint nur, wenn ein LLM eingerichtet ist. Solange etwas gesucht ist,
-tritt das Ergebnis an die Stelle der Transkriptkarten. Ein Klick auf das **×**
-rechts im Feld (oder das Leeren des Feldes von Hand) bringt die Karten zurück.
+er erscheint nur, wenn ein LLM eingerichtet ist. Beide sind ausgegraut,
+solange nichts im Feld steht: ohne Frage gibt es nichts zu suchen. Solange
+etwas gesucht ist, tritt das Ergebnis an die Stelle der Transkriptkarten. Ein
+Klick auf das **×** im Feld (oder das Leeren des Feldes von Hand) bringt die
+Karten zurück.
 
 **Die Filter-Tags.** Unter dem Suchfeld steht eine Reihe von Tags, die sich
 seitwärts schieben lässt: **Typ**, **Datum**, **Sprache**, **Sprecher** und

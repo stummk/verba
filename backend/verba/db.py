@@ -395,6 +395,25 @@ def _migrate(conn: sqlite3.Connection) -> None:
             )
         set_meta(conn, "file_headers_v2_initialized", "1")
 
+    # An import once put the read form of the date into `recorded_at`, which is
+    # the ISO day everything else compares against: the date filter got
+    # "31.08.2026" as the newest recording and opened its calendar on a date
+    # that does not parse, and sorting by the column sorted by the day of the
+    # month. A row is only touched where `recorded_at` carries that form — no
+    # other path writes it, and the header beside it was always correct.
+    if not get_meta(conn, "file_recorded_at_iso_initialized"):
+        rows = conn.execute(
+            "SELECT id, recorded_at FROM files "
+            "WHERE recorded_at GLOB '[0-9][0-9].[0-9][0-9].[0-9][0-9][0-9][0-9]'"
+        ).fetchall()
+        for row in rows:
+            day, month, year = row["recorded_at"].split(".")
+            conn.execute(
+                "UPDATE files SET recorded_at = ? WHERE id = ?",
+                (f"{year}-{month}-{day}", row["id"]),
+            )
+        set_meta(conn, "file_recorded_at_iso_initialized", "1")
+
 
 def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
     row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()

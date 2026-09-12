@@ -255,8 +255,12 @@ function isoDay(date) {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
+// Only an ISO day opens the calendar somewhere. Anything else answers "no
+// date" rather than an Invalid Date: that one survives `??`, and every cell of
+// the grid built from it would read NaN.
 function fromIso(value) {
-  return value ? new Date(`${value}T00:00:00`) : null;
+  const parsed = value ? new Date(`${value}T00:00:00`) : null;
+  return parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;
 }
 
 function startOfMonth(date) {

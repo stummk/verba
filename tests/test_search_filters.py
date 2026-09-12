@@ -213,6 +213,27 @@ def test_the_search_bar_carries_both_actions_and_a_way_back():
     assert "if (searchIsActive()) run(mode);" in source
 
 
+def test_the_two_actions_sit_behind_the_field_and_are_dead_while_it_is_empty():
+    """Magnifier and AI answer stand at the right end and only wake up with a
+    query — an empty search is nothing either of them could run."""
+    source = (FRONTEND / "js" / "search-header.js").read_text(encoding="utf-8")
+    markup = source[source.index('search-bar" id="search-form') : source.index("filter-chips")]
+    assert markup.index('id="search-query"') < markup.index('id="search-run"')
+    assert markup.index('id="search-query"') < markup.index('id="search-ask"')
+    # dead before the first keystroke, not only after one
+    assert '<button type="submit" class="search-bar-btn" id="search-run" disabled>' in source
+    assert "runButton.disabled = !query || running === runButton;" in source
+    assert "askButton.disabled = !query || running === askButton;" in source
+    # and every path that changes the query goes through the one place
+    assert source.count("syncActions();") >= 4
+
+
+def test_the_calendar_never_opens_on_a_date_that_does_not_parse():
+    """An Invalid Date survives `??` and turns every cell of the grid to NaN."""
+    source = (FRONTEND / "js" / "search-filters.js").read_text(encoding="utf-8")
+    assert "return parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;" in source
+
+
 def test_every_tag_filter_has_an_icon_and_a_label():
     source = (FRONTEND / "js" / "search-filters.js").read_text(encoding="utf-8")
     for key, icon, label in (

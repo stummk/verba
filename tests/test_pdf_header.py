@@ -79,6 +79,33 @@ def test_short_filename_scheme_leaves_the_addition_empty(data_env, tmp_path):
     assert row["header_right"] == "2024-08-17"
 
 
+def test_the_recorded_date_is_stored_as_the_iso_day(data_env, tmp_path):
+    """`recorded_at` is compared, not read: it holds the ISO day.
+
+    The read form belongs to the PDF header alone, which makes it where it
+    prints. A file imported with the German form in this column made the date
+    filter open its calendar on a date that does not parse.
+    """
+    project = workspace.create_project("P")
+    row = add_file(tmp_path, project, "20240817_Sommerlied.mp3")
+    assert row["recorded_at"] == "2024-08-17"
+
+
+def test_a_date_stored_in_the_read_form_is_migrated_to_the_iso_day(data_env, tmp_path):
+    project = workspace.create_project("P")
+    row = add_file(tmp_path, project, "20240817_Sommerlied.mp3")
+    with db.get_conn() as conn:
+        conn.execute("UPDATE files SET recorded_at = '17.08.2024' WHERE id = ?", (row["id"],))
+        conn.execute("DELETE FROM meta WHERE key = 'file_recorded_at_iso_initialized'")
+
+    db.init_db()
+
+    migrated = workspace.get_file(row["id"])
+    assert migrated["recorded_at"] == "2024-08-17"
+    # the header beside it was never wrong and is left alone
+    assert migrated["header_right"] == "2024-08-17"
+
+
 def test_filename_without_a_date_still_gives_a_title(data_env, tmp_path):
     project = workspace.create_project("P")
     row = add_file(tmp_path, project, "ohne datum.mp3")
