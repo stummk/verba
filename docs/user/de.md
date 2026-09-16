@@ -991,8 +991,31 @@ Aufnahmen zitieren, werden verworfen, bevor Sie sie zu sehen bekommen — sie w�
 keine Regel, und bei zusammengelegten Listen stünde der Inhalt einer Aufnahme
 plötzlich in fremden Vorgaben.
 
-Die ganze Funktion lässt sich abschalten. Ist sie aus, werden weder neue
-Korrekturen gelernt noch bereits gelernte angewendet.
+**Die Schalter.** Unter *Einstellungen → Gelernte Schreibweisen* steht, was
+Verba lernen darf:
+
+- **Aus Korrekturen lernen** — die ganze Funktion. Aus: es wird weder neu
+  gelernt noch bereits Gelerntes angewendet, also genau das Verhalten von
+  vorher.
+- **Regeln aus korrigierten Texten ableiten** — nur die zweite Hälfte. Wer die
+  Schreibweisen will, aber keine Aufrufe beim Sprachmodell dafür ausgeben
+  möchte, schaltet das ab und behält den Rest.
+- **Ab wie vielen Korrekturen anwenden** — wie oft dieselbe Schreibweise
+  korrigiert sein muss, bevor sie von selbst gilt. Einzeln übernehmen geht
+  unabhängig davon jederzeit.
+- **Gemeinsame Liste für alle Nutzer** — erscheint nur mit eingeschalteter
+  Benutzerverwaltung und gehört dem Administrator.
+
+**Wenn etwas gründlich schiefgegangen ist**, hilft *Alles Gelernte verwerfen*
+am Ende des Abschnitts: alle Schreibweisen und Regeln dieser Liste sind dann
+weg. Die Transkripte selbst bleiben unberührt — aus ihnen kann alles neu
+gelernt werden. Im Normalfall braucht man das nicht, dafür sorgen die
+Gegenbelege oben.
+
+Feinere Stellschrauben — wie ähnlich ein korrigiertes Wort dem ursprünglichen
+sein muss, wie viele Namen an die Transkription gehen, wie lang der Regelblock
+werden darf — stehen bewusst nicht im Formular. Sie sind geschätzt, nicht
+gemessen, und lassen sich in `settings.json` unter `learning` ändern.
 
 ## Whisper-Modelle {#whisper}
 

@@ -25,6 +25,7 @@ const SAVEABLE_SECTIONS = new Set([
   "card-transcribe",
   "card-ai",
   "card-search",
+  "card-learning",
   "card-storage",
   "card-system",
 ]);
@@ -386,8 +387,30 @@ export async function render(view) {
         ${raw(labelHelp(
           `<h2>${t("settings.learningTitle")}</h2>`, t("settings.learningIntro"), "head-row"
         ))}
+        ${raw(checkLine("learning-enabled", t("settings.learningOn"), t("settings.learningOnHint")))}
+        ${raw(checkLine("learning-rules", t("settings.learningRulesOn"),
+          t("settings.learningRulesOnHint")))}
+        <div id="learning-shared-row" hidden>
+          ${raw(checkLine("learning-shared", t("settings.learningShared"),
+            t("settings.learningSharedHint")))}
+        </div>
+        <div class="form-grid">
+          <div class="setting-field">
+            ${raw(fieldLabel("learning-min-evidence", t("settings.learningMinEvidence"),
+              t("settings.learningMinEvidenceHint")))}
+            <input id="learning-min-evidence" type="number" min="1" max="20"
+                   value="${settings.learning?.min_evidence ?? 2}">
+          </div>
+        </div>
         <div id="rules-host"></div>
         <div id="learning-host"></div>
+        <div class="setting-action">
+          ${raw(labelHelp(
+            `<button type="button" class="text-btn danger" id="learning-forget"
+              >${t("settings.learningForgetAll")}</button>`,
+            t("settings.learningForgetAllHint"), "inline-row"
+          ))}
+        </div>
       </div>
 
       <div class="card" id="card-account">
@@ -505,6 +528,12 @@ export async function render(view) {
 
   el("update-auto").checked = settings.updates?.check_enabled ?? true;
   el("general-audio-backup").checked = settings.general?.audio_backup ?? true;
+  el("learning-enabled").checked = settings.learning?.enabled ?? true;
+  el("learning-rules").checked = settings.learning?.rules_enabled ?? true;
+  el("learning-shared").checked = settings.learning?.shared ?? false;
+  // one scope either way while the user management is off, so the switch
+  // between "each account for itself" and "everyone together" says nothing
+  el("learning-shared-row").hidden = !settings.auth?.enabled;
   el("update-check").onclick = async () => {
     setHelp(el("update-help"), t("update.checking"));
     await refreshUpdate(true);
@@ -726,6 +755,13 @@ export async function render(view) {
         workspaces_dir: el("general-workspaces").value.trim(),
         audio_backup: el("general-audio-backup").checked,
       },
+      learning: {
+        ...settings.learning,
+        enabled: el("learning-enabled").checked,
+        rules_enabled: el("learning-rules").checked,
+        shared: el("learning-shared").checked,
+        min_evidence: Number(el("learning-min-evidence").value) || 2,
+      },
       updates: { check_enabled: el("update-auto").checked },
       server: { port: Number(el("server-port").value) },
       logging: {
@@ -809,6 +845,7 @@ export async function render(view) {
   // saving is what the page is for. A single rejected loader used to abort
   // the render before the submit handler existed — every section's save then
   // did nothing at all, without a hint anywhere.
+  bindForgetLearned();
   const sections = await Promise.allSettled([
     refreshModels(),
     refreshLlmSection(),
@@ -865,6 +902,13 @@ async function renderPersonalSettings(view, settings) {
         ))}
         <div id="rules-host"></div>
         <div id="learning-host"></div>
+        <div class="setting-action">
+          ${raw(labelHelp(
+            `<button type="button" class="text-btn danger" id="learning-forget"
+              >${t("settings.learningForgetAll")}</button>`,
+            t("settings.learningForgetAllHint"), "inline-row"
+          ))}
+        </div>
       </div>
       <div class="card">
         ${raw(labelHelp(
@@ -904,8 +948,33 @@ async function renderPersonalSettings(view, settings) {
   };
 
   mountAccount(el("account-host"));
+  bindForgetLearned();
   refreshLearnedRules();
   refreshLearning();
+}
+
+/**
+ * Start over: every spelling and every rule of this user's scope.
+ *
+ * The way out of a vocabulary that went wrong in the first few recordings —
+ * the counter-evidence handles the ordinary case by itself, but not one that
+ * was noticed at file twelve.
+ */
+function bindForgetLearned() {
+  const button = el("learning-forget");
+  if (!button) return;
+  button.onclick = async () => {
+    const ok = await confirmDelete({ message: t("settings.learningForgetConfirm") });
+    if (!ok) return;
+    try {
+      const gone = await api.forgetLearned();
+      toast(t("settings.learningForgotten", { terms: gone.terms, rules: gone.rules }));
+      await refreshLearnedRules();
+      await refreshLearning();
+    } catch (error) {
+      toast(error.message);
+    }
+  };
 }
 
 /**

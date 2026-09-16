@@ -104,3 +104,15 @@ def delete_rule(rule_id: int, user: dict = CurrentUser) -> dict:
     if not learning.delete_rule(rule_id, learning.scope_for_user(user)):
         raise HTTPException(status_code=404, detail="Diese Regel existiert nicht")
     return {"deleted": True}
+
+
+@router.delete("")
+def forget_everything(user: dict = CurrentUser) -> dict:
+    """Start over: drop every spelling and every rule of the caller's scope.
+
+    The way out of a vocabulary that went wrong early — and the counterpart to
+    the counter-evidence that handles the ordinary case on its own. What the
+    corrections themselves taught is gone; the corrected texts are untouched,
+    so everything can be learned again.
+    """
+    return learning.forget_scope(learning.scope_for_user(user))

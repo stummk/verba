@@ -946,8 +946,31 @@ recordings are discarded before you ever see them — they would not be rules, a
 with pooled lists the content of one recording would suddenly stand in someone
 else's instructions.
 
-The whole feature can be switched off. While it is off, neither are new
-corrections learned nor are previously learned ones applied.
+**The switches.** Under *Settings → Learned spellings* you decide what Verba
+may learn:
+
+- **Learn from corrections** — the whole feature. Off: nothing new is learned
+  and nothing already learned is applied, which is exactly the earlier
+  behaviour.
+- **Derive rules from corrected texts** — only the second half. If you want
+  the spellings but no calls to the language model for them, switch this off
+  and keep the rest.
+- **Apply after this many corrections** — how often the same spelling has to
+  be corrected before it counts on its own. Accepting one by hand works
+  regardless, at any time.
+- **One shared list for all users** — only appears with user management on,
+  and belongs to the administrator.
+
+**If something went thoroughly wrong**, *Discard everything learned* at the
+end of the section helps: every spelling and rule in this list is then gone.
+The transcripts themselves stay untouched — everything can be learned from
+them again. You should not normally need it; the counter-evidence above
+handles the ordinary case.
+
+Finer knobs — how much a corrected word must resemble the original, how many
+names go to the transcription, how long the rule block may get — are
+deliberately not in the form. They are estimated rather than measured, and can
+be changed in `settings.json` under `learning`.
 
 ## Whisper models {#whisper}
 

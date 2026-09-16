@@ -305,12 +305,23 @@ def delete_term(term_id: int, owner_id: int) -> bool:
         return cursor.rowcount > 0
 
 
-def forget_owner(owner_id: int) -> int:
-    """Drop a scope's vocabulary — when its account goes, or on request."""
-    if owner_id == INSTALLATION_SCOPE:
-        return 0
+def forget_scope(owner_id: int) -> dict[str, int]:
+    """Drop everything one scope has learned; returns how much that was.
+
+    Both callers mean it: the settings page, where somebody asked for it, and
+    `auth.delete_user`, where the account that learned it is leaving. Nothing
+    is held back at the installation scope either — the only way to make that
+    safe would be a guard, and a guard here would quietly do nothing where a
+    person asked for something.
+    """
     with db.get_conn() as conn:
-        return conn.execute("DELETE FROM learned_terms WHERE owner_id = ?", (owner_id,)).rowcount
+        terms = conn.execute("DELETE FROM learned_terms WHERE owner_id = ?", (owner_id,)).rowcount
+        rules = conn.execute("DELETE FROM learned_rules WHERE owner_id = ?", (owner_id,)).rowcount
+        for step in RULE_STEPS:
+            conn.execute(
+                "DELETE FROM meta WHERE key = ?", (f"{_RULE_RUN_MARKER}:{owner_id}:{step}",)
+            )
+    return {"terms": terms, "rules": rules}
 
 
 # ── handing it to the engines ─────────────────────────────────────────
@@ -619,13 +630,6 @@ def delete_rule(rule_id: int, owner_id: int) -> bool:
             "DELETE FROM learned_rules WHERE id = ? AND owner_id = ?", (rule_id, owner_id)
         )
         return cursor.rowcount > 0
-
-
-def forget_owner_rules(owner_id: int) -> int:
-    if owner_id == INSTALLATION_SCOPE:
-        return 0
-    with db.get_conn() as conn:
-        return conn.execute("DELETE FROM learned_rules WHERE owner_id = ?", (owner_id,)).rowcount
 
 
 # ── when a distillation is worth its calls ───────────────────────────

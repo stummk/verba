@@ -10,8 +10,8 @@ prompt is derived from their corrections in the background, proposed to them,
 and — once accepted — applied to later recordings. The user never has to write a
 prompt, and can still overrule everything.
 
-Status: **phases 1 to 4 done, phase 5 planned.** Phases are meant to ship one
-at a time; each is useful on its own.
+Status: **all five phases done.** They shipped one at a time, each useful on
+its own; what each turned out to be is recorded below its heading.
 
 
 ## Design decisions
@@ -311,15 +311,27 @@ the next insertion fails loudly instead.
 test shows it.
 
 
-## Phase 5 — Switch off, explain, maintain
+## Phase 5 — Switch off, explain, maintain ✔
 
-- `LearningSettings` in `config.py` exists since phase 2 (`enabled`, `shared`,
-  `min_evidence`, `min_similarity`, `max_hotwords`, `max_glossary_chars`);
-  what is missing is a way to reach it from the settings form. Switched off,
-  the behaviour is exactly today's.
-- "Discard everything learned", per scope.
-- User guide in **all three** languages (`docs/user/{de,en,ru}.md`), same
-  section at the same position, `{#slug}` marker, icon in `SECTION_ICONS`.
+**Four of the settings reach the form**, not all of them: `enabled`,
+`rules_enabled`, `min_evidence`, and `shared` — the last only shown while the
+user management is on, because without it there is one scope either way and
+the switch would say nothing. The rest stay in `settings.json`. They are the
+tuning table below, every one of them a guess; putting a number nobody has
+measured in front of a user invites them to turn it, and the guide says where
+they live instead.
+
+**"Discard everything learned"** sits at the end of the card, in both the
+administrative and the restricted variant, and acts on the caller's own scope.
+`learning.forget_scope()` drops the spellings, the rules *and* the
+"already looked at this" markers — without the last, the next distillation
+would silently skip the corrections it had seen before. `auth.delete_user`
+goes through the same function now, which retired two copies of the same SQL
+that nothing had ever called.
+
+**The guide** gained the section in phase 2 and grew with each phase since;
+here it describes the switches, the way to start over, and where the
+unexposed knobs are.
 
 
 ## Across all phases
@@ -336,7 +348,9 @@ test shows it.
 ## Tuning
 
 The thresholds are reasoned, not measured — like the search distance cutoffs,
-they should be the first suspect when the feature behaves oddly:
+they should be the first suspect when the feature behaves oddly. Everything
+here lives under `learning` in `settings.json`; only `min_evidence` is also in
+the settings form:
 
 | Threshold | First guess |
 |---|---|
@@ -344,9 +358,11 @@ they should be the first suspect when the feature behaves oddly:
 | Distinct files a rule's words must occur in | 3 |
 | Corrected files before distilling | 3 |
 | Changed characters before distilling | 2000 |
-| Rules per scope | 10 |
-| Character cap of the rules block | 800 |
+| Rules per scope and step | 10 |
+| Character cap of the rules block | 800 (`max_glossary_chars`) |
 | Hotwords passed to Whisper | 100 |
+| Similarity a corrected word must keep | 0.5 |
+| Passages one distillation looks at | 20, each 600 characters |
 
 Two things make measuring them later cheap rather than a rewrite: they all live
 in `LearningSettings` instead of being scattered through the code, and every
