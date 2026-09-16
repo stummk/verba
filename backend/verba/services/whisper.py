@@ -569,10 +569,13 @@ def handle_transcribe_range_job(
                 label: str = counter,
             ) -> list[str]:
                 model = get_model(model_override=payload.get("model", ""))
+                language = language_for(file_row, payload)
+                hotwords = learned_hotwords(file_row, language)
                 segments_iter, _info = model.transcribe(
                     str(clip),
-                    language=language_for(file_row, payload) or None,
+                    language=language or None,
                     beam_size=5,
+                    **({"hotwords": hotwords} if hotwords else {}),
                 )
                 collected: list[str] = []
                 for segment in segments_iter:
@@ -624,6 +627,23 @@ def handle_transcribe_range_job(
         )
 
 
+def learned_hotwords(file_row: dict[str, Any], language: str) -> str:
+    """The spellings this installation has been corrected into before.
+
+    Handed to the decoder rather than repaired afterwards: a name the user
+    fixed once is then *heard* right the next time (services/learning.py).
+    Never lets its own failure stop a transcription — without it the
+    recognition is merely as good as it was before.
+    """
+    from . import learning
+
+    try:
+        return learning.hotwords_for(file_row, language)
+    except Exception:  # noqa: BLE001 — a hint, never a precondition
+        logger.warning("could not read the learned spellings", exc_info=True)
+        return ""
+
+
 def _run_transcription(
     audio_path: Path,
     file_row: dict[str, Any],
@@ -635,11 +655,16 @@ def _run_transcription(
 ) -> tuple[list[dict[str, Any]], Any, float | None]:
     overrides = overrides or {}
     model = get_model(model_override=overrides.get("model", ""))
+    language = language_for(file_row, overrides)
+    # passed only when there is something to say, so a transcription that has
+    # nothing learned behind it asks exactly what it always asked
+    hotwords = learned_hotwords(file_row, language)
     segments_iter, info = model.transcribe(
         str(audio_path),
-        language=language_for(file_row, overrides) or None,
+        language=language or None,
         beam_size=5,
         word_timestamps=words,
+        **({"hotwords": hotwords} if hotwords else {}),
     )
     duration = info.duration or probe_duration(audio_path)
 

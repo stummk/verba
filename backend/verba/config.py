@@ -452,6 +452,37 @@ class UpdateSettings(BaseModel):
     check_enabled: bool = True
 
 
+class LearningSettings(BaseModel):
+    """Learning the spellings a user keeps correcting (docs/LEARNING.md).
+
+    Every number here is reasoned, not measured — they are collected in one
+    place so that measuring them later costs a value, not a rewrite.
+
+    `shared` only means anything while the user management is on: without it
+    there is one scope anyway, and everything learned counts for the whole
+    installation. With it, each user learns across their own transcripts, and
+    switching this on is the deliberate decision to make one user's corrected
+    spellings visible in everyone's transcriptions.
+    """
+
+    enabled: bool = True
+    shared: bool = False
+    # How often a correction has to be seen before it is applied on its own.
+    # Below that it is proposed and waits for someone to accept it.
+    min_evidence: int = Field(default=2, ge=1, le=20)
+    # How much a corrected word still has to look like the word it replaces.
+    # A mishearing does ("Jahwe" → "Yahweh"); a rewording does not ("sagt" →
+    # "spricht"), and as a hint to the recognition it would be nonsense.
+    min_similarity: float = Field(default=0.5, ge=0.0, le=1.0)
+    # An unbounded list of names makes the transcription *worse* — the decoder
+    # is bent towards words that do not occur in this recording. Only the
+    # best-attested and most recent ones are passed.
+    max_hotwords: int = Field(default=100, ge=0, le=1000)
+    # What the LLM steps are told about spellings, in characters. It competes
+    # with the section itself for the context of a small local model.
+    max_glossary_chars: int = Field(default=800, ge=0, le=8000)
+
+
 class SetupState(BaseModel):
     completed: bool = False
     ffmpeg_path: str = ""  # filled when ffmpeg was auto-installed to <base>/tools
@@ -466,6 +497,7 @@ class Settings(BaseModel):
     diarization: DiarizationSettings = Field(default_factory=DiarizationSettings)
     general: GeneralSettings = Field(default_factory=GeneralSettings)
     auth: AuthSettings = Field(default_factory=AuthSettings)
+    learning: LearningSettings = Field(default_factory=LearningSettings)
     updates: UpdateSettings = Field(default_factory=UpdateSettings)
     setup: SetupState = Field(default_factory=SetupState)
 

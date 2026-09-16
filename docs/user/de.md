@@ -919,6 +919,46 @@ dann in einem Durchgang übernommen:
   - Einen **Ort** kennt das Schema nicht; er steht im Editor im freien Feld
     *Ort und Datum rechts* (z. B. `Bremen-Mahndorf, 2026-07-31`).
 
+## Gelernte Schreibweisen {#learning}
+
+Korrigiert man im Editor immer wieder dasselbe falsch verstandene Wort — einen
+Namen, einen Ort, einen Fachbegriff —, merkt Verba sich das und gibt die
+korrigierte Schreibweise der **nächsten Transkription als Hinweis mit**. Der
+Name wird dann gleich richtig gehört, statt hinterher repariert zu werden. Die
+KI-Aufbereitung und die Übersetzung bekommen dieselbe Liste, damit eine
+Schreibweise über mehrere Aufnahmen hinweg gleich bleibt.
+
+**Was gelernt wird und was nicht.** Nur der Austausch *eines* Wortes gegen
+*ein* anderes, und nur wenn das korrigierte Wort dem ursprünglichen noch
+ähnlich sieht: „Jahwe" → „Yahweh" oder „Bergstrasse" → „Bergstraße" ist ein
+Verhörer und wird gemerkt. „sagt" → „spricht" ist eine andere Formulierung und
+wird nicht gemerkt — als Hinweis an die Erkennung wäre das Unsinn. Wer ein
+Segment komplett neu tippt, lehrt damit gar nichts: ein ganzer Block ist keine
+Schreibweise. Ein Segment, das man selbst angelegt hat, zählt ebenfalls nicht.
+
+**Wann eine Schreibweise angewendet wird.** Nach der ersten Korrektur steht sie
+unter *Einstellungen → Gelernte Schreibweisen* und wartet; ab der zweiten wird
+sie angewendet. Mit **Übernehmen** gilt sie sofort, mit **Ablehnen** nie — ein
+abgelehnter Eintrag bleibt abgelehnt, auch wenn dieselbe Korrektur noch
+zehnmal kommt. **Vergessen** löscht ihn ganz; er wird neu gelernt, sobald man
+das Wort wieder korrigiert.
+
+**Wenn man es sich anders überlegt.** Korrigiert man später andersherum —
+erst „Meier" → „Maier", dann „Maier" → „Meier" —, zieht sich der Eintrag von
+selbst zurück. Wird er danach wieder bestätigt, kommt er zurück. So bleibt
+eine Schreibweise, die aus den ersten Aufnahmen stammt, nicht für immer
+gesetzt.
+
+**Wer was lernt.** Ohne Benutzerverwaltung gibt es eine einzige Liste für die
+ganze Installation. Mit Benutzerverwaltung lernt jedes Konto für sich, über
+alle eigenen Transkripte hinweg — so gerät kein Wort aus einem privaten
+Transkript in die Vorschläge anderer. Wer das ausdrücklich will, kann die
+Listen zusammenlegen (`learning.shared` in der Konfiguration); dann sehen alle
+dieselben Schreibweisen.
+
+Die ganze Funktion lässt sich abschalten. Ist sie aus, werden weder neue
+Korrekturen gelernt noch bereits gelernte angewendet.
+
 ## Whisper-Modelle {#whisper}
 
 Im Bereich **Einstellungen → Transkription** zeigt **eine Liste** alle Modelle

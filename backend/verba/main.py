@@ -19,6 +19,7 @@ from .api import docs as docs_api
 from .api import export as export_api
 from .api import files as files_api
 from .api import jobs as jobs_api
+from .api import learning as learning_api
 from .api import models as models_api
 from .api import openai_compat as openai_compat_api
 from .api import projects as projects_api
@@ -165,6 +166,7 @@ def create_app() -> FastAPI:
     app.include_router(segments_api.router)
     app.include_router(jobs_api.router)
     app.include_router(search_api.router)
+    app.include_router(learning_api.router)
     app.include_router(models_api.router)
     app.include_router(docs_api.router)
     app.include_router(apikeys_api.router)

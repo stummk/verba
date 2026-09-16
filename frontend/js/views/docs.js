@@ -25,6 +25,7 @@ const SECTION_ICONS = {
   speakers: "people",
   ai: "sparkle",
   editor: "editNote",
+  learning: "spellcheck",
   whisper: "memory",
   llm: "cloud",
   pdf: "pdf",

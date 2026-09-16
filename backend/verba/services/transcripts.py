@@ -94,6 +94,9 @@ def update_segment(segment_id: int, changes: dict[str, Any]) -> dict[str, Any] |
     }
     if not allowed:
         return get_segment(segment_id)
+    before = get_segment(segment_id)
+    if before is None:
+        return None
     if "text" in allowed and "words" not in allowed:
         allowed["words"] = ""  # the timings described the text that was there
     sets = ", ".join(f"{column} = ?" for column in allowed)
@@ -110,9 +113,34 @@ def update_segment(segment_id: int, changes: dict[str, Any]) -> dict[str, Any] |
         if cursor.rowcount == 0:
             return None
     segment = get_segment(segment_id)
+    if segment is not None and "text" in allowed:
+        _learn_from(before, segment)
     if segment is not None:
         sync_after_change(segment["file_id"])
     return segment
+
+
+def _learn_from(before: dict[str, Any], after: dict[str, Any]) -> None:
+    """Let the correction teach the spellings (services/learning.py).
+
+    Only for a row a machine wrote: `text_original` is empty on one the user
+    typed themselves (`create_segment`), and their own second thoughts about
+    their own wording are not a correction of anything.
+
+    Never lets its own failure reach the edit — the text is saved either way,
+    and a word that could not be remembered is worth a log line, not a lost
+    correction.
+    """
+    if not after["text_original"]:
+        return
+    from . import learning, workspace
+
+    try:
+        learning.note_text_correction(
+            workspace.get_file(after["file_id"]), before["text"], after["text"]
+        )
+    except Exception:  # noqa: BLE001 — auxiliary work, never the user's problem
+        logger.warning("could not learn from a segment correction", exc_info=True)
 
 
 def delete_segment(segment_id: int) -> bool:

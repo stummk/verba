@@ -249,6 +249,11 @@ export const api = {
   searchModels: () => request("GET", "/api/search/models"),
   searchReindex: () => request("POST", "/api/search/reindex"),
 
+  // spellings learned from the user's own corrections
+  listLearnedTerms: () => request("GET", "/api/learning/terms"),
+  updateLearnedTerm: (id, changes) => request("PUT", `/api/learning/terms/${id}`, changes),
+  deleteLearnedTerm: (id) => request("DELETE", `/api/learning/terms/${id}`),
+
   // public API keys
   listApiKeys: () => request("GET", "/api/apikeys"),
   createApiKey: (name) => request("POST", "/api/apikeys", { name }),

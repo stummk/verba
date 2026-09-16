@@ -248,7 +248,9 @@ class FakeModel:
         self.segments = segments
         self.word_timestamps: object = "not called"
 
-    def transcribe(self, path, language=None, beam_size=5, word_timestamps=False):
+    def transcribe(self, path, language=None, beam_size=5, word_timestamps=False, **kwargs):
+        # **kwargs: the real signature keeps growing (hotwords, ...), and a
+        # double that refuses one of them fails for the wrong reason
         self.word_timestamps = word_timestamps
         return iter(self.segments), FakeInfo()
 

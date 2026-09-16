@@ -10,8 +10,8 @@ prompt is derived from their corrections in the background, proposed to them,
 and — once accepted — applied to later recordings. The user never has to write a
 prompt, and can still overrule everything.
 
-Status: **phase 1 done, the rest planned.** Phases are meant to ship one at a
-time; each is useful on its own.
+Status: **phases 1 and 2 done, the rest planned.** Phases are meant to ship
+one at a time; each is useful on its own.
 
 
 ## Design decisions
@@ -27,7 +27,7 @@ differently on a second run, because the corpus grew in between. The pipeline's
 reproducibility is worth more than the marginal quality of per-chunk retrieval.
 
 **2. Scope is the user, with an installation-wide switch.**
-Learned material carries an `owner_id`; `NULL` means installation-wide. Without
+Learned material carries an `owner_id`; `0` means installation-wide. Without
 user management (`auth.enabled` off — the normal case) there is exactly one
 scope and everything is global, which is the point of the feature. With user
 management on, each user learns across *all their own* projects by default, so
@@ -118,16 +118,11 @@ count, a user-typed segment claims no transcription, re-transcribing and a
 speaker split discard the pair, and an existing database gains the columns
 with its rows intact.
 
-**Known gap for phase 2:** a re-transcribed selection
-(`POST /files/{id}/transcribe-range`) reaches the backend as an ordinary
-segment edit, so it is captured as a correction although both sides are
-machine-written. Phase 2 has to filter those out when deriving vocabulary, or
-the route needs to say where the text came from.
 
 **Done when:** for every corrected text and segment, both versions are on disk.
 
 
-## Phase 2 — Vocabulary
+## Phase 2 — Vocabulary ✔
 
 Still no LLM. The cheapest and safest half of the whole feature.
 
@@ -135,16 +130,39 @@ New module `backend/verba/services/learning.py`.
 
 ```
 learned_terms(
-    id, owner_id, source, target,
-    evidence, counter_evidence, status, last_seen_at,
-    UNIQUE (owner_id, source)
+    id, owner_id, language, source, target,
+    evidence, counter_evidence, status, last_seen_at, created_at,
+    UNIQUE (owner_id, language, source)
 )
 ```
 
+`owner_id` is `0` for the whole installation rather than `NULL`, because
+SQLite counts NULLs as distinct in a UNIQUE constraint and the upsert would
+never dedupe. There is no foreign key to match — `auth.delete_user` removes a
+departing account's terms explicitly.
+
+`language` is not in the original sketch and had to be added: without it a
+Russian name is handed to a German recording as a hotword, which actively
+makes the transcription worse. It comes from `files.language`; a term whose
+recording declared none stays eligible everywhere.
+
 **Derivation:** `difflib.SequenceMatcher` over the token lists of
-`text_original` ↔ `text`. Only 1:1 word replacements where both sides are
-word-like are collected; sentence rewrites are ignored here and belong to
-phase 3.
+`text_original` ↔ `text`, per edit rather than against the model's original,
+so each correction contributes its own delta. Only 1:1 word replacements are
+collected, and only where the corrected word still *resembles* the one it
+replaces (`min_similarity`) — "Jahwe" → "Yahweh" is a mishearing, "sagt" →
+"spricht" is a rewording and would be nonsense as a hint to the decoder.
+Retyping a whole segment produces one block opcode and therefore teaches
+nothing at all, which is better than the cap it was meant to need. Rows the
+user created themselves are skipped: they carry no `text_original`.
+
+**Contradiction, not just confirmation.** A term carries `evidence` and
+`counter_evidence`. Correcting the same word differently counts against the
+stored pair, and once contradicted as often as confirmed the newer wording
+takes over; correcting it back the other way retires it, and confirming it
+again brings it back. That, not the "discard everything" button, is what
+keeps a spelling picked up from the first few recordings from being the
+installation's truth for good.
 
 **Application, in two places:**
 
@@ -162,12 +180,24 @@ towards hundreds of names that do not occur in this recording. The list is
 truncated to the top N by evidence and recency when it is passed. This
 requirement exists only because the store is global.
 
-**UI:** next to the transcript types (`frontend/js/views/types.js`) — the same
-conceptual level ("how Verba works"), and global in the same way. Accept, edit
-or discard per entry.
+A term applies once it has been seen `min_evidence` times, or as soon as the
+user accepts it. "rejected" is sticky: more evidence must never overrule a
+person.
+
+**UI:** not next to the transcript types after all — that view is
+administrators only, and this vocabulary belongs to whoever corrected it. It
+is a card in the settings instead, present in both the full and the
+restricted variant, so every user reaches their own list. Reject, allow again,
+forget.
 
 **Done when:** a name corrected in file 1 is spelled correctly by Whisper in
 file 2.
+
+**Known gap, still open from phase 1:** a re-transcribed selection
+(`POST /files/{id}/transcribe-range`) reaches the backend as an ordinary
+segment edit and is learned from although both sides are machine-written. The
+similarity filter catches the worst of it, but the route should say where the
+text came from.
 
 
 ## Phase 3 — Distil rules
@@ -234,8 +264,10 @@ test shows it.
 
 ## Phase 5 — Switch off, explain, maintain
 
-- `LearningSettings` in `config.py`: `enabled`, `shared` (installation-wide
-  scope), thresholds, caps. Switched off, the behaviour is exactly today's.
+- `LearningSettings` in `config.py` exists since phase 2 (`enabled`, `shared`,
+  `min_evidence`, `min_similarity`, `max_hotwords`, `max_glossary_chars`);
+  what is missing is a way to reach it from the settings form. Switched off,
+  the behaviour is exactly today's.
 - "Discard everything learned", per scope.
 - User guide in **all three** languages (`docs/user/{de,en,ru}.md`), same
   section at the same position, `{#slug}` marker, icon in `SECTION_ICONS`.

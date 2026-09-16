@@ -56,6 +56,7 @@ export async function render(view) {
       <button type="button" data-target="card-api">${t("settings.apiTitle")}</button>
       <button type="button" data-target="card-storage">${t("settings.storage")}</button>
       <button type="button" data-target="card-system">${t("settings.system")}</button>
+      <button type="button" data-target="card-learning">${t("settings.learningTitle")}</button>
       <button type="button" data-target="card-account">${t("settings.accountTitle")}</button>
     </nav>
     <form class="settings" id="settings-form">
@@ -379,6 +380,13 @@ export async function render(view) {
         ))}
         <div class="resource-bars" id="resource-bars"></div>
         <dl class="info-list" id="system-info"></dl>
+      </div>
+
+      <div class="card" id="card-learning">
+        ${raw(labelHelp(
+          `<h2>${t("settings.learningTitle")}</h2>`, t("settings.learningIntro"), "head-row"
+        ))}
+        <div id="learning-host"></div>
       </div>
 
       <div class="card" id="card-account">
@@ -811,6 +819,7 @@ export async function render(view) {
     refreshSpeakerSection(),
     refreshPaths(),
     refreshApiKeys(),
+    refreshLearning(),
   ]);
   for (const section of sections) {
     if (section.status === "rejected") console.error("settings section failed:", section.reason);
@@ -850,6 +859,12 @@ async function renderPersonalSettings(view, settings) {
       </div>
       <div class="card">
         ${raw(labelHelp(
+          `<h2>${t("settings.learningTitle")}</h2>`, t("settings.learningIntro"), "head-row"
+        ))}
+        <div id="learning-host"></div>
+      </div>
+      <div class="card">
+        ${raw(labelHelp(
           `<h2>${t("settings.accountTitle")}</h2>`, t("settings.accountIntro"), "head-row"
         ))}
         <div id="account-host"></div>
@@ -886,6 +901,102 @@ async function renderPersonalSettings(view, settings) {
   };
 
   mountAccount(el("account-host"));
+  refreshLearning();
+}
+
+/**
+ * The spellings Verba has picked up from this user's own corrections.
+ *
+ * Shown to every user, not only to administrators: the vocabulary is learned
+ * per account and applied to that account's own transcriptions, so whoever
+ * corrected a name is the one who has to be able to take it back.
+ */
+async function refreshLearning() {
+  const host = el("learning-host");
+  if (!host) return;
+  let payload;
+  try {
+    payload = await api.listLearnedTerms();
+  } catch {
+    return; // the section stays as it is — nothing here is worth an error
+  }
+  if (!el("learning-host")) return; // the request outlived the view
+  const { terms, enabled, min_evidence: minEvidence } = payload;
+  if (!enabled || !terms.length) {
+    const note = document.createElement("p");
+    note.className = "muted small";
+    note.textContent = t(enabled ? "settings.learningEmpty" : "settings.learningDisabled");
+    host.replaceChildren(note);
+    return;
+  }
+  host.replaceChildren(...terms.map((term) => learningRow(term, minEvidence)));
+}
+
+/** How one learned spelling is judged right now — evidence, or a verdict. */
+function learningState(term, minEvidence) {
+  if (term.status === "rejected") return t("settings.learningStatusRejected");
+  if (term.status === "retired") return t("settings.learningStatusRetired");
+  if (term.status === "accepted" || term.evidence >= minEvidence) {
+    return t("settings.learningStatusActive");
+  }
+  return t("settings.learningStatusWaiting");
+}
+
+function learningRow(term, minEvidence) {
+  const rejected = term.status === "rejected";
+  const row = document.createElement("div");
+  row.className = "model-row";
+
+  const pair = document.createElement("span");
+  pair.className = "model-name";
+  const was = document.createElement("s");
+  was.textContent = term.source;
+  const now = document.createElement("strong");
+  now.textContent = term.target;
+  pair.append(was, " → ", now);
+
+  const meta = document.createElement("span");
+  meta.className = "muted small";
+  meta.textContent = `${learningState(term, minEvidence)} · ${t("settings.learningEvidence", {
+    count: term.evidence,
+  })}`;
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "text-btn";
+  toggle.textContent = rejected
+    ? t("settings.learningRestore")
+    : t("settings.learningReject");
+  toggle.onclick = async () => {
+    try {
+      await api.updateLearnedTerm(term.id, { status: rejected ? "proposed" : "rejected" });
+      await refreshLearning();
+    } catch (error) {
+      toast(error.message);
+    }
+  };
+
+  const remove = iconButton("delete", t("settings.learningDelete"), async () => {
+    const ok = await confirmDelete({
+      message: t("settings.learningDeleteConfirm", { source: term.source }),
+    });
+    if (!ok) return;
+    try {
+      await api.deleteLearnedTerm(term.id);
+      await refreshLearning();
+    } catch (error) {
+      toast(error.message);
+    }
+  });
+
+  row.append(
+    pair,
+    meta,
+    Object.assign(document.createElement("span"), { className: "spacer" }),
+    toggle,
+    remove
+  );
+  return row;
 }
 
 /** Change own password, delete own account — identical for both variants. */

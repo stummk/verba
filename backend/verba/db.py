@@ -251,6 +251,29 @@ CREATE TABLE IF NOT EXISTS file_overviews (
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- One word the user keeps correcting, and what they correct it to
+-- (services/learning.py). `owner_id` is the scope it counts for: 0 means the
+-- whole installation, which is what every setup without user management has.
+-- Deliberately no foreign key — 0 belongs to no user, and a row left behind
+-- by a deleted account is removed by `auth`, not by the database.
+CREATE TABLE IF NOT EXISTS learned_terms (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id    INTEGER NOT NULL DEFAULT 0,
+    language    TEXT NOT NULL DEFAULT '',
+    source      TEXT NOT NULL,
+    target      TEXT NOT NULL,
+    -- how often this correction was made, and how often it was contradicted
+    evidence    INTEGER NOT NULL DEFAULT 1,
+    counter_evidence INTEGER NOT NULL DEFAULT 0,
+    -- proposed: applies once `evidence` reaches the configured threshold
+    -- accepted/rejected: the user has said so, and that always wins
+    -- retired: contradicted more often than confirmed
+    status      TEXT NOT NULL DEFAULT 'proposed',
+    last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (owner_id, language, source)
+);
+
 CREATE INDEX IF NOT EXISTS idx_chunks_file ON chunks(file_id);
 CREATE INDEX IF NOT EXISTS idx_files_project ON files(project_id);
 CREATE INDEX IF NOT EXISTS idx_segments_file ON segments(file_id);

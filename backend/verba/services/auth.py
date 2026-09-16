@@ -289,6 +289,10 @@ def delete_user(user_id: int) -> dict[str, int]:
             "UPDATE projects SET owner_id = ? WHERE owner_id = ?",
             (successor["id"] if successor else None, user_id),
         )
+        # The vocabulary learned from their corrections goes with them: it
+        # has no foreign key to cascade on, and it was only ever theirs
+        # (services/learning.py).
+        conn.execute("DELETE FROM learned_terms WHERE owner_id = ?", (user_id,))
         # sessions and the shares granted *to* this user cascade away
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
     logger.info(

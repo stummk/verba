@@ -35,7 +35,7 @@ from typing import Any
 from .. import db
 from ..core.jobs import JobCancelled, job_queue, report_step, split_range
 from ..events import hub
-from . import chunking, llm, overview, project_types, transcripts, workspace
+from . import chunking, learning, llm, overview, project_types, transcripts, workspace
 from .languages import language_name
 
 logger = logging.getLogger(__name__)
@@ -549,6 +549,19 @@ def whole_text_overview(
     return whole
 
 
+def glossary_for(file_id: int, whole: overview.Overview) -> str:
+    """What a step that has to reproduce its material may be told about names.
+
+    Two sources answering two different questions: the overview says how
+    *this* recording spells its names, and the learned terms say which
+    spelling the user has settled on across recordings — which a single file
+    can never know (services/learning.py). Both are orientation only; neither
+    is allowed to shorten a section towards itself, which is what
+    `_keeps_the_text` goes on to check.
+    """
+    return whole.as_glossary() + learning.glossary_block(workspace.get_file(file_id))
+
+
 def run_cleanup(
     file_id: int,
     type_prompt: str,
@@ -592,7 +605,7 @@ def run_cleanup(
             report,
             working,
             condense=condense,
-            glossary=whole.as_glossary(),
+            glossary=glossary_for(file_id, whole),
             limit=limit,
         )
     _refuse_empty(result, "Bereinigung")
@@ -698,7 +711,7 @@ def handle_llm_process_job(
                 cancel,
                 report,
                 working,
-                whole.as_glossary(),
+                glossary_for(file_id, whole),
             )
         else:
             raise RuntimeError(f"Unknown pipeline step: {step}")

@@ -876,6 +876,45 @@ one go afterwards:
   - The scheme has no field for a **place**; it goes into the editor's free
     *place and date on the right* field (e.g. `Bremen-Mahndorf, 2026-07-31`).
 
+## Learned spellings {#learning}
+
+If you keep correcting the same misheard word in the editor — a name, a place,
+a technical term — Verba remembers it and passes the corrected spelling to the
+**next transcription as a hint**. The name is then heard correctly straight
+away instead of being repaired afterwards. The AI processing and the
+translation are given the same list, so a spelling stays the same across
+several recordings.
+
+**What is learned and what is not.** Only the replacement of *one* word by
+*one* other, and only where the corrected word still looks like the original:
+"Jahwe" → "Yahweh" or "Bergstrasse" → "Bergstraße" is a mishearing and is
+remembered. "says" → "speaks" is a different wording and is not — as a hint to
+the recognition it would be nonsense. Retyping a whole segment teaches nothing
+at all: a block of words is not a spelling. A segment you created yourself
+does not count either.
+
+**When a spelling is applied.** After the first correction it stands under
+*Settings → Learned spellings* and waits; from the second one on it is
+applied. **Accept** makes it count right away, **Reject** never — a rejected
+entry stays rejected however often the same correction is made. **Forget**
+removes it entirely; it is learned again as soon as you correct the word once
+more.
+
+**If you change your mind.** Correct it back later — first "Meier" → "Maier",
+then "Maier" → "Meier" — and the entry withdraws itself. Confirm it again
+afterwards and it comes back. That way a spelling picked up from the first few
+recordings does not stay fixed forever.
+
+**Who learns what.** Without user management there is a single list for the
+whole installation. With user management each account learns for itself,
+across all its own transcripts — so no word out of a private transcript ends
+up in anyone else's suggestions. If you deliberately want them pooled, the
+lists can be merged (`learning.shared` in the configuration); everyone then
+sees the same spellings.
+
+The whole feature can be switched off. While it is off, neither are new
+corrections learned nor are previously learned ones applied.
+
 ## Whisper models {#whisper}
 
 In the **Settings → Transcription** section, **one list** shows every model
