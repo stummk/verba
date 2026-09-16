@@ -3,7 +3,7 @@
 Cross-platform transcription tool: FastAPI backend + PWA frontend (no build step),
 faster-whisper, optional LLM pipeline (OpenAI-compatible), PDF export, semantic
 search (sqlite-vec), optional user management with per-transcript visibility.
-Architecture & phase plan: `docs/PLAN.md`. Detailed guidelines: `AGENTS.md`.
+Architecture invariants & detailed guidelines: `AGENTS.md`.
 
 ## Commands
 
@@ -306,7 +306,7 @@ report that the other platform is covered by CI.
   in German — the UI default language.
 - UI follows Material Design 3 (own CSS tokens, no framework) and is
   **mobile first**: the smartphone feels like an app, the desktop like a
-  desktop application (details: `docs/PLAN.md` §1.6).
+  desktop application (details: `AGENTS.md` → Code Style).
 - **No px in styling.** Sizes exclusively in `rem`/`em`/relative units
   (`%`, `vw`, `fr`, …); media queries in `em`. Applies to CSS, inline styles
   and `matchMedia` calls in JS — `tests/test_pwa.py` enforces this.

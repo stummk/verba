@@ -1,7 +1,7 @@
 # AGENTS.md — Development Guidelines for Code Agents
 
 Applies to all agents (Claude Code, Codex, …) working on this repository.
-Quick overview and commands: see `CLAUDE.md`. Architecture & phases: `docs/PLAN.md`.
+Quick overview and commands: see `CLAUDE.md`; architecture invariants below.
 
 ## Build & Run
 
@@ -45,7 +45,7 @@ the onboarding — in tests via `setup_check.install_group(...)` when needed.
 - Frontend: ES modules, no class hierarchies needed; DOM construction via
   template strings + the `html()` helper in `frontend/js/dom.js`.
 - UI: Material Design 3 via own CSS tokens, mobile first (bottom nav/FAB on
-  smartphones, rail/multi-column on desktop) — principles in `docs/PLAN.md` §1.6.
+  smartphones, rail/multi-column on desktop).
 - **No px units in styling.** Sizes in `rem`/`em`/relative values
   (`%`, `vw`, `fr`, …), media queries in `em` (base 1rem = 16px). Also applies
   to inline styles and `matchMedia` in JS. Otherwise `tests/test_pwa.py::
