@@ -293,6 +293,7 @@ def delete_user(user_id: int) -> dict[str, int]:
         # has no foreign key to cascade on, and it was only ever theirs
         # (services/learning.py).
         conn.execute("DELETE FROM learned_terms WHERE owner_id = ?", (user_id,))
+        conn.execute("DELETE FROM learned_rules WHERE owner_id = ?", (user_id,))
         # sessions and the shares granted *to* this user cascade away
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
     logger.info(

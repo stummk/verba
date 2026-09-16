@@ -386,6 +386,7 @@ export async function render(view) {
         ${raw(labelHelp(
           `<h2>${t("settings.learningTitle")}</h2>`, t("settings.learningIntro"), "head-row"
         ))}
+        <div id="rules-host"></div>
         <div id="learning-host"></div>
       </div>
 
@@ -819,6 +820,7 @@ export async function render(view) {
     refreshSpeakerSection(),
     refreshPaths(),
     refreshApiKeys(),
+    refreshLearnedRules(),
     refreshLearning(),
   ]);
   for (const section of sections) {
@@ -861,6 +863,7 @@ async function renderPersonalSettings(view, settings) {
         ${raw(labelHelp(
           `<h2>${t("settings.learningTitle")}</h2>`, t("settings.learningIntro"), "head-row"
         ))}
+        <div id="rules-host"></div>
         <div id="learning-host"></div>
       </div>
       <div class="card">
@@ -901,6 +904,7 @@ async function renderPersonalSettings(view, settings) {
   };
 
   mountAccount(el("account-host"));
+  refreshLearnedRules();
   refreshLearning();
 }
 
@@ -930,6 +934,86 @@ async function refreshLearning() {
     return;
   }
   host.replaceChildren(...terms.map((term) => learningRow(term, minEvidence)));
+}
+
+/**
+ * The rules Verba has distilled from this user's corrected texts.
+ *
+ * A rule is a sentence a model wrote about several corrections, so it arrives
+ * as a proposal: the heading says so, and nothing uses it before somebody has
+ * accepted it here.
+ */
+async function refreshLearnedRules() {
+  const host = el("rules-host");
+  if (!host) return;
+  let payload;
+  try {
+    payload = await api.listLearnedRules();
+  } catch {
+    return; // the section stays as it is — nothing here is worth an error
+  }
+  if (!el("rules-host")) return; // the request outlived the view
+  const { rules, enabled } = payload;
+  if (!enabled || !rules.length) {
+    host.replaceChildren();
+    return; // the spellings below carry the explanation for both halves
+  }
+  const heading = document.createElement("h3");
+  heading.className = "subhead";
+  heading.textContent = t("settings.rulesTitle");
+  const intro = document.createElement("p");
+  intro.className = "muted small";
+  intro.textContent = t("settings.rulesIntro");
+  host.replaceChildren(heading, intro, ...rules.map(ruleRow));
+}
+
+function ruleRow(rule) {
+  const row = document.createElement("div");
+  row.className = "model-row";
+
+  const text = document.createElement("span");
+  text.className = "model-name";
+  text.textContent = rule.text;
+
+  const meta = document.createElement("span");
+  meta.className = "muted small";
+  meta.textContent = `${t(`settings.rulesStep.${rule.step}`)} · ${t("settings.rulesStatus", {
+    status: t(`settings.rulesState.${rule.status}`),
+  })}`;
+
+  const accepted = rule.status === "accepted";
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "text-btn";
+  toggle.textContent = accepted ? t("settings.rulesSuspend") : t("settings.rulesAccept");
+  toggle.onclick = async () => {
+    try {
+      await api.updateLearnedRule(rule.id, { status: accepted ? "proposed" : "accepted" });
+      await refreshLearnedRules();
+    } catch (error) {
+      toast(error.message);
+    }
+  };
+
+  const remove = iconButton("delete", t("settings.rulesDelete"), async () => {
+    const ok = await confirmDelete({ message: t("settings.rulesDeleteConfirm") });
+    if (!ok) return;
+    try {
+      await api.deleteLearnedRule(rule.id);
+      await refreshLearnedRules();
+    } catch (error) {
+      toast(error.message);
+    }
+  });
+
+  row.append(
+    text,
+    meta,
+    Object.assign(document.createElement("span"), { className: "spacer" }),
+    toggle,
+    remove
+  );
+  return row;
 }
 
 /** How one learned spelling is judged right now — evidence, or a verdict. */

@@ -10,8 +10,8 @@ prompt is derived from their corrections in the background, proposed to them,
 and — once accepted — applied to later recordings. The user never has to write a
 prompt, and can still overrule everything.
 
-Status: **phases 1 and 2 done, the rest planned.** Phases are meant to ship
-one at a time; each is useful on its own.
+Status: **phases 1 to 3 done, phases 4 and 5 planned.** Phases are meant to
+ship one at a time; each is useful on its own.
 
 
 ## Design decisions
@@ -200,25 +200,43 @@ similarity filter catches the worst of it, but the route should say where the
 text came from.
 
 
-## Phase 3 — Distil rules
+## Phase 3 — Distil rules ✔
 
 Job kind `learn_rules`, added to `core/jobs.LLM_KINDS`, registered in
 `main.create_app()` alongside the other handlers.
 
 ```
 learned_rules(
-    id, owner_id, scope, text, evidence, counter_evidence, status, created_at
+    id, owner_id, step, text, norm,
+    evidence, counter_evidence, status, created_at,
+    UNIQUE (owner_id, step, norm)
 )
-    scope  ∈ {cleanup, translate}
+    step   ∈ {cleanup, translate}
     status ∈ {proposed, accepted, rejected, retired}
 ```
 
-**Trigger:** `learning.request_learning(owner_id)`, modelled on
-`maintenance.request_vacuum()` — called from `update_text_content` and
-`update_segment`, and doing nothing unless a threshold is crossed (N corrected
-files, or M changed characters since the last run). `job_queue.has_active` is
-kind-wide only; this needs a scope-aware variant so two users' learning jobs do
-not block each other.
+The column is `step`, not `scope` as first sketched — "scope" already means
+the `owner_id` here, and two meanings for one word in one table is how the
+next reader gets it wrong. `norm` is the rule folded for comparison, so the
+same rule found again is confirmed rather than stored twice; it travels with
+the text when a user rewords a rule.
+
+**What it learns from.** The corrected *derived texts*, not the segments: a
+segment correction is about the transcription, which has no prompt to put a
+rule into — that is what the vocabulary of phase 2 is for. So `cleanup` rules
+come from corrected cleanups and `translate` rules from corrected
+translations, which is exactly where phase 4 will inject them. Only the
+paragraphs that came back *changed* are sent, capped in number and length; a
+paragraph merely added or deleted has no counterpart to compare and on its own
+is content rather than an instruction.
+
+**Trigger:** `learning.request_rule_learning(file_row, kind)`, modelled on
+`maintenance.request_vacuum()` and called from `pipeline.update_text_content`.
+It does nothing until `min_corrected_files` distinct files have been corrected
+since the last run, and nothing at all without a configured LLM.
+`job_queue.has_active` is kind-wide, so `job_queue.active_jobs(kind)` was
+added: one distillation per scope *and step*, rather than one per
+installation.
 
 **The call:** pairs of (model version ↔ user version) in, a JSON array of short
 imperative rules out, read with the existing `llm.json_arrays`.
@@ -227,10 +245,25 @@ imperative rules out, read with the existing `llm.json_arrays`.
 
 | Risk | Countermeasure |
 |---|---|
-| A rule from a single edit | Every rule needs ≥ 2 supporting deltas, otherwise it is not even proposed |
-| Content instead of a rule | A rule using words that occur in fewer than K distinct files is rejected — under a shared scope this is the privacy boundary |
-| Rule sprawl | A cap per scope; a new proposal displaces an old rule only with more evidence |
+| A rule from a single edit | The model reports `seen` per rule and anything below `min_rule_evidence` is dropped |
+| Content instead of a rule | A rule using a word of the material that occurs in fewer than `min_rule_files` distinct files is rejected |
+| Rule sprawl | `max_rules` per scope and step; a new proposal displaces the weakest stored rule, and only with more evidence |
 | Silent application | Status `proposed`. Nothing takes effect before the user accepts it |
+
+Only the second of those is a measurement. `seen` is the model's own count —
+a claim, not a proof — which is why it is never the only thing standing
+between an answer and a prompt: the content check is weighed against the
+material, and a person still has to accept the rule. Words the material does
+not use at all are the model's ordinary language and pass; the check is aimed
+at the one thing that can leak, which is the material's own vocabulary.
+
+**UI:** above the spellings in the same settings card, under its own
+subheading that says these are proposals. Accept, stop using, discard.
+
+**Not yet wired in.** An accepted rule is recorded and does nothing until
+phase 4 appends it to the prompts. Automatic counter-evidence for rules waits
+for the same phase: nothing contradicts a rule until it has been applied and
+the result corrected again. The column is already there.
 
 **Done when:** after a handful of corrections a readable proposal stands in the
 UI that can be accepted or dismissed.

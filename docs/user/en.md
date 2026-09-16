@@ -912,6 +912,25 @@ up in anyone else's suggestions. If you deliberately want them pooled, the
 lists can be merged (`learning.shared` in the configuration); everyone then
 sees the same spellings.
 
+**Rules from corrected texts.** Besides single words, Verba also evaluates what
+you change in the *cleanup* and the *translation*. Once several files have been
+corrected, the language model derives general rules from them — "keep the filler
+words", "do not add headings the text does not name" — and files them under
+*Settings → Learned spellings* as **proposals**. A rule only counts once you
+**Accept** it; **Stop using** turns it back into a proposal, **Discard** removes
+it.
+
+This costs calls to the language model, so it does not happen after every
+correction but only once enough has accumulated — and not at all when no
+language model is configured. The progress appears in the status monitor like
+that of any other step.
+
+**What a rule may not contain.** A rule describes *how* something is written,
+not *what about*. Proposals quoting names, places or other content from your
+recordings are discarded before you ever see them — they would not be rules, and
+with pooled lists the content of one recording would suddenly stand in someone
+else's instructions.
+
 The whole feature can be switched off. While it is off, neither are new
 corrections learned nor are previously learned ones applied.
 

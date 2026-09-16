@@ -253,6 +253,9 @@ export const api = {
   listLearnedTerms: () => request("GET", "/api/learning/terms"),
   updateLearnedTerm: (id, changes) => request("PUT", `/api/learning/terms/${id}`, changes),
   deleteLearnedTerm: (id) => request("DELETE", `/api/learning/terms/${id}`),
+  listLearnedRules: () => request("GET", "/api/learning/rules"),
+  updateLearnedRule: (id, changes) => request("PUT", `/api/learning/rules/${id}`, changes),
+  deleteLearnedRule: (id) => request("DELETE", `/api/learning/rules/${id}`),
 
   // public API keys
   listApiKeys: () => request("GET", "/api/apikeys"),

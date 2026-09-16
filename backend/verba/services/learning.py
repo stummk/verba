@@ -34,9 +34,12 @@ from __future__ import annotations
 import difflib
 import logging
 import re
+import threading
+from collections.abc import Callable
 from typing import Any
 
 from .. import config, db
+from ..core.jobs import JobCancelled, job_queue
 
 logger = logging.getLogger(__name__)
 
@@ -351,3 +354,362 @@ def glossary_block(file_row: dict[str, Any] | None, language: str = "") -> str:
     if not entries:
         return ""
     return "\nSpellings that have been corrected before, use them: " + ", ".join(entries) + "."
+
+
+# ── the rules distilled from corrected texts (phase 3) ────────────────
+#
+# A spelling is a word pair and needs no LLM. A *rule* — "keep the filler
+# words", "do not invent headings" — is a generalisation over several
+# corrections, and only a model can write one. What comes back is never
+# applied on its own: it is proposed, and a person decides.
+#
+# The one thing that cannot be left to the prompt is content. A rule quoting
+# a name out of somebody's transcript would carry that name into everybody
+# else's prompt once the scopes are pooled, so every word of a proposed rule
+# is weighed against the material: a word that lives in a single transcript
+# is content, not a rule, and the proposal is dropped.
+
+#: Which prompt a rule belongs to, and the derived text it is learned from.
+RULE_STEPS = ("cleanup", "translate")
+_TEXT_KIND = {"cleanup": "cleanup", "translate": "translation"}
+
+_RULE_RUN_MARKER = "learning_rules_run"
+
+DISTIL_SYSTEM_PROMPT = (
+    "You are given passages of automatically produced transcripts together with the "
+    "version a human corrected them into. Work out the general instructions that would "
+    "have made the machine produce the corrected version straight away.\n"
+    "Reply only with a JSON array, without commentary or Markdown fences:\n"
+    '[{"rule": "...", "seen": 2}]\n'
+    "- `rule` is one short imperative sentence about wording, punctuation, structure or "
+    "formatting, in the language of the passages.\n"
+    "- `seen` is in how many of the passages that instruction would have helped.\n"
+    "Report only what several passages show. State no names, places, numbers, topics or "
+    "any other content of the passages — an instruction that only makes sense for one "
+    "recording is not a rule. Report nothing rather than guessing; an empty array is a "
+    "valid answer."
+)
+
+NOTHING_TO_LEARN = "Aus den Korrekturen ließ sich keine allgemeine Regel ableiten"
+
+
+def _norm_rule(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+# ── the material one distillation looks at ───────────────────────────
+
+
+def _scope_clause(owner_id: int) -> tuple[str, list[Any]]:
+    """Restrict to one scope's transcripts — nothing to restrict at scope 0."""
+    if owner_id == INSTALLATION_SCOPE:
+        return "", []
+    return " AND p.owner_id = ?", [owner_id]
+
+
+def corrected_texts(owner_id: int, step: str, since: str = "", limit: int = 0) -> list[dict]:
+    """Corrected derived texts of one scope, most recently edited first.
+
+    Only rows carrying both versions: `model_content` is written the first
+    time a user changes the text (phase 1), so a row without it was never
+    corrected and has nothing to compare.
+    """
+    clause, params = _scope_clause(owner_id)
+    sql = (
+        "SELECT d.file_id, d.model_content, d.content FROM derived_texts d "
+        "JOIN files f ON f.id = d.file_id JOIN projects p ON p.id = f.project_id "
+        "WHERE d.kind = ? AND d.edited_at != '' AND d.model_content != ''" + clause
+    )
+    args: list[Any] = [_TEXT_KIND[step], *params]
+    if since:
+        sql += " AND d.edited_at > ?"
+        args.append(since)
+    sql += " ORDER BY d.edited_at DESC"
+    if limit:
+        sql += " LIMIT ?"
+        args.append(limit)
+    with db.get_conn() as conn:
+        return db.rows_to_dicts(conn.execute(sql, args).fetchall())
+
+
+_PARAGRAPH_RE = re.compile(r"\n\s*\n")
+
+
+def changed_passages(before: str, after: str, max_chars: int) -> list[tuple[str, str]]:
+    """The paragraphs that came back changed, as (machine, human) pairs.
+
+    Only replacements: a paragraph merely added or deleted has no counterpart
+    to compare it with, and on its own it is content rather than an
+    instruction.
+    """
+    old = [p.strip() for p in _PARAGRAPH_RE.split(before) if p.strip()]
+    new = [p.strip() for p in _PARAGRAPH_RE.split(after) if p.strip()]
+    pairs: list[tuple[str, str]] = []
+    matcher = difflib.SequenceMatcher(a=old, b=new, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag != "replace":
+            continue
+        was, now = "\n".join(old[i1:i2]), "\n".join(new[j1:j2])
+        if was != now:
+            pairs.append((was[:max_chars], now[:max_chars]))
+    return pairs
+
+
+def _examples(owner_id: int, step: str) -> tuple[list[tuple[str, str]], dict[str, set[int]]]:
+    """The passages to learn from, and which files each of their words is in.
+
+    The second half is what the content check runs on: a word spread over
+    several transcripts is ordinary language, a word living in one of them is
+    that transcript's content.
+    """
+    from . import llm
+
+    settings = _settings()
+    pairs: list[tuple[str, str]] = []
+    corpus: dict[str, set[int]] = {}
+    for row in corrected_texts(owner_id, step, limit=settings.max_examples):
+        found = changed_passages(row["model_content"], row["content"], settings.max_example_chars)
+        for word in llm.word_set(" ".join(part for pair in found for part in pair)):
+            corpus.setdefault(word, set()).add(row["file_id"])
+        pairs.extend(found)
+        if len(pairs) >= settings.max_examples:
+            break
+    return pairs[: settings.max_examples], corpus
+
+
+# ── weighing what came back ──────────────────────────────────────────
+
+
+def is_content_free(text: str, corpus: dict[str, set[int]], min_files: int) -> bool:
+    """Whether a proposed rule speaks about wording rather than about content.
+
+    Weighed against the material, not against a word list: a word of the
+    corrected texts that occurs in fewer than `min_files` of them belongs to
+    those transcripts, and a rule quoting it would carry their content into
+    every prompt the scope reaches. Words the material does not use at all are
+    the model's own ordinary language and pass.
+    """
+    from . import llm
+
+    return all(
+        len(corpus.get(word, ())) >= min_files for word in llm.word_set(text) if word in corpus
+    )
+
+
+def proposals(answer: str, corpus: dict[str, set[int]]) -> list[tuple[str, int]]:
+    """The usable rules of one answer: general enough, and content-free.
+
+    `seen` is the model's own count of how many passages a rule holds for.
+    It is a claim, not a proof — which is why it is only one of three things
+    standing between an answer and a prompt: the content check below is
+    measured against the material, and nothing applies before a person has
+    accepted it.
+    """
+    from . import llm
+
+    settings = _settings()
+    rules: list[tuple[str, int]] = []
+    for item in (entry for array in llm.json_arrays(answer) for entry in array):
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("rule", "")).strip()
+        try:
+            seen = int(item.get("seen", 0))
+        except (TypeError, ValueError):
+            seen = 0
+        if not text or seen < settings.min_rule_evidence:
+            continue
+        if not is_content_free(text, corpus, settings.min_rule_files):
+            logger.info("dropped a distilled rule: it speaks of the material, not about it")
+            continue
+        rules.append((text, seen))
+    return rules
+
+
+# ── storing them ─────────────────────────────────────────────────────
+
+
+def record_rule(owner_id: int, step: str, text: str, evidence: int) -> bool:
+    """Store one proposal, or confirm the one already there.
+
+    A scope keeps at most `max_rules` per step: a new rule displaces the
+    weakest stored one, and only when it rests on more than that one does.
+    Returns whether anything was written.
+    """
+    settings = _settings()
+    norm = _norm_rule(text)
+    with db.get_conn() as conn:
+        existing = conn.execute(
+            "SELECT * FROM learned_rules WHERE owner_id = ? AND step = ? AND norm = ?",
+            (owner_id, step, norm),
+        ).fetchone()
+        if existing is not None:
+            conn.execute(
+                "UPDATE learned_rules SET evidence = ? WHERE id = ?",
+                (max(existing["evidence"], evidence), existing["id"]),
+            )
+            return True
+        rows = conn.execute(
+            "SELECT id, evidence FROM learned_rules WHERE owner_id = ? AND step = ? "
+            "ORDER BY evidence ASC, id ASC",
+            (owner_id, step),
+        ).fetchall()
+        if len(rows) >= settings.max_rules:
+            weakest = rows[0]
+            if weakest["evidence"] >= evidence:
+                return False  # the scope is full of better-attested rules
+            conn.execute("DELETE FROM learned_rules WHERE id = ?", (weakest["id"],))
+        conn.execute(
+            "INSERT INTO learned_rules (owner_id, step, text, norm, evidence) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (owner_id, step, text, norm, evidence),
+        )
+    return True
+
+
+def list_rules(owner_id: int, step: str = "") -> list[dict[str, Any]]:
+    sql = "SELECT * FROM learned_rules WHERE owner_id = ?"
+    params: list[Any] = [owner_id]
+    if step:
+        sql += " AND step = ?"
+        params.append(step)
+    with db.get_conn() as conn:
+        rows = conn.execute(sql + " ORDER BY step, evidence DESC, id", params).fetchall()
+    return db.rows_to_dicts(rows)
+
+
+def get_rule(rule_id: int, owner_id: int) -> dict[str, Any] | None:
+    with db.get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM learned_rules WHERE id = ? AND owner_id = ?", (rule_id, owner_id)
+        ).fetchone()
+    return db.row_to_dict(row)
+
+
+def update_rule(
+    rule_id: int, owner_id: int, *, text: str | None = None, status: str | None = None
+) -> dict[str, Any] | None:
+    """Reword or judge one rule — only inside the caller's own scope."""
+    sets: list[str] = []
+    params: list[Any] = []
+    if text is not None:
+        sets.extend(["text = ?", "norm = ?"])
+        params.extend([text, _norm_rule(text)])
+    if status is not None:
+        if status not in STATUSES:
+            raise ValueError(f"unknown status: {status}")
+        sets.append("status = ?")
+        params.append(status)
+    if not sets:
+        return get_rule(rule_id, owner_id)
+    with db.get_conn() as conn:
+        cursor = conn.execute(
+            f"UPDATE learned_rules SET {', '.join(sets)} "  # noqa: S608 — columns are literals
+            "WHERE id = ? AND owner_id = ?",
+            (*params, rule_id, owner_id),
+        )
+        if cursor.rowcount == 0:
+            return None
+    return get_rule(rule_id, owner_id)
+
+
+def delete_rule(rule_id: int, owner_id: int) -> bool:
+    with db.get_conn() as conn:
+        cursor = conn.execute(
+            "DELETE FROM learned_rules WHERE id = ? AND owner_id = ?", (rule_id, owner_id)
+        )
+        return cursor.rowcount > 0
+
+
+def forget_owner_rules(owner_id: int) -> int:
+    if owner_id == INSTALLATION_SCOPE:
+        return 0
+    with db.get_conn() as conn:
+        return conn.execute("DELETE FROM learned_rules WHERE owner_id = ?", (owner_id,)).rowcount
+
+
+# ── when a distillation is worth its calls ───────────────────────────
+
+
+def _last_run(owner_id: int, step: str) -> str:
+    with db.get_conn() as conn:
+        return db.get_meta(conn, f"{_RULE_RUN_MARKER}:{owner_id}:{step}") or ""
+
+
+def _mark_run(owner_id: int, step: str) -> None:
+    with db.get_conn() as conn:
+        now = conn.execute("SELECT datetime('now') AS now").fetchone()["now"]
+        db.set_meta(conn, f"{_RULE_RUN_MARKER}:{owner_id}:{step}", now)
+
+
+def request_rule_learning(file_row: dict[str, Any] | None, kind: str, session_id: str = "") -> None:
+    """Queue a distillation once enough has been corrected to say anything.
+
+    Deliberately not after every edit: it costs LLM calls and would hold the
+    llm lane against the user's own work. One job per scope and step at a
+    time — `has_active` is kind-wide and would let one scope block the other.
+    """
+    from . import llm
+
+    settings = _settings()
+    step = next((s for s, k in _TEXT_KIND.items() if k == kind), "")
+    if not step or file_row is None or not settings.enabled or not settings.rules_enabled:
+        return
+    if llm.llm_location() == "none":
+        return
+    owner_id = scope_for_file(file_row)
+    payload = {"owner_id": owner_id, "step": step}
+    if any(job["payload"] == payload for job in job_queue.active_jobs("learn_rules")):
+        return
+    fresh = corrected_texts(owner_id, step, since=_last_run(owner_id, step))
+    if len({row["file_id"] for row in fresh}) < settings.min_corrected_files:
+        return
+    job_queue.enqueue("learn_rules", payload=payload, session_id=session_id)
+
+
+def handle_learn_rules_job(
+    job: dict[str, Any], cancel: threading.Event, report: Callable[[int, str], None]
+) -> str:
+    """Job handler: read this scope's corrections and propose rules from them.
+
+    Payload: {"owner_id": int, "step": "cleanup" | "translate"}
+    """
+    from . import llm
+
+    payload = job["payload"]
+    owner_id = int(payload["owner_id"])
+    step = str(payload["step"])
+    if step not in RULE_STEPS:
+        raise RuntimeError(f"Unbekannter Lernschritt: {step}")
+
+    report(5, "Korrekturen werden gesammelt")
+    pairs, corpus = _examples(owner_id, step)
+    if cancel.is_set():
+        raise JobCancelled()
+    if not pairs:
+        _mark_run(owner_id, step)
+        report(100, NOTHING_TO_LEARN)
+        return NOTHING_TO_LEARN
+
+    report(30, f"{len(pairs)} korrigierte Abschnitte werden ausgewertet")
+    material = "\n\n".join(
+        f"--- {index + 1} ---\nMaschine:\n{was}\nMensch:\n{now}"
+        for index, (was, now) in enumerate(pairs)
+    )
+    answer = llm.chat(
+        [
+            {"role": "system", "content": DISTIL_SYSTEM_PROMPT},
+            {"role": "user", "content": material},
+        ]
+    )
+    if cancel.is_set():
+        raise JobCancelled()
+
+    report(80, "Regeln werden geprüft")
+    written = sum(
+        record_rule(owner_id, step, text, seen) for text, seen in proposals(answer, corpus)
+    )
+    _mark_run(owner_id, step)
+    message = f"{written} Regel(n) vorgeschlagen" if written else NOTHING_TO_LEARN
+    report(100, message)
+    return message

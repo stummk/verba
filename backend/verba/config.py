@@ -482,6 +482,28 @@ class LearningSettings(BaseModel):
     # with the section itself for the context of a small local model.
     max_glossary_chars: int = Field(default=800, ge=0, le=8000)
 
+    # ── the rules distilled from corrected texts (phase 3) ────────────
+    #
+    # Distilling is a job and costs LLM calls, so it waits until enough has
+    # been corrected to say anything about — and the same number decides how
+    # content-free a rule has to be, because both ask "does this hold across
+    # transcripts or only in one".
+    rules_enabled: bool = True
+    min_corrected_files: int = Field(default=3, ge=2, le=50)
+    # A word of the corrected material may only appear in a rule when it is
+    # spread over at least this many files. It is what keeps a name out of a
+    # rule — under a shared scope that is the privacy boundary, not a nicety.
+    min_rule_files: int = Field(default=3, ge=2, le=50)
+    # How many of the examples a rule has to hold for before it is proposed.
+    min_rule_evidence: int = Field(default=2, ge=1, le=20)
+    # Per scope and step. A new proposal displaces a stored rule only when it
+    # rests on more than that one does.
+    max_rules: int = Field(default=10, ge=1, le=50)
+    # What one distillation may look at: how many corrected passages, and how
+    # long each of them may be.
+    max_examples: int = Field(default=20, ge=1, le=200)
+    max_example_chars: int = Field(default=600, ge=100, le=4000)
+
 
 class SetupState(BaseModel):
     completed: bool = False

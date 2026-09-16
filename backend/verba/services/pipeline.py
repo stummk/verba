@@ -181,7 +181,21 @@ def update_text_content(
             return None
     _write_workspace_copy(file_id, kind, language, content)
     _publish_change(file_id, kind, language)
+    _maybe_learn_rules(file_id, kind)
     return get_text(file_id, kind, language)
+
+
+def _maybe_learn_rules(file_id: int, kind: str) -> None:
+    """Let the corrections of this scope be distilled into rules, eventually.
+
+    Does nothing most of the time: the distillation waits until enough files
+    have been corrected to say anything general (services/learning.py). Its
+    own failure never reaches the edit — the text is saved either way.
+    """
+    try:
+        learning.request_rule_learning(workspace.get_file(file_id), kind)
+    except Exception:  # noqa: BLE001 — auxiliary work, never the user's problem
+        logger.warning("could not queue the rule distillation", exc_info=True)
 
 
 def _workspace_copy_path(file_id: int, kind: str, language: str) -> Path | None:

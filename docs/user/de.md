@@ -956,6 +956,25 @@ Transkript in die Vorschläge anderer. Wer das ausdrücklich will, kann die
 Listen zusammenlegen (`learning.shared` in der Konfiguration); dann sehen alle
 dieselben Schreibweisen.
 
+**Regeln aus korrigierten Texten.** Neben einzelnen Wörtern wertet Verba auch
+aus, was Sie an der *Bereinigung* und der *Übersetzung* ändern. Sobald mehrere
+Dateien korrigiert sind, leitet das Sprachmodell daraus allgemeine Regeln ab —
+„Behalte die Füllwörter", „Setze keine Zwischenüberschriften, die der Text nicht
+nennt" — und legt sie unter *Einstellungen → Gelernte Schreibweisen* als
+**Vorschläge** ab. Erst mit **Übernehmen** zählt eine Regel; **Nicht mehr
+verwenden** macht sie wieder zum Vorschlag, **Verwerfen** löscht sie.
+
+Das kostet Aufrufe beim Sprachmodell, deshalb passiert es nicht nach jeder
+Korrektur, sondern erst, wenn genug zusammengekommen ist — und gar nicht, wenn
+kein Sprachmodell eingerichtet ist. Der Fortschritt steht wie bei jedem anderen
+Schritt im Statusmonitor.
+
+**Was in einer Regel nicht stehen darf.** Eine Regel beschreibt, *wie* geschrieben
+wird, nicht *worüber*. Vorschläge, die Namen, Orte oder andere Inhalte aus Ihren
+Aufnahmen zitieren, werden verworfen, bevor Sie sie zu sehen bekommen — sie wären
+keine Regel, und bei zusammengelegten Listen stünde der Inhalt einer Aufnahme
+plötzlich in fremden Vorgaben.
+
 Die ganze Funktion lässt sich abschalten. Ist sie aus, werden weder neue
 Korrekturen gelernt noch bereits gelernte angewendet.
 

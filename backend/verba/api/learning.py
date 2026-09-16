@@ -64,3 +64,43 @@ def delete_term(term_id: int, user: dict = CurrentUser) -> dict:
     if not learning.delete_term(term_id, learning.scope_for_user(user)):
         raise HTTPException(status_code=404, detail="Dieser Eintrag existiert nicht")
     return {"deleted": True}
+
+
+class RuleUpdate(BaseModel):
+    """What may be changed about one distilled rule.
+
+    The wording, because a rule is a sentence a model wrote and the person it
+    applies to may put it better; and the verdict, which decides whether it is
+    used at all.
+    """
+
+    text: str | None = Field(default=None, min_length=1, max_length=500)
+    status: Literal["proposed", "accepted", "rejected", "retired"] | None = None
+
+
+@router.get("/rules")
+def list_rules(user: dict = CurrentUser) -> dict:
+    """The rules distilled from the caller's corrections, best attested first."""
+    settings = config.get_settings().learning
+    return {
+        "rules": learning.list_rules(learning.scope_for_user(user)),
+        "enabled": settings.enabled and settings.rules_enabled,
+        "steps": list(learning.RULE_STEPS),
+    }
+
+
+@router.put("/rules/{rule_id}")
+def update_rule(rule_id: int, body: RuleUpdate, user: dict = CurrentUser) -> dict:
+    rule = learning.update_rule(
+        rule_id, learning.scope_for_user(user), text=body.text, status=body.status
+    )
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Diese Regel existiert nicht")
+    return rule
+
+
+@router.delete("/rules/{rule_id}")
+def delete_rule(rule_id: int, user: dict = CurrentUser) -> dict:
+    if not learning.delete_rule(rule_id, learning.scope_for_user(user)):
+        raise HTTPException(status_code=404, detail="Diese Regel existiert nicht")
+    return {"deleted": True}

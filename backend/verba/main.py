@@ -36,6 +36,7 @@ from .logging_setup import setup_logging
 from .services import auth, llamacpp, updates
 from .services.audio import handle_audio_edit_job, handle_audio_restore_job
 from .services.diarize import handle_diarize_job
+from .services.learning import handle_learn_rules_job
 from .services.maintenance import handle_vacuum_job
 from .services.pdf import handle_export_job
 from .services.pipeline import handle_llm_process_job
@@ -76,6 +77,7 @@ async def _lifespan(app: FastAPI):
     job_queue.register("api_transcribe", handle_api_transcribe_job)
     job_queue.register("move_workspace", handle_move_workspace_job)
     job_queue.register("vacuum", handle_vacuum_job)
+    job_queue.register("learn_rules", handle_learn_rules_job)
     job_queue.start()
     # a new release is announced through the event hub; a source checkout and
     # a switched-off check start no thread at all (services/updates.py)

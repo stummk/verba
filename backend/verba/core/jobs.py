@@ -44,7 +44,7 @@ Handler = Callable[[dict[str, Any], threading.Event, Callable[[int, str], None]]
 
 # export_pdf may call the LLM for structuring, so it shares the llm lane
 # (phased batching with a local model, parallel with a remote one).
-LLM_KINDS = {"llm_process", "export_pdf"}
+LLM_KINDS = {"llm_process", "export_pdf", "learn_rules"}
 # Small interactive jobs jump ahead of long-running batch transcriptions.
 DEFAULT_PRIORITIES = {"transcribe_range": 1, "audio_edit": 1, "audio_restore": 1}
 
@@ -64,6 +64,14 @@ LANES = ("main", "llm")
 # The UI has to say *which file* a step is running on, so every job row is read
 # with its file name attached instead of leaving the frontend to look it up.
 JOB_SELECT = "SELECT j.*, f.filename FROM jobs j LEFT JOIN files f ON f.id = j.file_id"
+
+
+def _with_decoded_payloads(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Job rows with their payload read back from the stored JSON."""
+    for job in jobs:
+        if isinstance(job.get("payload"), str):
+            job["payload"] = json.loads(job["payload"] or "{}")
+    return jobs
 
 
 def broadcast_job(job: dict[str, Any]) -> None:
@@ -224,6 +232,21 @@ class JobQueue:
             ).fetchone()
         return row is not None
 
+    def active_jobs(self, kind: str) -> list[dict[str, Any]]:
+        """Every queued or running job of that kind, in queue order.
+
+        For work that is pointless to schedule twice but not unique per
+        installation either — one distillation per learning scope, say, where
+        `has_active` would refuse the second scope its turn.
+        """
+        with db.get_conn() as conn:
+            rows = conn.execute(
+                f"{JOB_SELECT} WHERE j.kind = ? AND j.status IN ('queued', 'running') "
+                "ORDER BY j.id ASC",
+                (kind,),
+            ).fetchall()
+        return _with_decoded_payloads(db.rows_to_dicts(rows))
+
     def active_jobs_for_file(self, kind: str, file_id: int) -> list[dict[str, Any]]:
         """Every queued or running job of that kind for the file, in queue order.
 
@@ -237,11 +260,7 @@ class JobQueue:
                 "AND j.status IN ('queued', 'running') ORDER BY j.id ASC",
                 (kind, file_id),
             ).fetchall()
-        jobs = db.rows_to_dicts(rows)
-        for job in jobs:
-            if isinstance(job.get("payload"), str):
-                job["payload"] = json.loads(job["payload"] or "{}")
-        return jobs
+        return _with_decoded_payloads(db.rows_to_dicts(rows))
 
     def list_jobs(self, active_only: bool = False, limit: int = 100) -> list[dict[str, Any]]:
         query = JOB_SELECT

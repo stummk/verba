@@ -274,6 +274,23 @@ CREATE TABLE IF NOT EXISTS learned_terms (
     UNIQUE (owner_id, language, source)
 );
 
+-- One rule distilled from corrected texts (services/learning.py, phase 3).
+-- `step` says which prompt it belongs to, `norm` is the rule text folded for
+-- comparison so the same rule found again is confirmed instead of stored
+-- twice. `owner_id` is the scope, exactly as in learned_terms.
+CREATE TABLE IF NOT EXISTS learned_rules (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id    INTEGER NOT NULL DEFAULT 0,
+    step        TEXT NOT NULL,              -- cleanup | translate
+    text        TEXT NOT NULL,
+    norm        TEXT NOT NULL,
+    evidence    INTEGER NOT NULL DEFAULT 1,
+    counter_evidence INTEGER NOT NULL DEFAULT 0,
+    status      TEXT NOT NULL DEFAULT 'proposed',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (owner_id, step, norm)
+);
+
 CREATE INDEX IF NOT EXISTS idx_chunks_file ON chunks(file_id);
 CREATE INDEX IF NOT EXISTS idx_files_project ON files(project_id);
 CREATE INDEX IF NOT EXISTS idx_segments_file ON segments(file_id);
