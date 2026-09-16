@@ -47,20 +47,15 @@ CLEANUP_SYSTEM_PROMPT = (
     "without commentary."
 )
 
-# The register is part of the meaning: a sermon that comes back in everyday
-# phrasing ("so sagt der Heilige Geist" for "so spricht der Heilige Geist") is
-# not wrong word by word and still reads as the wrong text. So the translation
-# is asked to carry the register and the subject matter over, and it is given
-# the same type context the cleanup gets.
+# What every translation owes, whatever it is a translation of. How it is to
+# *sound* is no longer here: that is the transcript type's `translate_prompt`,
+# because a song and a set of minutes want different answers inside the same
+# installation, and until now nobody could say so
+# (`project_types.DEFAULT_TRANSLATE_PROMPT` holds what this used to state).
 TRANSLATE_SYSTEM_PROMPT = (
-    "You translate transcriptions accurately and completely into {language}. Carry the "
-    "register and the subject matter of the original over: a sermon, a prophecy or a "
-    "liturgical text is translated in the established biblical wording of {language}, a "
-    "technical, legal or scholarly text in the settled terminology of its field — never "
-    "in everyday paraphrase. Where the original uses a fixed expression of its domain, "
-    "use the fixed expression the target language has for it, and keep names, quotations "
-    "and references in the form that domain uses. Preserve the paragraphs and structure "
-    "of the original. Reply only with the translation, without commentary."
+    "You translate transcriptions accurately and completely into {language}. Preserve the "
+    "paragraphs and structure of the original. Reply only with the translation, without "
+    "commentary."
 )
 
 # both steps hang the type's own prompt off the same heading
@@ -88,22 +83,33 @@ def get_text(file_id: int, kind: str, language: str = "") -> dict[str, Any] | No
     return db.row_to_dict(row)
 
 
-def save_text(file_id: int, kind: str, content: str, language: str = "", model: str = "") -> None:
+def save_text(
+    file_id: int,
+    kind: str,
+    content: str,
+    language: str = "",
+    model: str = "",
+    rules_used: list[int] | None = None,
+) -> None:
     """Store what the model produced, replacing whatever was there.
 
     A fresh run starts over in every sense: the correction markers go with it.
     Keeping them would pair the new text with a version some earlier model
     wrote of a text that no longer exists — a delta between two strangers.
+    `rules_used` are the learned rules this run was given, written down so a
+    later correction knows what to count against (services/learning.py).
     """
+    used = ",".join(str(rule_id) for rule_id in rules_used or [])
     with db.get_conn() as conn:
         conn.execute(
-            "INSERT INTO derived_texts (file_id, kind, language, content, model) "
-            "VALUES (?, ?, ?, ?, ?) "
+            "INSERT INTO derived_texts (file_id, kind, language, content, model, rules_used) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(file_id, kind, language) DO UPDATE SET "
             "content = excluded.content, model = excluded.model, "
+            "rules_used = excluded.rules_used, "
             "model_content = '', edited_at = '', "
             "created_at = datetime('now')",
-            (file_id, kind, language, content, model),
+            (file_id, kind, language, content, model, used),
         )
     _write_workspace_copy(file_id, kind, language, content)
     _publish_change(file_id, kind, language)
@@ -181,8 +187,28 @@ def update_text_content(
             return None
     _write_workspace_copy(file_id, kind, language, content)
     _publish_change(file_id, kind, language)
+    _count_against_the_rules(file_id, kind, language)
     _maybe_learn_rules(file_id, kind)
     return get_text(file_id, kind, language)
+
+
+def _count_against_the_rules(file_id: int, kind: str, language: str) -> None:
+    """This text was written under rules and had to be corrected anyway.
+
+    Not proof that any one of them is wrong — a rule steps aside only once it
+    has been written against as often as it was found. But without this the
+    first rule somebody accepts would stand for good, which is the imprinting
+    the spellings solve with the same arithmetic.
+    """
+    stored = get_text(file_id, kind, language)
+    if not stored or not stored.get("rules_used"):
+        return
+    try:
+        learning.note_rules_contradicted(
+            [int(part) for part in stored["rules_used"].split(",") if part.strip()]
+        )
+    except Exception:  # noqa: BLE001 — auxiliary work, never the user's problem
+        logger.warning("could not count a correction against the rules", exc_info=True)
 
 
 def _maybe_learn_rules(file_id: int, kind: str) -> None:
@@ -465,6 +491,18 @@ def _keeps_the_text(source: str, answer: str) -> bool:
 OVERVIEW_PROGRESS_SHARE = 30
 
 
+def _within_budget(full: str, without_rules: str, limit: SizeLimit) -> str:
+    """The prompt to send, once this model has shown what it can answer.
+
+    A learned rule is the first thing to go. Every character of it is one the
+    section itself does not get, and a model that has already had to be asked
+    in halves needs that room more than it needs the advice — the section has
+    to come back complete either way, which is what `_keeps_the_text` and
+    `TruncatedAnswer` insist on.
+    """
+    return without_rules if limit.max_chars else full
+
+
 def cleanup_segments(
     segments: list[dict[str, Any]],
     type_prompt: str,
@@ -475,6 +513,7 @@ def cleanup_segments(
     *,
     condense: bool = False,
     glossary: str = "",
+    rules: str = "",
     limit: SizeLimit | None = None,
 ) -> str:
     """LLM cleanup of raw segments, chunk by chunk — also used by the public API.
@@ -483,10 +522,11 @@ def cleanup_segments(
     here condenses. `glossary` is what the whole recording is called and how
     it spells its names (`overview.Overview.as_glossary`), which is all a step
     that has to reproduce its material may be shown; the caller decides
-    whether that reading is worth its calls. `condense` says that the type
-    turns its material into something else — it switches the guard below off,
-    for the caller that ends up here although the type would rather have
-    written a document of its own.
+    whether that reading is worth its calls. `rules` is what earlier
+    corrections of this kind of text asked for (`learning.rules_block`).
+    `condense` says that the type turns its material into something else — it
+    switches the guard below off, for the caller that ends up here although
+    the type would rather have written a document of its own.
     """
     chunks = chunking.chunk_segments(segments)
     bare_prompt = CLEANUP_SYSTEM_PROMPT
@@ -494,7 +534,7 @@ def cleanup_segments(
         bare_prompt += TYPE_CONTEXT_HEADING + type_prompt
     # only the recording's name and its spellings, never the summary: this
     # step has to hand back every sentence of its section
-    system_prompt = bare_prompt + glossary
+    system_prompt = bare_prompt + rules + glossary
 
     parts: list[str] = []
     limit = limit if limit is not None else SizeLimit()
@@ -503,7 +543,11 @@ def cleanup_segments(
             raise JobCancelled()
         report_step(report, progress_range, i, len(chunks), "Bereinigung")
         pieces = chat_pieces(
-            system_prompt, chunk.own_text, model_override, chunk.context_text, limit
+            _within_budget(system_prompt, bare_prompt + glossary, limit),
+            chunk.own_text,
+            model_override,
+            chunk.context_text,
+            limit,
         )
         if not condense and not _keeps_the_text(chunk.own_text, "\n".join(pieces)):
             # Asked again without the orientation, which is the likeliest
@@ -606,9 +650,10 @@ def run_cleanup(
         whole = whole_text_overview(
             file_id, type_prompt, model_override, cancel, report, reading, limit, segments
         )
+    rules, used = learning.rules_block(workspace.get_file(file_id), "cleanup")
     if condense and whole.digests:
         result = overview.reduce_document(
-            whole.digests, type_prompt, model_override, cancel, report, working, limit
+            whole.digests, type_prompt + rules, model_override, cancel, report, working, limit
         )
     else:
         result = cleanup_segments(
@@ -620,10 +665,11 @@ def run_cleanup(
             working,
             condense=condense,
             glossary=glossary_for(file_id, whole),
+            rules=rules,
             limit=limit,
         )
     _refuse_empty(result, "Bereinigung")
-    save_text(file_id, "cleanup", result, model=model_override)
+    save_text(file_id, "cleanup", result, model=model_override, rules_used=used)
     return result, whole
 
 
@@ -637,16 +683,29 @@ def run_translation(
     report: Callable[[int, str], None],
     progress_range: tuple[int, int] = (0, 100),
     glossary: str = "",
+    translate_prompt: str = "",
+    rules: str = "",
+    rules_used: list[int] | None = None,
 ) -> str:
+    """Translate one file's text, chunk by chunk.
+
+    `translate_prompt` is what the transcript type says a translation of this
+    material has to sound like; empty falls back to the default, which is the
+    register rule that used to be written into `TRANSLATE_SYSTEM_PROMPT`
+    itself. `rules` is what earlier corrections asked for
+    (`learning.rules_block`).
+    """
     system_prompt = TRANSLATE_SYSTEM_PROMPT.format(language=language_name(target_language))
+    system_prompt += "\n\n" + (translate_prompt or project_types.default_translate_prompt())
     # what the type says about the transcript decides the wording just as much
     # as it does for the cleanup — that is where "this is a sermon" is written
     if type_prompt:
         system_prompt += TYPE_CONTEXT_HEADING + type_prompt
+    bare_prompt = system_prompt
     # the terms of the whole recording work as a glossary here: without them
     # the same name arrives transliterated three different ways across chunks.
     # The summary stays out — a translation has to be complete, too.
-    system_prompt += glossary
+    system_prompt += rules + glossary
 
     chunks = _chunk_text(source_text)
     parts: list[str] = []
@@ -655,11 +714,25 @@ def run_translation(
         if cancel.is_set():
             raise JobCancelled()
         report_step(report, progress_range, i, len(chunks), "Übersetzung")
-        parts.extend(chat_pieces(system_prompt, chunk, model_override, limit=limit))
+        parts.extend(
+            chat_pieces(
+                _within_budget(system_prompt, bare_prompt + glossary, limit),
+                chunk,
+                model_override,
+                limit=limit,
+            )
+        )
 
     result = "\n\n".join(parts)
     _refuse_empty(result, "Übersetzung")
-    save_text(file_id, "translation", result, language=target_language, model=model_override)
+    save_text(
+        file_id,
+        "translation",
+        result,
+        language=target_language,
+        model=model_override,
+        rules_used=rules_used or [],
+    )
     return result
 
 
@@ -716,6 +789,7 @@ def handle_llm_process_job(
                 whole = whole_text_overview(
                     file_id, type_prompt, model_override, cancel, report, reading
                 )
+            rules, used = learning.rules_block(file_row, "translate")
             run_translation(
                 file_id,
                 source,
@@ -726,6 +800,9 @@ def handle_llm_process_job(
                 report,
                 working,
                 glossary_for(file_id, whole),
+                translate_prompt=type_row.get("type_translate_prompt") or "",
+                rules=rules,
+                rules_used=used,
             )
         else:
             raise RuntimeError(f"Unknown pipeline step: {step}")

@@ -79,11 +79,9 @@ def make_type(*, verbatim: bool, condense: bool) -> dict:
     return project_types.create_type(
         "Bericht",
         "Schreibe aus der Aufnahme einen Bericht.",
-        "",
-        "paragraphs",
-        False,
-        verbatim,
-        condense,
+        structure="paragraphs",
+        verbatim=verbatim,
+        condense=condense,
     )
 
 

@@ -925,6 +925,21 @@ correction but only once enough has accumulated — and not at all when no
 language model is configured. The progress appears in the status monitor like
 that of any other step.
 
+**What an accepted rule does.** From then on it stands in the instruction the
+cleanup or the translation is given — ahead of the text, right behind what the
+transcript type says. Verba records for every produced text which rules were
+in force: that is what answers why one file reads differently from another.
+
+**When a rule does not help.** Correcting a text that was produced under a
+rule counts against it. Once a rule has been overridden afterwards as often as
+it was originally attested, it withdraws itself and stops taking effect — it
+stays visible, and you can accept it again at any time.
+
+With a very small local language model the rules give way first: when a
+section already has to be split just to come back complete, the rules are
+dropped for that section. Getting the text back in full matters more than the
+advice.
+
 **What a rule may not contain.** A rule describes *how* something is written,
 not *what about*. Proposals quoting names, places or other content from your
 recordings are discarded before you ever see them — they would not be rules, and

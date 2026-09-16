@@ -713,3 +713,82 @@ def handle_learn_rules_job(
     message = f"{written} Regel(n) vorgeschlagen" if written else NOTHING_TO_LEARN
     report(100, message)
     return message
+
+
+# ── handing the rules to the steps (phase 4) ─────────────────────────
+
+
+RULES_HEADING = "\n\nWhat earlier corrections of this kind of text asked for:\n"
+
+
+def active_rules(owner_id: int, step: str) -> list[dict[str, Any]]:
+    """The rules of one scope that actually apply.
+
+    Only what somebody accepted. A proposal, however well attested, is not an
+    instruction — that is the difference between a spelling, which is a fact
+    about a word, and a rule, which is a judgement about a text.
+    """
+    with db.get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM learned_rules WHERE owner_id = ? AND step = ? "
+            "AND status = 'accepted' ORDER BY evidence DESC, id",
+            (owner_id, step),
+        ).fetchall()
+    return db.rows_to_dicts(rows)
+
+
+def rules_block(file_row: dict[str, Any] | None, step: str) -> tuple[str, list[int]]:
+    """What a step is told about earlier corrections, and which rules that was.
+
+    The ids come back with the text so the caller can write down what the run
+    was given: without that, "why does this file read differently from that
+    one" has no answer, and a correction afterwards has nothing to count
+    against.
+
+    Bounded, and the bound matters: every character here is one the section
+    itself does not get in a small local model's context.
+    """
+    settings = _settings()
+    if not settings.enabled or not settings.rules_enabled or file_row is None:
+        return "", []
+    rules = active_rules(scope_for_file(file_row), step)
+    if not rules:
+        return "", []
+    lines: list[str] = []
+    used: list[int] = []
+    length = 0
+    for rule in rules:
+        line = f"- {rule['text']}"
+        if length + len(line) + 1 > settings.max_glossary_chars:
+            break
+        lines.append(line)
+        used.append(int(rule["id"]))
+        length += len(line) + 1
+    if not lines:
+        return "", []
+    return RULES_HEADING + "\n".join(lines), used
+
+
+def note_rules_contradicted(rule_ids: list[int]) -> None:
+    """A text written under these rules was corrected again — count that.
+
+    Not proof that any one of them is wrong, which is why it takes as many
+    corrections as the rule has evidence before it steps aside. But a rule
+    whose texts keep being rewritten is not helping, and without this the
+    first accepted rule would stand for good — the imprinting problem the
+    spellings solve with the same arithmetic.
+    """
+    if not rule_ids:
+        return
+    marks = ", ".join("?" for _ in rule_ids)
+    with db.get_conn() as conn:
+        conn.execute(
+            f"UPDATE learned_rules SET counter_evidence = counter_evidence + 1 "  # noqa: S608
+            f"WHERE id IN ({marks})",
+            rule_ids,
+        )
+        conn.execute(
+            f"UPDATE learned_rules SET status = 'retired' "  # noqa: S608
+            f"WHERE id IN ({marks}) AND status = 'accepted' AND counter_evidence > evidence",
+            rule_ids,
+        )

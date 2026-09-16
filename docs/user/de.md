@@ -969,6 +969,22 @@ Korrektur, sondern erst, wenn genug zusammengekommen ist — und gar nicht, wenn
 kein Sprachmodell eingerichtet ist. Der Fortschritt steht wie bei jedem anderen
 Schritt im Statusmonitor.
 
+**Was eine übernommene Regel bewirkt.** Sie steht ab dann in der Anweisung, die
+Bereinigung bzw. Übersetzung bekommt — vor dem Text, gleich hinter dem, was der
+Transkripttyp sagt. Verba merkt sich bei jedem erzeugten Text, welche Regeln
+dabei galten: das beantwortet, warum eine Datei anders klingt als eine andere.
+
+**Wenn eine Regel nicht hilft.** Korrigieren Sie einen Text, der unter einer
+Regel entstanden ist, zählt das gegen sie. Wird eine Regel so oft nachträglich
+überschrieben, wie sie ursprünglich belegt war, zieht sie sich von selbst
+zurück und wirkt nicht mehr — sichtbar bleibt sie, Sie können sie jederzeit
+wieder übernehmen.
+
+Bei einem sehr kleinen, lokalen Sprachmodell haben die Regeln Vorrang nach
+hinten: muss ein Abschnitt ohnehin schon geteilt werden, um überhaupt
+vollständig zurückzukommen, fallen die Regeln für diesen Abschnitt weg. Der
+Text vollständig zurückzubekommen ist wichtiger als der Rat.
+
 **Was in einer Regel nicht stehen darf.** Eine Regel beschreibt, *wie* geschrieben
 wird, nicht *worüber*. Vorschläge, die Namen, Orte oder andere Inhalte aus Ihren
 Aufnahmen zitieren, werden verworfen, bevor Sie sie zu sehen bekommen — sie wären

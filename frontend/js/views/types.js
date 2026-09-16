@@ -13,14 +13,15 @@ let fabHandler = null;
 let types = [];
 let selected = null; // a type object, "new", or null
 let defaults = {
-  output_prompt: "", structure: "paragraphs", structures: ["paragraphs"], verbatim: true,
-  condense: false, diarize: false,
+  output_prompt: "", translate_prompt: "", structure: "paragraphs",
+  structures: ["paragraphs"], verbatim: true, condense: false, diarize: false,
 };
-// both prompts of the type being edited, so switching the dropdown keeps
-// unsaved edits of the other one
+// every prompt of the type being edited, so switching the dropdown keeps
+// unsaved edits of the others
 let draft = {
   system_prompt: "",
   output_prompt: "",
+  translate_prompt: "",
   structure: "paragraphs",
   keep_sections: false,
   verbatim: true,
@@ -84,8 +85,9 @@ function select(target) {
   const isNew = target === "new";
   draft = {
     system_prompt: isNew ? "" : (target?.system_prompt ?? ""),
-    // a new type starts from the default output prompt so it can be adapted
+    // a new type starts from the defaults so they can be adapted, not guessed
     output_prompt: isNew ? defaults.output_prompt : (target?.output_prompt ?? ""),
+    translate_prompt: isNew ? defaults.translate_prompt : (target?.translate_prompt ?? ""),
     structure: (isNew ? defaults.structure : target?.structure) || defaults.structure,
     keep_sections: isNew ? false : Boolean(target?.keep_sections),
     verbatim: isNew ? defaults.verbatim !== false : Boolean(target?.verbatim),
@@ -193,6 +195,7 @@ function renderDetail() {
     <label for="type-prompt-kind">${t("types.promptKind")}</label>
     <select id="type-prompt-kind">
       <option value="system_prompt">${t("types.promptCleanup")}</option>
+      <option value="translate_prompt">${t("types.promptTranslate")}</option>
       <option value="output_prompt">${t("types.promptOutput")}</option>
     </select>
     <textarea id="type-prompt" class="type-prompt" maxlength="8000"
@@ -254,7 +257,7 @@ function renderDetail() {
   };
   textarea.oninput = () => { draft[promptKind] = textarea.value; };
   el("type-prompt-default").onclick = () => {
-    draft.output_prompt = defaults.output_prompt;
+    draft[promptKind] = defaults[promptKind] ?? "";
     showPrompt();
     textarea.focus();
   };
@@ -289,6 +292,7 @@ function renderDetail() {
     const settings = {
       system_prompt: draft.system_prompt.trim(),
       output_prompt: draft.output_prompt.trim(),
+      translate_prompt: draft.translate_prompt.trim(),
       structure: draft.structure,
       keep_sections: draft.keep_sections,
       verbatim: draft.verbatim,
@@ -327,14 +331,17 @@ function showPrompt() {
   const textarea = el("type-prompt");
   if (!textarea) return;
   const isOutput = promptKind === "output_prompt";
+  const isTranslate = promptKind === "translate_prompt";
   textarea.value = draft[promptKind];
-  // an empty output prompt is valid — the default applies, so show it as the
-  // placeholder instead of leaving the field looking broken
-  textarea.placeholder = isOutput ? defaults.output_prompt : "";
+  // an empty output or translation prompt is valid — the default applies, so
+  // show it as the placeholder instead of leaving the field looking broken
+  textarea.placeholder = defaults[promptKind] ?? "";
   el("type-prompt-hint").textContent = isOutput
     ? (draft.verbatim ? t("types.promptOutputUnused") : t("types.promptOutputHint"))
-    : (draft.condense ? t("types.promptHintDocument") : t("types.promptHintChunks"));
-  el("type-prompt-default").hidden = !isOutput;
+    : isTranslate
+      ? t("types.promptTranslateHint")
+      : (draft.condense ? t("types.promptHintDocument") : t("types.promptHintChunks"));
+  el("type-prompt-default").hidden = !isOutput && !isTranslate;
 }
 
 // Called by the router when another view takes over.

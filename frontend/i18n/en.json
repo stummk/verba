@@ -301,6 +301,8 @@
   "types.promptKind": "Edit prompt",
   "types.promptCleanup": "Cleanup prompt (AI processing)",
   "types.promptOutput": "Output-format prompt (PDF export)",
+  "types.promptTranslate": "Translation",
+  "types.promptTranslateHint": "How a translation of this material is to sound — register, terminology, fixed expressions. Leave empty to use the default.",
   "types.promptOutputHint": "Instruction for the LLM on how the processed text is split into blocks for the PDF export. Leaving it empty means the default prompt applies — it then shows as the field's placeholder. The cleanup prompt is added as context.",
   "types.promptOutputUnused": "Currently unused: while “The export reproduces the text unchanged” is on, the export structures without AI. This prompt only applies once that option is off.",
   "types.promptUseDefault": "Insert default",

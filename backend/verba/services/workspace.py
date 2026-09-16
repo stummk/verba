@@ -92,7 +92,8 @@ def get_project(project_id: int) -> dict[str, Any] | None:
     with db.get_conn() as conn:
         row = conn.execute(
             "SELECT p.*, t.key AS type_key, t.name AS type_name, t.system_prompt AS type_prompt, "
-            "t.output_prompt AS type_output_prompt, t.structure AS type_structure, "
+            "t.output_prompt AS type_output_prompt, "
+            "t.translate_prompt AS type_translate_prompt, t.structure AS type_structure, "
             "t.keep_sections AS type_keep_sections, t.verbatim AS type_verbatim, "
             "t.condense AS type_condense, t.diarize AS type_diarize, "
             "u.username AS owner_name "
@@ -299,7 +300,8 @@ FILE_SELECT = (
     "WHERE file_id = f.id AND trim(content) != '') AS derived_kinds, "
     "(SELECT count(*) FROM chunks WHERE file_id = f.id) AS index_chunks, "
     "t.key AS type_key, t.name AS type_name, t.system_prompt AS type_prompt, "
-    "t.output_prompt AS type_output_prompt, t.structure AS type_structure, "
+    "t.output_prompt AS type_output_prompt, "
+    "t.translate_prompt AS type_translate_prompt, t.structure AS type_structure, "
     "t.keep_sections AS type_keep_sections, t.verbatim AS type_verbatim, "
     "t.condense AS type_condense, t.diarize AS type_diarize "
     "FROM files f LEFT JOIN project_types t ON t.id = f.type_id"

@@ -65,7 +65,7 @@ def test_export_uses_the_type_output_prompt(data_env, tmp_path, monkeypatch):
     source.write_bytes(b"x")
     # not verbatim: only a type that may restructure reaches the output prompt
     type_row = project_types.create_type(
-        "Custom", "Cleanup text.", "MY OUTPUT RULES.", verbatim=False
+        "Custom", "Cleanup text.", output_prompt="MY OUTPUT RULES.", verbatim=False
     )
     project = workspace.create_project("P", type_row["id"])
     [file_row] = workspace.import_paths(project, [str(source)])

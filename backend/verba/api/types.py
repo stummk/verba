@@ -20,6 +20,9 @@ class TypeRequest(BaseModel):
     # empty on create pre-fills the default; empty on update keeps the default
     # in effect at export time
     output_prompt: str = Field(default="", max_length=8000)
+    # what a translation of this material has to sound like; empty falls back
+    # to project_types.DEFAULT_TRANSLATE_PROMPT
+    translate_prompt: str = Field(default="", max_length=8000)
     structure: Literal[STRUCTURES] = DEFAULT_STRUCTURE
     # a file's section starts on a new page when it would not fit whole
     keep_sections: bool = False
@@ -45,6 +48,7 @@ def default_prompts() -> dict:
     """Defaults and choices the UI needs to offer a new type."""
     return {
         "output_prompt": project_types.default_output_prompt(),
+        "translate_prompt": project_types.default_translate_prompt(),
         "structure": DEFAULT_STRUCTURE,
         "structures": list(STRUCTURES),
         "verbatim": True,
@@ -69,12 +73,13 @@ def create_type(body: TypeRequest, user: dict = AdminUser) -> dict:
     return project_types.create_type(
         body.name.strip(),
         body.system_prompt.strip(),
-        body.output_prompt.strip(),
-        body.structure,
-        body.keep_sections,
-        body.verbatim,
-        body.condense,
-        body.diarize,
+        output_prompt=body.output_prompt.strip(),
+        translate_prompt=body.translate_prompt.strip(),
+        structure=body.structure,
+        keep_sections=body.keep_sections,
+        verbatim=body.verbatim,
+        condense=body.condense,
+        diarize=body.diarize,
     )
 
 
@@ -84,12 +89,13 @@ def update_type(type_id: int, body: TypeRequest, user: dict = AdminUser) -> dict
         type_id,
         body.name.strip(),
         body.system_prompt.strip(),
-        body.output_prompt.strip(),
-        body.structure,
-        body.keep_sections,
-        body.verbatim,
-        body.condense,
-        body.diarize,
+        output_prompt=body.output_prompt.strip(),
+        translate_prompt=body.translate_prompt.strip(),
+        structure=body.structure,
+        keep_sections=body.keep_sections,
+        verbatim=body.verbatim,
+        condense=body.condense,
+        diarize=body.diarize,
     )
     if updated is None:
         raise HTTPException(status_code=404, detail="Transcript type not found")

@@ -53,6 +53,10 @@ CREATE TABLE IF NOT EXISTS project_types (
     name          TEXT NOT NULL,
     system_prompt TEXT NOT NULL DEFAULT '',
     output_prompt TEXT NOT NULL DEFAULT '',
+    -- What the translation is to sound like for this material. Empty means
+    -- the default from `project_types.default_translate_prompt()` applies,
+    -- so a type that says nothing about it still translates well.
+    translate_prompt TEXT NOT NULL DEFAULT '',
     structure     TEXT NOT NULL DEFAULT 'paragraphs',
     -- 1: a file's section starts on a new page when it would not fit
     -- entirely on the current one (compilation exports)
@@ -128,6 +132,10 @@ CREATE TABLE IF NOT EXISTS derived_texts (
     -- above happen exactly once, so a second edit does not overwrite the
     -- model's version with the user's own earlier one.
     edited_at   TEXT NOT NULL DEFAULT '',
+    -- Which learned rules this run was given (ids, comma separated). It is
+    -- what makes "why does this file read differently from that one"
+    -- answerable, and a correction of the text counts against exactly these.
+    rules_used  TEXT NOT NULL DEFAULT '',
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (file_id, kind, language)
 );
@@ -401,12 +409,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
     add_missing("segments", "edited_at", "edited_at TEXT NOT NULL DEFAULT ''")
     add_missing("derived_texts", "model_content", "model_content TEXT NOT NULL DEFAULT ''")
     add_missing("derived_texts", "edited_at", "edited_at TEXT NOT NULL DEFAULT ''")
+    add_missing("derived_texts", "rules_used", "rules_used TEXT NOT NULL DEFAULT ''")
     add_missing("project_types", "output_prompt", "output_prompt TEXT NOT NULL DEFAULT ''")
     add_missing("project_types", "structure", "structure TEXT NOT NULL DEFAULT 'paragraphs'")
     add_missing("project_types", "keep_sections", "keep_sections INTEGER NOT NULL DEFAULT 0")
     add_missing("project_types", "verbatim", "verbatim INTEGER NOT NULL DEFAULT 1")
     add_missing("project_types", "condense", "condense INTEGER NOT NULL DEFAULT 0")
     add_missing("project_types", "diarize", "diarize INTEGER NOT NULL DEFAULT 0")
+    add_missing("project_types", "translate_prompt", "translate_prompt TEXT NOT NULL DEFAULT ''")
     # How the aufbereitung runs used to be read off `verbatim`, which now only
     # governs the export: a type that was not verbatim wrote a document of its
     # own over the whole recording, and keeps doing so.

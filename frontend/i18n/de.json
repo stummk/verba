@@ -301,6 +301,8 @@
   "types.promptKind": "Prompt bearbeiten",
   "types.promptCleanup": "Bereinigungsprompt (KI-Aufbereitung)",
   "types.promptOutput": "Ausgabeformat-Prompt (PDF-Export)",
+  "types.promptTranslate": "Übersetzung",
+  "types.promptTranslateHint": "Wie eine Übersetzung dieses Materials klingen soll — Register, Fachsprache, feste Wendungen. Leer lassen übernimmt die Vorgabe.",
   "types.promptOutputHint": "Anweisung an das LLM, wie der aufbereitete Text für den PDF-Export in Blöcke gegliedert wird. Leer lassen heißt: der Standardprompt greift — er steht dann als Platzhalter im Feld. Der Bereinigungsprompt wird als Kontext ergänzt.",
   "types.promptOutputUnused": "Wird derzeit nicht verwendet: solange „Export übernimmt den Text unverändert“ aktiv ist, gliedert der Export ohne KI. Erst ohne diese Option greift dieser Prompt.",
   "types.promptUseDefault": "Standard einsetzen",

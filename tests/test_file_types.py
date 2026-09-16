@@ -286,8 +286,8 @@ def test_the_page_break_is_decided_per_file(data_env, tmp_path):
         keys["poem"]["id"],
         keys["poem"]["name"],
         keys["poem"]["system_prompt"],
-        keys["poem"]["output_prompt"],
-        keys["poem"]["structure"],
+        output_prompt=keys["poem"]["output_prompt"],
+        structure=keys["poem"]["structure"],
         keep_sections=True,
     )
     project = workspace.create_project("P", keys["song"]["id"])

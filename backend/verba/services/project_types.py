@@ -46,10 +46,26 @@ STRUCTURE_MARKER = "project_types_structures"
 VERBATIM_MARKER = "project_types_verbatim"
 CONDENSE_MARKER = "project_types_condense"
 DIARIZE_MARKER = "project_types_diarize"
+TRANSLATE_PROMPT_MARKER = "project_types_translate_prompts"
 
 # The builtin output prompts embed the block contract; it is expanded into the
 # stored prompt so nothing about the export stays hidden from the user.
 CONTRACT_PLACEHOLDER = "{contract}"
+
+# The register is part of the meaning: a sermon that comes back in everyday
+# phrasing ("so sagt der Heilige Geist" for "so spricht der Heilige Geist") is
+# not wrong word by word and still reads as the wrong text. This used to be
+# welded into `pipeline.TRANSLATE_SYSTEM_PROMPT`, where no type could say
+# anything about it; it is the fallback now, so a type that wants its
+# translations to sound different only has to write that down.
+DEFAULT_TRANSLATE_PROMPT = (
+    "Carry the register and the subject matter of the original over: a sermon, a prophecy "
+    "or a liturgical text is translated in the established biblical wording of the target "
+    "language, a technical, legal or scholarly text in the settled terminology of its "
+    "field — never in everyday paraphrase. Where the original uses a fixed expression of "
+    "its domain, use the fixed expression the target language has for it, and keep names, "
+    "quotations and references in the form that domain uses."
+)
 
 
 BUILTIN_TYPES: list[dict[str, Any]] = [
@@ -192,6 +208,7 @@ TYPE_FIELDS = (
     "type_name",
     "type_prompt",
     "type_output_prompt",
+    "type_translate_prompt",
     "type_structure",
     "type_keep_sections",
     "type_verbatim",
@@ -261,6 +278,11 @@ def default_output_prompt() -> str:
     return DEFAULT_OUTPUT_PROMPT
 
 
+def default_translate_prompt() -> str:
+    """How a translation is to sound when a type says nothing about it."""
+    return DEFAULT_TRANSLATE_PROMPT
+
+
 def builtin_types() -> list[dict[str, str]]:
     """The builtins as they are stored: placeholders already expanded."""
     from .pdf import BLOCK_CONTRACT
@@ -270,6 +292,7 @@ def builtin_types() -> list[dict[str, str]]:
             **entry,
             # replace, not format: the contract itself is full of JSON braces
             "output_prompt": entry["output_prompt"].replace(CONTRACT_PLACEHOLDER, BLOCK_CONTRACT),
+            "translate_prompt": entry.get("translate_prompt") or DEFAULT_TRANSLATE_PROMPT,
         }
         for entry in BUILTIN_TYPES
     ]
@@ -300,11 +323,11 @@ def seed_builtin_types() -> None:
 
 _BUILTIN_COLUMNS = (
     "key, name, structure, keep_sections, verbatim, condense, diarize, "
-    "system_prompt, output_prompt, builtin"
+    "system_prompt, output_prompt, translate_prompt, builtin"
 )
 _INSERT_BUILTIN = (
     f"INSERT OR IGNORE INTO project_types ({_BUILTIN_COLUMNS}) "
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)"
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)"
 )
 
 
@@ -321,6 +344,7 @@ def _builtin_row(key: str, name: str, entry: dict[str, Any]) -> tuple[Any, ...]:
         int(bool(entry.get("diarize"))),
         entry["system_prompt"],
         entry["output_prompt"],
+        entry["translate_prompt"],
     )
 
 
@@ -332,6 +356,7 @@ _BACKFILL_FIELDS = (
     ("verbatim", VERBATIM_MARKER, 1),
     ("condense", CONDENSE_MARKER, 0),
     ("diarize", DIARIZE_MARKER, 0),
+    ("translate_prompt", TRANSLATE_PROMPT_MARKER, ""),
 )
 
 
@@ -360,14 +385,15 @@ def restore_builtin_types() -> list[dict[str, Any]]:
         for entry in builtin_types():
             conn.execute(
                 f"INSERT INTO project_types ({_BUILTIN_COLUMNS}) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1) "
                 "ON CONFLICT(key) DO UPDATE SET "
                 "name = excluded.name, structure = excluded.structure, "
                 "keep_sections = excluded.keep_sections, "
                 "verbatim = excluded.verbatim, condense = excluded.condense, "
                 "diarize = excluded.diarize, "
                 "system_prompt = excluded.system_prompt, "
-                "output_prompt = excluded.output_prompt, builtin = 1",
+                "output_prompt = excluded.output_prompt, "
+                "translate_prompt = excluded.translate_prompt, builtin = 1",
                 _builtin_row(entry["key"], entry["name"], entry),
             )
     return list_types(include_legacy=False)
@@ -439,7 +465,9 @@ def _unique_key(conn, base: str) -> str:
 def create_type(
     name: str,
     system_prompt: str,
+    *,
     output_prompt: str = "",
+    translate_prompt: str = "",
     structure: str = "",
     keep_sections: bool = False,
     verbatim: bool = True,
@@ -456,7 +484,8 @@ def create_type(
         cursor = conn.execute(
             "INSERT INTO project_types "
             "(key, name, structure, keep_sections, verbatim, condense, diarize, "
-            "system_prompt, output_prompt, builtin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+            "system_prompt, output_prompt, translate_prompt, builtin) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
             (
                 key,
                 name,
@@ -467,6 +496,7 @@ def create_type(
                 int(diarize),
                 system_prompt,
                 output_prompt or default_output_prompt(),
+                translate_prompt or default_translate_prompt(),
             ),
         )
         type_id = cursor.lastrowid
@@ -477,7 +507,9 @@ def update_type(
     type_id: int,
     name: str,
     system_prompt: str,
+    *,
     output_prompt: str = "",
+    translate_prompt: str = "",
     structure: str = "",
     keep_sections: bool = False,
     verbatim: bool = True,
@@ -492,7 +524,7 @@ def update_type(
         cursor = conn.execute(
             "UPDATE project_types SET name = ?, structure = ?, keep_sections = ?, "
             "verbatim = ?, condense = ?, diarize = ?, system_prompt = ?, "
-            "output_prompt = ? WHERE id = ?",
+            "output_prompt = ?, translate_prompt = ? WHERE id = ?",
             (
                 name,
                 normalize_structure(structure),
@@ -502,6 +534,7 @@ def update_type(
                 int(diarize),
                 system_prompt,
                 output_prompt,
+                translate_prompt,
                 type_id,
             ),
         )

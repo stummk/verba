@@ -10,8 +10,8 @@ prompt is derived from their corrections in the background, proposed to them,
 and — once accepted — applied to later recordings. The user never has to write a
 prompt, and can still overrule everything.
 
-Status: **phases 1 to 3 done, phases 4 and 5 planned.** Phases are meant to
-ship one at a time; each is useful on its own.
+Status: **phases 1 to 4 done, phase 5 planned.** Phases are meant to ship one
+at a time; each is useful on its own.
 
 
 ## Design decisions
@@ -269,7 +269,7 @@ the result corrected again. The column is already there.
 UI that can be accepted or dismissed.
 
 
-## Phase 4 — Apply, and close the loop
+## Phase 4 — Apply, and close the loop ✔
 
 `learning.rules_block(owner_id, scope)` returns the accepted rules; it is
 appended behind `pipeline.TYPE_CONTEXT_HEADING` in `cleanup_segments` and
@@ -279,17 +279,33 @@ appended behind `pipeline.TYPE_CONTEXT_HEADING` in `cleanup_segments` and
   character cap and is the first thing dropped when `SizeLimit` already had to
   split — on a 1.7B local model that decides between a result and a
   `TruncatedAnswer`.
-- **Traceability.** Which rules a run used is written alongside the result (a
-  hash column on `derived_texts`, next to the existing `model` column).
-  Otherwise "why does file 3 look different from file 1" stops being answerable.
+- **Traceability.** Which rules a run used is written alongside the result —
+  `derived_texts.rules_used`, the ids rather than the hash the sketch called
+  for. A hash answers "was it the same set"; the ids answer "which ones", and
+  that is what the counter-evidence below needs anyway.
+- **Counter-evidence, at last.** A correction of a text produced under rules
+  counts against exactly those rules, and one written against as often as it
+  was attested retires itself. Nothing could contradict a rule before it was
+  applied, which is why design decision 5 had to wait for this phase.
 - **The existing promise is untouched.** `pipeline._keeps_the_text` still
   guarantees that a verbatim type does not summarise. A learned rule cannot
   override that, and should not be able to.
 
 **Alongside:** `project_types.translate_prompt` (migration, backfill marker,
-field in `types.js`) so the translation finally has a per-type baseline for the
-learned layer to attach to. `pipeline.TRANSLATE_SYSTEM_PROMPT` stops hard-coding
-the register rules.
+field in `types.js`). The rationale in the sketch — "a baseline for the learned
+layer to attach to" — turned out not to hold: the learned layer attaches to the
+scope, not to the type. It is worth doing on its own account, because until now
+no type could say anything about how its translations should sound.
+`pipeline.TRANSLATE_SYSTEM_PROMPT` keeps only what every translation owes; the
+register rule moved to `project_types.DEFAULT_TRANSLATE_PROMPT`, which is what
+a type without one falls back to, so nothing changed for an existing
+installation.
+
+**A trap worth recording.** Inserting `translate_prompt` into the middle of
+`create_type`/`update_type` shifted every positional caller silently — a test
+went on building a type with `verbatim` where `keep_sections` belonged and
+`condense` permanently off. Everything past the prompts is keyword-only now, so
+the next insertion fails loudly instead.
 
 **Done when:** an accepted rule demonstrably changes the next cleanup, and a
 test shows it.

@@ -308,8 +308,8 @@ def test_the_types_page_break_reaches_the_renderer(data_env, tmp_path, monkeypat
         song["id"],
         song["name"],
         song["system_prompt"],
-        song["output_prompt"],
-        song["structure"],
+        output_prompt=song["output_prompt"],
+        structure=song["structure"],
         keep_sections=True,
     )
 
