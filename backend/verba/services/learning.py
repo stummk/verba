@@ -4,6 +4,12 @@ Phase 2 of docs/LEARNING.md: the cheapest half of learning from corrections,
 and the only one that needs no LLM at all. Phase 1 kept what a text looked
 like before the user changed it; here that pair is read word by word.
 
+What is read are the corrections of the *processed* text — the cleanup and
+the translations — never those of the transcript itself. A segment is where
+somebody retypes what they think they heard; the processed text is where they
+read carefully and fix a name. One source, then, and two things learned from
+it: the spellings here, the rules in phase 3.
+
 Only 1:1 word replacements are taken, and only where the corrected word still
 *looks* like the one it replaces. A mishearing does — "Jahwe" → "Yahweh",
 "Bergstrasse" → "Bergstraße" — and is worth remembering. A rewording does not
@@ -143,8 +149,14 @@ def word_pairs(
 # ── writing it down ───────────────────────────────────────────────────
 
 
-def note_text_correction(file_row: dict[str, Any] | None, before: str, after: str) -> int:
-    """Record what one correction of a transcript says; returns how many pairs.
+def note_text_correction(
+    file_row: dict[str, Any] | None, before: str, after: str, language: str = ""
+) -> int:
+    """Record what one correction of a processed text says; returns how many pairs.
+
+    `language` is the language the corrected text is *in*: the recording's own
+    for a cleanup, the target language for a translation. Empty falls back to
+    the recording's, which is right for everything that is not a translation.
 
     Never raises on anything but a programming error: a user's edit must not
     fail because a word could not be remembered.
@@ -155,7 +167,7 @@ def note_text_correction(file_row: dict[str, Any] | None, before: str, after: st
     if not pairs:
         return 0
     owner_id = scope_for_file(file_row)
-    language = (file_row.get("language") or "").strip()
+    language = (language or file_row.get("language") or "").strip()
     with db.get_conn() as conn:
         for source, target in pairs:
             _record(conn, owner_id, language, source, target)

@@ -14,7 +14,7 @@ import threading
 import pytest
 
 from verba import config, db
-from verba.services import auth, learning, transcripts, whisper, workspace
+from verba.services import auth, learning, pipeline, transcripts, whisper, workspace
 
 NO_CANCEL = threading.Event()
 
@@ -55,6 +55,12 @@ def add_segment(file_id: int, text: str, idx: int = 0) -> int:
 
 def terms() -> list[dict]:
     return learning.list_terms(learning.INSTALLATION_SCOPE)
+
+
+def correct(file_row: dict, machine: str, human: str) -> None:
+    """A cleanup as the model wrote it, and as the user corrected it."""
+    pipeline.save_text(file_row["id"], "cleanup", machine)
+    pipeline.update_text_content(file_row["id"], "cleanup", "", human)
 
 
 # ── what counts as a correction ───────────────────────────────────────
@@ -161,26 +167,50 @@ def test_nothing_is_learned_while_the_feature_is_off(file_row):
     assert terms() == []
 
 
-# ── the hook in the editor ───────────────────────────────────────────
+# ── the hook: the processed text, never the transcription ────────────
 
 
-def test_correcting_a_segment_teaches_the_spelling(file_row):
-    segment_id = add_segment(file_row["id"], "Und Jahwe sprach zur Gemeinde")
-    transcripts.update_segment(segment_id, {"text": "Und Yahweh sprach zur Gemeinde"})
+def test_correcting_the_cleanup_teaches_the_spelling(file_row):
+    correct(file_row, "Und Jahwe sprach zur Gemeinde", "Und Yahweh sprach zur Gemeinde")
     assert [(t["source"], t["target"]) for t in terms()] == [("Jahwe", "Yahweh")]
 
 
-def test_a_segment_the_user_typed_teaches_nothing(file_row):
-    """Their own second thoughts about their own wording correct nothing."""
-    segment = transcripts.create_segment(file_row["id"], 0.0, 5.0, text="Jahwe sprach")
-    transcripts.update_segment(segment["id"], {"text": "Yahweh sprach"})
+def test_correcting_a_segment_teaches_nothing(file_row):
+    """A segment is where somebody retypes what they think they heard. What a
+    correction teaches is read off the processed text instead."""
+    segment_id = add_segment(file_row["id"], "Und Jahwe sprach zur Gemeinde")
+    transcripts.update_segment(segment_id, {"text": "Und Yahweh sprach zur Gemeinde"})
     assert terms() == []
 
 
-def test_a_speaker_rename_teaches_nothing(file_row):
+def test_the_transcription_is_still_kept_for_the_record(file_row):
+    """Nothing reads it, but it is the only record of what was heard."""
     segment_id = add_segment(file_row["id"], "Und Jahwe sprach")
-    transcripts.update_segment(segment_id, {"speaker": "Sprecher 1"})
-    assert terms() == []
+    transcripts.update_segment(segment_id, {"text": "Und Yahweh sprach"})
+    assert transcripts.get_segment(segment_id)["text_original"] == "Und Jahwe sprach"
+
+
+def test_each_save_teaches_its_own_delta(file_row):
+    """Deliberately not measured against the model's version: the editor saves
+    while you type, and a pair re-derived on every save would count its own
+    evidence up. An intermediate spelling never reaches the threshold on its
+    own, so the noise stays below where it could apply."""
+    correct(file_row, "Jahwe sprach", "Jahve sprach")
+    pipeline.update_text_content(file_row["id"], "cleanup", "", "Yahweh sprach")
+    assert sorted((t["source"], t["target"]) for t in terms()) == [
+        ("Jahve", "Yahweh"),
+        ("Jahwe", "Jahve"),
+    ]
+    assert all(t["evidence"] == 1 for t in terms())
+
+
+def test_a_translation_teaches_in_its_target_language(file_row):
+    """The corrected text is English, so the spelling is an English one — the
+    recording's own language would hand it to the wrong transcription."""
+    pipeline.save_text(file_row["id"], "translation", "Thus says Yahwe.", language="en")
+    pipeline.update_text_content(file_row["id"], "translation", "en", "Thus says Yahweh.")
+    [term] = terms()
+    assert (term["language"], term["source"], term["target"]) == ("en", "Yahwe", "Yahweh")
 
 
 def test_a_failure_while_learning_never_costs_the_edit(file_row, monkeypatch):
@@ -188,9 +218,9 @@ def test_a_failure_while_learning_never_costs_the_edit(file_row, monkeypatch):
         raise RuntimeError("nope")
 
     monkeypatch.setattr(learning, "note_text_correction", boom)
-    segment_id = add_segment(file_row["id"], "Und Jahwe sprach")
-    segment = transcripts.update_segment(segment_id, {"text": "Und Yahweh sprach"})
-    assert segment["text"] == "Und Yahweh sprach"
+    pipeline.save_text(file_row["id"], "cleanup", "Und Jahwe sprach")
+    stored = pipeline.update_text_content(file_row["id"], "cleanup", "", "Und Yahweh sprach")
+    assert stored["content"] == "Und Yahweh sprach"
 
 
 # ── which of them apply ──────────────────────────────────────────────

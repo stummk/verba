@@ -885,13 +885,20 @@ away instead of being repaired afterwards. The AI processing and the
 translation are given the same list, so a spelling stays the same across
 several recordings.
 
+**Only the processed text is learned from** — the *cleanup* and the
+*translations*, never the segments. In the transcript you retype what you
+think you heard; in the processed text you read carefully and put a name
+right. Without a configured language model there is no processed text, and so
+nothing to learn from.
+
 **What is learned and what is not.** Only the replacement of *one* word by
 *one* other, and only where the corrected word still looks like the original:
 "Jahwe" → "Yahweh" or "Bergstrasse" → "Bergstraße" is a mishearing and is
 remembered. "says" → "speaks" is a different wording and is not — as a hint to
-the recognition it would be nonsense. Retyping a whole segment teaches nothing
-at all: a block of words is not a spelling. A segment you created yourself
-does not count either.
+the recognition it would be nonsense. Rewriting a whole paragraph teaches
+nothing at all: a block of words is not a spelling. A correction in a
+translation counts for that translation's target language, not for the
+recording's.
 
 **When a spelling is applied.** After the first correction it stands under
 *Settings → Learned spellings* and waits; from the second one on it is

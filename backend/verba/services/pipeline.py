@@ -175,6 +175,9 @@ def update_text_content(
     keeps a second edit from overwriting the model's version with the user's
     own earlier one.
     """
+    before = get_text(file_id, kind, language)
+    if before is None:
+        return None
     with db.get_conn() as conn:
         cursor = conn.execute(
             "UPDATE derived_texts SET content = ?, "
@@ -187,9 +190,28 @@ def update_text_content(
             return None
     _write_workspace_copy(file_id, kind, language, content)
     _publish_change(file_id, kind, language)
+    _learn_the_spellings(file_id, kind, language, before["content"], content)
     _count_against_the_rules(file_id, kind, language)
     _maybe_learn_rules(file_id, kind)
     return get_text(file_id, kind, language)
+
+
+def _learn_the_spellings(file_id: int, kind: str, language: str, before: str, after: str) -> None:
+    """What this correction says about the spelling of single words.
+
+    Only the processed text teaches: a segment is where somebody retypes what
+    they think they heard, this is where they read carefully and fix a name
+    (services/learning.py). The language is the one the corrected text is in —
+    for a translation that is the target language, not the recording's.
+
+    Its own failure never reaches the edit: the text is saved either way, and
+    a word that could not be remembered is worth a log line, not a lost
+    correction.
+    """
+    try:
+        learning.note_text_correction(workspace.get_file(file_id), before, after, language=language)
+    except Exception:  # noqa: BLE001 — auxiliary work, never the user's problem
+        logger.warning("could not learn from a correction of the %s text", kind, exc_info=True)
 
 
 def _count_against_the_rules(file_id: int, kind: str, language: str) -> None:

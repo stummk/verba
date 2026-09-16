@@ -928,13 +928,20 @@ Name wird dann gleich richtig gehört, statt hinterher repariert zu werden. Die
 KI-Aufbereitung und die Übersetzung bekommen dieselbe Liste, damit eine
 Schreibweise über mehrere Aufnahmen hinweg gleich bleibt.
 
+**Gelernt wird ausschließlich aus dem aufbereiteten Text** — aus der
+*Bereinigung* und den *Übersetzungen*, nie aus den Segmenten. Im Transkript
+tippt man nach, was man gehört zu haben glaubt; im aufbereiteten Text liest
+man in Ruhe und setzt einen Namen richtig. Ohne eingerichtetes Sprachmodell
+gibt es keinen aufbereiteten Text und damit auch nichts zu lernen.
+
 **Was gelernt wird und was nicht.** Nur der Austausch *eines* Wortes gegen
 *ein* anderes, und nur wenn das korrigierte Wort dem ursprünglichen noch
 ähnlich sieht: „Jahwe" → „Yahweh" oder „Bergstrasse" → „Bergstraße" ist ein
 Verhörer und wird gemerkt. „sagt" → „spricht" ist eine andere Formulierung und
-wird nicht gemerkt — als Hinweis an die Erkennung wäre das Unsinn. Wer ein
-Segment komplett neu tippt, lehrt damit gar nichts: ein ganzer Block ist keine
-Schreibweise. Ein Segment, das man selbst angelegt hat, zählt ebenfalls nicht.
+wird nicht gemerkt — als Hinweis an die Erkennung wäre das Unsinn. Wer einen
+Absatz komplett neu schreibt, lehrt damit gar nichts: ein ganzer Block ist
+keine Schreibweise. Eine Korrektur in einer Übersetzung zählt für deren
+Zielsprache, nicht für die der Aufnahme.
 
 **Wann eine Schreibweise angewendet wird.** Nach der ersten Korrektur steht sie
 unter *Einstellungen → Gelernte Schreibweisen* und wartet; ab der zweiten wird

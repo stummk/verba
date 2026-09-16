@@ -154,7 +154,9 @@ CREATE TABLE IF NOT EXISTS segments (
     -- a speaker change without cutting it mid-sentence (services/diarize.py).
     words    TEXT NOT NULL DEFAULT '',
     -- The transcription's own wording, kept the first time a user corrects
-    -- the text — the segment half of what `derived_texts.model_content` does.
+    -- the text. Nothing learns from it — what a correction teaches is read
+    -- off the processed text (docs/LEARNING.md) — but it is the only record
+    -- of what the recognition itself heard.
     text_original TEXT NOT NULL DEFAULT '',
     -- When the *text* was first changed by a user (a speaker rename is not
     -- one). A row a user typed themselves carries this from the start, so

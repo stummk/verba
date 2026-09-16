@@ -9,6 +9,11 @@ So the first user edit puts the model's own version aside, and only the
 first: a second edit must not overwrite it with the user's own earlier one.
 Everything here is about that "exactly once", and about the cases that look
 like a correction without being one.
+
+Which half is *learned* from was settled afterwards: the derived texts, never
+the segments (`tests/test_learning_terms.py`). The segment pair is still kept
+and still pinned here — it is the only record of what the recognition itself
+heard.
 """
 
 from __future__ import annotations

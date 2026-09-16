@@ -68,6 +68,9 @@ and a manual "discard all" is a poor remedy for something noticed at file 12.
 Nothing is learned yet. Worth shipping on its own: it is the basis for a
 "changed by you" marker in the editor and for an undo.
 
+(Phase 2 settled which half is actually learned from — the derived texts. The
+segment columns below are still written and still tested; nothing reads them.)
+
 **Migration** (additive, in `_SCHEMA` and `db._migrate`):
 
 ```
@@ -146,15 +149,29 @@ Russian name is handed to a German recording as a hotword, which actively
 makes the transcription worse. It comes from `files.language`; a term whose
 recording declared none stays eligible everywhere.
 
-**Derivation:** `difflib.SequenceMatcher` over the token lists of
-`text_original` ↔ `text`, per edit rather than against the model's original,
-so each correction contributes its own delta. Only 1:1 word replacements are
-collected, and only where the corrected word still *resembles* the one it
-replaces (`min_similarity`) — "Jahwe" → "Yahweh" is a mishearing, "sagt" →
-"spricht" is a rewording and would be nonsense as a hint to the decoder.
-Retyping a whole segment produces one block opcode and therefore teaches
-nothing at all, which is better than the cap it was meant to need. Rows the
-user created themselves are skipped: they carry no `text_original`.
+**Read from the processed text only.** The corrections of the cleanup and the
+translations, never those of the segments — a segment is where somebody
+retypes what they think they heard, the processed text is where they read
+carefully and fix a name. So the vocabulary and the rules of phase 3 read the
+same source, which is one place to reason about rather than two, and the
+re-transcribed-selection leak is gone with the path it came from.
+
+Its price, and it is not small: an installation without a language model has
+no processed text, and therefore learns nothing at all — including the
+Whisper hotwords, which are the best thing in this phase.
+
+**Derivation:** `difflib.SequenceMatcher` over the token lists of the text
+before and after one save, per edit rather than against `model_content`. The
+editor saves while you type, so a pair re-derived against the model's version
+on every save would count its own evidence up; per edit, an intermediate
+spelling stays a single sighting and never reaches the threshold. Only 1:1
+word replacements are collected, and only where the corrected word still
+*resembles* the one it replaces (`min_similarity`) — "Jahwe" → "Yahweh" is a
+mishearing, "sagt" → "spricht" is a rewording and would be nonsense as a hint
+to the decoder. Rewriting a whole paragraph produces one block opcode and
+therefore teaches nothing at all, which is better than the cap it was meant to
+need. A correction in a translation is recorded in that translation's target
+language, not in the recording's.
 
 **Contradiction, not just confirmation.** A term carries `evidence` and
 `counter_evidence`. Correcting the same word differently counts against the
@@ -193,11 +210,14 @@ forget.
 **Done when:** a name corrected in file 1 is spelled correctly by Whisper in
 file 2.
 
-**Known gap, still open from phase 1:** a re-transcribed selection
-(`POST /files/{id}/transcribe-range`) reaches the backend as an ordinary
-segment edit and is learned from although both sides are machine-written. The
-similarity filter catches the worst of it, but the route should say where the
-text came from.
+**Closed, once the source moved:** a re-transcribed selection
+(`POST /files/{id}/transcribe-range`) used to reach the backend as an ordinary
+segment edit and be learned from although both sides were machine-written.
+Nothing reads segment edits any more, so the path is gone rather than
+filtered. `segments.text_original` and `segments.edited_at` stay: nothing
+learns from them, but they are the only record of what the recognition itself
+heard, and the basis for a "changed by you" marker whenever somebody wants
+one.
 
 
 ## Phase 3 — Distil rules ✔
