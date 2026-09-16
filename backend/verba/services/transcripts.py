@@ -61,9 +61,12 @@ def create_segment(
         row = conn.execute(
             "SELECT COALESCE(MAX(idx), -1) AS last FROM segments WHERE file_id = ?", (file_id,)
         ).fetchone()
+        # Counts as edited from the start: nobody transcribed this row, so a
+        # later correction of it must not keep whatever stood here first as
+        # "what the transcription wrote" (docs/LEARNING.md).
         cursor = conn.execute(
-            "INSERT INTO segments (file_id, idx, start_s, end_s, text, speaker) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO segments (file_id, idx, start_s, end_s, text, speaker, edited_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, datetime('now'))",
             (file_id, row["last"] + 1, start_s, end_s, text, speaker),
         )
         segment_id = int(cursor.lastrowid)
@@ -78,6 +81,13 @@ def update_segment(segment_id: int, changes: dict[str, Any]) -> dict[str, Any] |
     `words` is not reachable from the API (no route offers it) — an edited
     text and its old word timings would disagree, and the timings are the
     weaker of the two. Editing the text therefore drops them.
+
+    A change to the *text* puts the transcription's own wording aside, once.
+    SQLite evaluates every SET expression against the row as it was, so `text`
+    on the right is still the old one. A rename of the speaker is not a
+    correction of the text and leaves both markers alone — otherwise it would
+    freeze a "before" that equals the "after" and no real correction could
+    ever be recorded afterwards.
     """
     allowed = {
         k: v for k, v in changes.items() if k in ("text", "speaker", "start_s", "end_s", "words")
@@ -87,6 +97,11 @@ def update_segment(segment_id: int, changes: dict[str, Any]) -> dict[str, Any] |
     if "text" in allowed and "words" not in allowed:
         allowed["words"] = ""  # the timings described the text that was there
     sets = ", ".join(f"{column} = ?" for column in allowed)
+    if "text" in allowed:
+        sets += (
+            ", text_original = CASE WHEN edited_at = '' THEN text ELSE text_original END"
+            ", edited_at = datetime('now')"
+        )
     with db.get_conn() as conn:
         cursor = conn.execute(
             f"UPDATE segments SET {sets} WHERE id = ?",  # noqa: S608 — columns whitelisted

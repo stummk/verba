@@ -119,6 +119,15 @@ CREATE TABLE IF NOT EXISTS derived_texts (
     language    TEXT NOT NULL DEFAULT '',
     content     TEXT NOT NULL,
     model       TEXT NOT NULL DEFAULT '',
+    -- What the model itself wrote, put aside the first time a user changes
+    -- the text. The pair (model version, corrected version) is the only
+    -- material there is to learn a correction from, and an in-place update
+    -- would destroy it (docs/LEARNING.md). Empty means untouched.
+    model_content TEXT NOT NULL DEFAULT '',
+    -- When a user first changed the content — also what makes the freeze
+    -- above happen exactly once, so a second edit does not overwrite the
+    -- model's version with the user's own earlier one.
+    edited_at   TEXT NOT NULL DEFAULT '',
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (file_id, kind, language)
 );
@@ -136,6 +145,13 @@ CREATE TABLE IF NOT EXISTS segments (
     -- Empty for everything else — it is only ever needed to cut a segment at
     -- a speaker change without cutting it mid-sentence (services/diarize.py).
     words    TEXT NOT NULL DEFAULT '',
+    -- The transcription's own wording, kept the first time a user corrects
+    -- the text — the segment half of what `derived_texts.model_content` does.
+    text_original TEXT NOT NULL DEFAULT '',
+    -- When the *text* was first changed by a user (a speaker rename is not
+    -- one). A row a user typed themselves carries this from the start, so
+    -- nothing is ever kept as a "transcription" that no transcription wrote.
+    edited_at TEXT NOT NULL DEFAULT '',
     UNIQUE (file_id, idx)
 );
 
@@ -337,6 +353,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
 
     add_missing("segments", "speaker", "speaker TEXT NOT NULL DEFAULT ''")
     add_missing("segments", "words", "words TEXT NOT NULL DEFAULT ''")
+    # What a text looked like before a user corrected it, on both levels it
+    # can be corrected on. Nothing reads these yet — they are what makes a
+    # correction learnable later (docs/LEARNING.md); an existing installation
+    # starts collecting from the next edit on.
+    add_missing("segments", "text_original", "text_original TEXT NOT NULL DEFAULT ''")
+    add_missing("segments", "edited_at", "edited_at TEXT NOT NULL DEFAULT ''")
+    add_missing("derived_texts", "model_content", "model_content TEXT NOT NULL DEFAULT ''")
+    add_missing("derived_texts", "edited_at", "edited_at TEXT NOT NULL DEFAULT ''")
     add_missing("project_types", "output_prompt", "output_prompt TEXT NOT NULL DEFAULT ''")
     add_missing("project_types", "structure", "structure TEXT NOT NULL DEFAULT 'paragraphs'")
     add_missing("project_types", "keep_sections", "keep_sections INTEGER NOT NULL DEFAULT 0")

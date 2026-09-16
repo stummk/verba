@@ -89,12 +89,19 @@ def get_text(file_id: int, kind: str, language: str = "") -> dict[str, Any] | No
 
 
 def save_text(file_id: int, kind: str, content: str, language: str = "", model: str = "") -> None:
+    """Store what the model produced, replacing whatever was there.
+
+    A fresh run starts over in every sense: the correction markers go with it.
+    Keeping them would pair the new text with a version some earlier model
+    wrote of a text that no longer exists — a delta between two strangers.
+    """
     with db.get_conn() as conn:
         conn.execute(
             "INSERT INTO derived_texts (file_id, kind, language, content, model) "
             "VALUES (?, ?, ?, ?, ?) "
             "ON CONFLICT(file_id, kind, language) DO UPDATE SET "
             "content = excluded.content, model = excluded.model, "
+            "model_content = '', edited_at = '', "
             "created_at = datetime('now')",
             (file_id, kind, language, content, model),
         )
@@ -154,10 +161,20 @@ def present_kinds(file_id: int) -> str:
 def update_text_content(
     file_id: int, kind: str, language: str, content: str
 ) -> dict[str, Any] | None:
-    """User edit of an existing derived text (keeps the model attribution)."""
+    """User edit of an existing derived text (keeps the model attribution).
+
+    The first such edit puts the model's own version aside. SQLite evaluates
+    every SET expression against the row as it was, so `content` on the right
+    is still the old text — one statement does the freeze, and `edited_at`
+    keeps a second edit from overwriting the model's version with the user's
+    own earlier one.
+    """
     with db.get_conn() as conn:
         cursor = conn.execute(
-            "UPDATE derived_texts SET content = ? WHERE file_id = ? AND kind = ? AND language = ?",
+            "UPDATE derived_texts SET content = ?, "
+            "model_content = CASE WHEN edited_at = '' THEN content ELSE model_content END, "
+            "edited_at = datetime('now') "
+            "WHERE file_id = ? AND kind = ? AND language = ?",
             (content, file_id, kind, language),
         )
         if cursor.rowcount == 0:

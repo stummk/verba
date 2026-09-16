@@ -10,8 +10,8 @@ prompt is derived from their corrections in the background, proposed to them,
 and — once accepted — applied to later recordings. The user never has to write a
 prompt, and can still overrule everything.
 
-Status: **planned, not implemented.** Phases are meant to ship one at a time;
-each is useful on its own.
+Status: **phase 1 done, the rest planned.** Phases are meant to ship one at a
+time; each is useful on its own.
 
 
 ## Design decisions
@@ -63,18 +63,26 @@ the first few recordings in a fresh installation otherwise decide everything,
 and a manual "discard all" is a poor remedy for something noticed at file 12.
 
 
-## Phase 1 — Capture the delta
+## Phase 1 — Capture the delta ✔
 
 Nothing is learned yet. Worth shipping on its own: it is the basis for a
 "changed by you" marker in the editor and for an undo.
 
-**Migration** (additive, in `db._migrate`):
+**Migration** (additive, in `_SCHEMA` and `db._migrate`):
 
 ```
 derived_texts.model_content  TEXT NOT NULL DEFAULT ''
 derived_texts.edited_at      TEXT NOT NULL DEFAULT ''
 segments.text_original       TEXT NOT NULL DEFAULT ''
+segments.edited_at           TEXT NOT NULL DEFAULT ''
 ```
+
+`segments.edited_at` is not symmetry for its own sake. Without it there is no
+way to tell a row the transcription wrote from one the user typed
+(`create_segment`, for a passage the recognition missed) — and correcting the
+latter would keep the user's own first wording as "what the transcription
+heard". A user-authored row carries `edited_at` from the start, so no freeze
+ever happens on it.
 
 **Freeze on the first edit only.** SQLite evaluates `SET` expressions against
 the old row, so one statement does it — in `pipeline.update_text_content` and,
@@ -88,15 +96,33 @@ UPDATE derived_texts SET
 WHERE file_id = ? AND kind = ? AND language = ?
 ```
 
-**Clear it where the model writes again.** `pipeline.save_text` resets both
-columns — a fresh model run carries no user edit. The same applies wherever
-segments are rewritten: transcription, and `services/diarize.py`, which splits
-segments at speaker changes. A `text_original` left on a segment that was since
-cut in half is not a delta, it is noise.
+A speaker rename is not a text correction and must leave both markers alone —
+otherwise the frozen "before" equals the "after" and no real correction of
+that segment can ever be recorded afterwards.
 
-**Tests** (`tests/test_learning_capture.py`): the first edit freezes the model
-version, a second edit leaves it alone, a re-run of the cleanup clears it,
-diarization discards it.
+**Clear it where the model writes again.** `pipeline.save_text` resets both
+columns explicitly — a fresh model run carries no user edit, and pairing the
+new text with an older model's version of a text that no longer exists would
+be a delta between two strangers. On the segment side nothing had to be added:
+everything that rewrites a transcript wholesale (`whisper._store_segments`,
+`transcripts.replace_all_segments`, and the splitting half of
+`apply_speaker_plan`) deletes and re-inserts, so the rows come back with empty
+markers by construction. The single-piece path of `apply_speaker_plan` writes
+only the speaker, so a correction there stays valid. The tests pin all of it,
+which is what would catch a future refactor to updating in place.
+
+**Tests** (`tests/test_learning_capture.py`, 14): the first edit freezes the
+model version, a second leaves it alone, translations are tracked per
+language, a re-run clears it, a speaker rename and a moved segment do not
+count, a user-typed segment claims no transcription, re-transcribing and a
+speaker split discard the pair, and an existing database gains the columns
+with its rows intact.
+
+**Known gap for phase 2:** a re-transcribed selection
+(`POST /files/{id}/transcribe-range`) reaches the backend as an ordinary
+segment edit, so it is captured as a correction although both sides are
+machine-written. Phase 2 has to filter those out when deriving vocabulary, or
+the route needs to say where the text came from.
 
 **Done when:** for every corrected text and segment, both versions are on disk.
 
