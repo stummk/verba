@@ -885,11 +885,15 @@ away instead of being repaired afterwards. The AI processing and the
 translation are given the same list, so a spelling stays the same across
 several recordings.
 
-**Only the processed text is learned from** — the *cleanup* and the
-*translations*, never the segments. In the transcript you retype what you
-think you heard; in the processed text you read carefully and put a name
-right. Without a configured language model there is no processed text, and so
-nothing to learn from.
+**Mostly the processed text is learned from** — the *cleanup* and the
+*translations*. In the transcript you retype what you think you heard; in the
+processed text you read carefully and put a name right.
+
+**The transcript itself counts only while the file has no cleanup.** If you
+work without a language model there never is one — the segments are then the
+only source, and the corrections in them count. As soon as a cleanup exists
+the transcript falls silent: nothing is counted twice, because the cleanup is
+written *from* those segments and already carries a spelling corrected there.
 
 **What is learned and what is not.** Only the replacement of *one* word by
 *one* other, and only where the corrected word still looks like the original:

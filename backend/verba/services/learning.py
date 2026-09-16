@@ -5,10 +5,16 @@ and the only one that needs no LLM at all. Phase 1 kept what a text looked
 like before the user changed it; here that pair is read word by word.
 
 What is read are the corrections of the *processed* text — the cleanup and
-the translations — never those of the transcript itself. A segment is where
-somebody retypes what they think they heard; the processed text is where they
-read carefully and fix a name. One source, then, and two things learned from
-it: the spellings here, the rules in phase 3.
+the translations. A segment is where somebody retypes what they think they
+heard; the processed text is where they read carefully and fix a name, and
+that is also where the rules of phase 3 come from, so there is one source to
+reason about rather than two.
+
+The transcript is the fallback, and only that: it teaches while the file has
+no cleanup at all, because an installation without a language model never
+gets one and would otherwise learn nothing — no spellings, and so no hotwords
+for the next transcription. The moment a cleanup exists it falls silent
+(`note_segment_correction`).
 
 Only 1:1 word replacements are taken, and only where the corrected word still
 *looks* like the one it replaces. A mishearing does — "Jahwe" → "Yahweh",
@@ -172,6 +178,37 @@ def note_text_correction(
         for source, target in pairs:
             _record(conn, owner_id, language, source, target)
     return len(pairs)
+
+
+def has_processed_text(file_id: int) -> bool:
+    """Whether this file has a cleanup to learn from instead of its segments."""
+    with db.get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM derived_texts WHERE file_id = ? AND kind = 'cleanup' "
+            "AND trim(content) != '' LIMIT 1",
+            (file_id,),
+        ).fetchone()
+    return row is not None
+
+
+def note_segment_correction(file_row: dict[str, Any] | None, before: str, after: str) -> int:
+    """Record what one correction of the transcript says — where it is all there is.
+
+    The processed text is the better source and is preferred wherever it
+    exists: a segment is where somebody retypes what they think they heard,
+    the cleanup is where they read carefully and fix a name. But an
+    installation without a language model never has a cleanup, and without
+    this it would learn nothing at all — no spellings, and so no hotwords for
+    the next transcription, which is the most useful thing here.
+
+    So the transcript teaches exactly while there is nothing better, and falls
+    silent the moment a cleanup for the file exists. Nothing is counted twice
+    that way: the cleanup is written *from* these segments, so a spelling
+    already corrected here arrives in it correct.
+    """
+    if file_row is None or has_processed_text(file_row["id"]):
+        return 0
+    return note_text_correction(file_row, before, after)
 
 
 def _record(conn, owner_id: int, language: str, source: str, target: str) -> None:

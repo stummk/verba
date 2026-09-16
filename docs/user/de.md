@@ -928,11 +928,16 @@ Name wird dann gleich richtig gehört, statt hinterher repariert zu werden. Die
 KI-Aufbereitung und die Übersetzung bekommen dieselbe Liste, damit eine
 Schreibweise über mehrere Aufnahmen hinweg gleich bleibt.
 
-**Gelernt wird ausschließlich aus dem aufbereiteten Text** — aus der
-*Bereinigung* und den *Übersetzungen*, nie aus den Segmenten. Im Transkript
-tippt man nach, was man gehört zu haben glaubt; im aufbereiteten Text liest
-man in Ruhe und setzt einen Namen richtig. Ohne eingerichtetes Sprachmodell
-gibt es keinen aufbereiteten Text und damit auch nichts zu lernen.
+**Gelernt wird vor allem aus dem aufbereiteten Text** — aus der *Bereinigung*
+und den *Übersetzungen*. Im Transkript tippt man nach, was man gehört zu haben
+glaubt; im aufbereiteten Text liest man in Ruhe und setzt einen Namen richtig.
+
+**Das Transkript selbst zählt nur, solange es für die Datei keine Bereinigung
+gibt.** Wer ohne Sprachmodell arbeitet, hat nie eine — dann sind die Segmente
+die einzige Quelle, und die Korrekturen darin zählen. Sobald eine Bereinigung
+existiert, schweigt das Transkript: doppelt gezählt wird nichts, denn die
+Bereinigung entsteht ja *aus* diesen Segmenten und bringt eine dort schon
+korrigierte Schreibweise bereits richtig mit.
 
 **Was gelernt wird und was nicht.** Nur der Austausch *eines* Wortes gegen
 *ein* anderes, und nur wenn das korrigierte Wort dem ursprünglichen noch

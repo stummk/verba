@@ -149,16 +149,18 @@ Russian name is handed to a German recording as a hotword, which actively
 makes the transcription worse. It comes from `files.language`; a term whose
 recording declared none stays eligible everywhere.
 
-**Read from the processed text only.** The corrections of the cleanup and the
-translations, never those of the segments — a segment is where somebody
-retypes what they think they heard, the processed text is where they read
-carefully and fix a name. So the vocabulary and the rules of phase 3 read the
-same source, which is one place to reason about rather than two, and the
-re-transcribed-selection leak is gone with the path it came from.
+**The processed text first, the transcript as a fallback.** The corrections
+of the cleanup and the translations are the source — a segment is where
+somebody retypes what they think they heard, the processed text is where they
+read carefully and fix a name — and the rules of phase 3 read the same one, so
+there is one place to reason about rather than two.
 
-Its price, and it is not small: an installation without a language model has
-no processed text, and therefore learns nothing at all — including the
-Whisper hotwords, which are the best thing in this phase.
+Reading *only* that was the first cut, and it cost too much: an installation
+without a language model never has a processed text and would learn nothing at
+all, hotwords included. So the transcript teaches exactly while the file has
+no cleanup (`learning.note_segment_correction`) and falls silent the moment
+one exists. Nothing is counted twice: the cleanup is written *from* those
+segments, so a spelling already corrected there arrives in it correct.
 
 **Derivation:** `difflib.SequenceMatcher` over the token lists of the text
 before and after one save, per edit rather than against `model_content`. The
@@ -210,14 +212,13 @@ forget.
 **Done when:** a name corrected in file 1 is spelled correctly by Whisper in
 file 2.
 
-**Closed, once the source moved:** a re-transcribed selection
-(`POST /files/{id}/transcribe-range`) used to reach the backend as an ordinary
-segment edit and be learned from although both sides were machine-written.
-Nothing reads segment edits any more, so the path is gone rather than
-filtered. `segments.text_original` and `segments.edited_at` stay: nothing
-learns from them, but they are the only record of what the recognition itself
-heard, and the basis for a "changed by you" marker whenever somebody wants
-one.
+**Known gap, narrowed:** a re-transcribed selection
+(`POST /files/{id}/transcribe-range`) reaches the backend as an ordinary
+segment edit, so on a file that has no cleanup yet it is still learned from
+although both sides are machine-written. It no longer touches a file that has
+been processed, and the similarity filter drops the rewordings, but the route
+should say where the text came from. That needs the editor to send it, which
+is why it is still here.
 
 
 ## Phase 3 — Distil rules ✔

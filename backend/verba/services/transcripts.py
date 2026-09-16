@@ -89,10 +89,10 @@ def update_segment(segment_id: int, changes: dict[str, Any]) -> dict[str, Any] |
     freeze a "before" that equals the "after" and no real correction could
     ever be recorded afterwards.
 
-    Nothing learns from that pair: what a correction teaches is read off the
-    processed text, never off the transcription (docs/LEARNING.md, phase 2).
-    It is kept because it is the only record of what the recognition itself
-    heard.
+    That pair teaches the spellings only while the file has no cleanup — the
+    processed text is the better source and is preferred wherever it exists
+    (`learning.note_segment_correction`). It is kept either way: it is the
+    only record of what the recognition itself heard.
     """
     allowed = {
         k: v for k, v in changes.items() if k in ("text", "speaker", "start_s", "end_s", "words")
@@ -118,9 +118,36 @@ def update_segment(segment_id: int, changes: dict[str, Any]) -> dict[str, Any] |
         if cursor.rowcount == 0:
             return None
     segment = get_segment(segment_id)
+    if segment is not None and "text" in allowed:
+        _learn_from(before, segment)
     if segment is not None:
         sync_after_change(segment["file_id"])
     return segment
+
+
+def _learn_from(before: dict[str, Any], after: dict[str, Any]) -> None:
+    """Let the correction teach the spellings, where it is the only source.
+
+    Only for a row a machine wrote: `text_original` is empty on one the user
+    typed themselves (`create_segment`), and their own second thoughts about
+    their own wording are not a correction of anything. Whether the transcript
+    gets to teach at all is `learning.note_segment_correction`'s decision —
+    the processed text is preferred wherever there is one.
+
+    Never lets its own failure reach the edit: the text is saved either way,
+    and a word that could not be remembered is worth a log line, not a lost
+    correction.
+    """
+    if not after["text_original"]:
+        return
+    from . import learning, workspace
+
+    try:
+        learning.note_segment_correction(
+            workspace.get_file(after["file_id"]), before["text"], after["text"]
+        )
+    except Exception:  # noqa: BLE001 — auxiliary work, never the user's problem
+        logger.warning("could not learn from a segment correction", exc_info=True)
 
 
 def delete_segment(segment_id: int) -> bool:

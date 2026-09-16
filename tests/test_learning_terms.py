@@ -167,7 +167,7 @@ def test_nothing_is_learned_while_the_feature_is_off(file_row):
     assert terms() == []
 
 
-# ── the hook: the processed text, never the transcription ────────────
+# ── the hook: the processed text, the transcript only as a fallback ──
 
 
 def test_correcting_the_cleanup_teaches_the_spelling(file_row):
@@ -175,16 +175,47 @@ def test_correcting_the_cleanup_teaches_the_spelling(file_row):
     assert [(t["source"], t["target"]) for t in terms()] == [("Jahwe", "Yahweh")]
 
 
-def test_correcting_a_segment_teaches_nothing(file_row):
-    """A segment is where somebody retypes what they think they heard. What a
-    correction teaches is read off the processed text instead."""
+def test_a_segment_teaches_while_there_is_no_cleanup(file_row):
+    """Without a language model there is never a processed text, and without
+    this the installation would learn nothing at all."""
+    segment_id = add_segment(file_row["id"], "Und Jahwe sprach zur Gemeinde")
+    transcripts.update_segment(segment_id, {"text": "Und Yahweh sprach zur Gemeinde"})
+    assert [(t["source"], t["target"]) for t in terms()] == [("Jahwe", "Yahweh")]
+
+
+def test_a_segment_falls_silent_once_a_cleanup_exists(file_row):
+    """From then on the processed text is the source: a segment is where
+    somebody retypes what they think they heard."""
+    pipeline.save_text(file_row["id"], "cleanup", "Und Jahwe sprach zur Gemeinde")
     segment_id = add_segment(file_row["id"], "Und Jahwe sprach zur Gemeinde")
     transcripts.update_segment(segment_id, {"text": "Und Yahweh sprach zur Gemeinde"})
     assert terms() == []
 
 
-def test_the_transcription_is_still_kept_for_the_record(file_row):
-    """Nothing reads it, but it is the only record of what was heard."""
+def test_an_empty_cleanup_is_no_alternative(file_row):
+    """A failed run leaves a row behind; it is not a text to learn from."""
+    pipeline.save_text(file_row["id"], "cleanup", "   ")
+    segment_id = add_segment(file_row["id"], "Und Jahwe sprach")
+    transcripts.update_segment(segment_id, {"text": "Und Yahweh sprach"})
+    assert len(terms()) == 1
+
+
+def test_a_segment_the_user_typed_teaches_nothing(file_row):
+    """Their own second thoughts about their own wording correct nothing."""
+    segment = transcripts.create_segment(file_row["id"], 0.0, 5.0, text="Jahwe sprach")
+    transcripts.update_segment(segment["id"], {"text": "Yahweh sprach"})
+    assert terms() == []
+
+
+def test_a_speaker_rename_teaches_nothing(file_row):
+    segment_id = add_segment(file_row["id"], "Und Jahwe sprach")
+    transcripts.update_segment(segment_id, {"speaker": "Sprecher 1"})
+    assert terms() == []
+
+
+def test_the_transcription_is_kept_either_way(file_row):
+    """Even where it taught nothing: it is the only record of what was heard."""
+    pipeline.save_text(file_row["id"], "cleanup", "Vom Modell.")
     segment_id = add_segment(file_row["id"], "Und Jahwe sprach")
     transcripts.update_segment(segment_id, {"text": "Und Yahweh sprach"})
     assert transcripts.get_segment(segment_id)["text_original"] == "Und Jahwe sprach"
