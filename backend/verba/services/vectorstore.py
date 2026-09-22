@@ -533,13 +533,27 @@ def _delete_file_chunks(conn: sqlite3.Connection, file_id: int) -> None:
 
 
 def remove_file(file_id: int) -> None:
-    """Drop a file's index entries immediately (called on file deletion)."""
+    """Drop a file's index entries immediately (called on file deletion).
+
+    The extension is asked for here, never required: `find_spec` only says the
+    package lies in site-packages, and importing it pulls numpy in — an
+    installation whose site-packages is damaged raises there, which used to
+    turn every deletion of a file or a project into a 500. Deleting a
+    transcript must not depend on the search index being in working order, so
+    a refusal leaves the vectors behind and takes the chunks anyway; chunk ids
+    are never reused (AUTOINCREMENT), so an orphaned vector can match nothing,
+    and the next reindex drops the table whole.
+    """
     if find_spec("sqlite_vec") is not None:
-        with _vec_conn() as conn:
-            _delete_file_chunks(conn, file_id)
-    else:  # without the extension there is no vec table — chunks + FTS suffice
-        with db.get_conn() as conn:
-            conn.execute("DELETE FROM chunks WHERE file_id = ?", (file_id,))
+        try:
+            with _vec_conn() as conn:
+                _delete_file_chunks(conn, file_id)
+            return
+        except Exception:
+            logger.warning("sqlite-vec unusable, deleting chunks without it", exc_info=True)
+    # without the extension there is no vec table — chunks + FTS suffice
+    with db.get_conn() as conn:
+        conn.execute("DELETE FROM chunks WHERE file_id = ?", (file_id,))
 
 
 def remove_project(project_id: int) -> None:

@@ -147,6 +147,18 @@ def test_search_group_covers_both_search_modules():
     assert set(group.import_names) == {"sentence_transformers", "sqlite_vec"}
 
 
+def test_transcribe_group_covers_numpy():
+    """What the checklist checks has to be what a transcription needs.
+
+    faster-whisper brings numpy along, so a numpy left as rubble by a pip run
+    that was cut short keeps `faster_whisper` findable while the recognition
+    cannot run — and the user hears of it as "module 'numpy' has no attribute
+    'ndarray'", once per file. The rubble itself is caught above.
+    """
+    [group] = [g for g in setup_check.FEATURE_GROUPS if g.key == "transcribe"]
+    assert set(group.import_names) == {"faster_whisper", "numpy"}
+
+
 def test_import_verification_covers_every_module(monkeypatch):
     checked: list[str] = []
 

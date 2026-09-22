@@ -318,6 +318,25 @@ def test_delete_project_removes_index_entries(tmp_path):
     assert vectorstore.status()["chunk_count"] == 0
 
 
+def test_a_broken_sqlite_vec_does_not_block_deletion(tmp_path, monkeypatch):
+    """A damaged site-packages must not make a transcript undeletable.
+
+    `find_spec` finds the package, importing it raises — that is what a
+    half-installed numpy looks like, and it used to turn every delete of a
+    file or a project into a 500.
+    """
+    file_row, project = make_done_file(tmp_path, segments=(("", "Unloeschbar.", 0, 3),))
+    vectorstore.index_file(file_row["id"])
+
+    def broken(*args, **kwargs):
+        raise PermissionError(13, "Permission denied", "numpy/__init__.py")
+
+    monkeypatch.setattr(vectorstore, "_vec_conn", broken)
+    workspace.delete_project(project["id"])
+
+    assert vectorstore.status()["chunk_count"] == 0
+
+
 def test_maybe_enqueue_index_dedupes_and_requires_done(tmp_path):
     file_row, _ = make_done_file(tmp_path)
     job = vectorstore.maybe_enqueue_index(file_row["id"], session_id="s1")

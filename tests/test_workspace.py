@@ -116,6 +116,38 @@ def test_delete_file_removes_generated_transcript_files_only(tmp_path):
     assert (exports_dir / "other.pdf").exists()
 
 
+def test_a_locked_file_does_not_block_deletion(tmp_path, monkeypatch):
+    """Windows refuses to delete an open file — the transcript goes anyway.
+
+    The audio response of a recording the editor was playing is enough to
+    hold the file, and a deletion that answers 500 over its own leftovers
+    leaves the user with a transcript they cannot get rid of.
+    """
+    source = tmp_path / "gesperrt.mp3"
+    source.write_bytes(b"data")
+    project = workspace.create_project("Gesperrt")
+    [file_row] = workspace.import_paths(project, [str(source)])
+    copy = workspace.file_path(file_row)
+
+    transcripts_dir = Path(project["workspace"]) / "transcripts"
+    transcripts_dir.mkdir(parents=True, exist_ok=True)
+    (transcripts_dir / "gesperrt.json").write_text('{"segments": []}', encoding="utf-8")
+
+    real_unlink = Path.unlink
+
+    def refuse_the_audio(self, missing_ok=False):
+        if self.suffix == ".mp3":
+            raise PermissionError(32, "The process cannot access the file")
+        return real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", refuse_the_audio)
+    workspace.delete_file(file_row["id"])
+
+    assert workspace.get_file(file_row["id"]) is None
+    assert copy.exists()  # left behind, and said so in the log
+    assert not (transcripts_dir / "gesperrt.json").exists()  # the rest still goes
+
+
 def test_delete_project_removes_project_files_and_folder_by_default():
     project = workspace.create_project("Weg")
     source = Path(project["workspace"]).parent / "source.mp3"

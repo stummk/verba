@@ -162,10 +162,14 @@ def remove_original(file_row: dict[str, Any]) -> None:
     a cut that did not get written, and when the file itself is deleted. It is
     a full copy of the recording, so leaving it behind would double the
     workspace for every recording that was ever cut.
+
+    A copy Windows will not let go of stays on disk all the same — none of
+    the three callers can do anything about it, and every one of them has a
+    user waiting for something else to finish.
     """
     audio, segments_file = _original_paths(file_row)
-    audio.unlink(missing_ok=True)
-    segments_file.unlink(missing_ok=True)
+    workspace.unlink_if_possible(audio)
+    workspace.unlink_if_possible(segments_file)
     with suppress(OSError):
         audio.parent.rmdir()  # empty once the last backup of the folder is gone
     with db.get_conn() as conn:

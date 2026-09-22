@@ -90,6 +90,12 @@ FEATURE_GROUPS: list[FeatureGroup] = [
         label="Transkription (faster-whisper)",
         packages=["faster-whisper>=1.0"],
         import_name="faster_whisper",
+        # numpy comes with faster-whisper and is asked after all the same: a
+        # half-installed one leaves faster_whisper findable and the
+        # transcription broken, and the checklist has to say so. Otherwise
+        # the first word of it the user hears is "module 'numpy' has no
+        # attribute 'ndarray'", in the middle of a recognition.
+        extra_imports=["numpy"],
     ),
     FeatureGroup(
         key="export",

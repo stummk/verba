@@ -479,6 +479,23 @@ def save_upload(project: dict[str, Any], filename: str, stream: BinaryIO) -> dic
     return register_file(project, target)
 
 
+def unlink_if_possible(path: Path) -> None:
+    """Remove a file, and leave one that is locked where it is.
+
+    Windows refuses to delete a file that is still open somewhere, and the
+    audio response of a recording the editor was just playing is enough for
+    that. A deletion the user asked for must not fail over its own leftovers:
+    the row goes either way, and what could not be removed stays behind as a
+    stray file, said once in the log. Deleting a whole project has always
+    worked this way (`shutil.rmtree(..., ignore_errors=True)`) — this is the
+    same promise for a single file.
+    """
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        logger.warning("could not delete %s, leaving it behind", path, exc_info=True)
+
+
 def _delete_generated_file_artifacts(file_row: dict[str, Any]) -> None:
     """Remove transcript and derived-text files generated for one file.
 
@@ -501,7 +518,7 @@ def _delete_generated_file_artifacts(file_row: dict[str, Any]) -> None:
                 and name.startswith(f"{stem}.")
                 and not name.startswith(f"{stem}.export.")
             ):
-                candidate.unlink(missing_ok=True)
+                unlink_if_possible(candidate)
 
 
 def delete_file(file_id: int) -> None:
@@ -525,8 +542,7 @@ def delete_file(file_id: int) -> None:
     remove_file(file_id)  # search index entries disappear immediately
     with db.get_conn() as conn:
         conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
-    if path.exists():
-        path.unlink()
+    unlink_if_possible(path)
     maintenance.request_vacuum()
 
 
