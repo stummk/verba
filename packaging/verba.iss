@@ -105,11 +105,12 @@ end;
 
 function ChosenDataDir: String;
 begin
-  { The page where there is one, the answer of the install before otherwise.
-    An update runs Setup silently and must never quietly move an installation
-    back to %LOCALAPPDATA% — [InstallDelete] wipes {app} first, so the marker
-    is written from scratch every time and this is the only thing that
-    remembers. }
+  // The page where there is one, the answer of the install before otherwise.
+  // An update runs Setup silently and must never quietly move an installation
+  // back to %LOCALAPPDATA% - [InstallDelete] wipes the program directory
+  // first, so the marker is written from scratch every time and this is the
+  // only thing that remembers. A brace comment would end at the first }, so
+  // a constant like {app} may not appear in one.
   if Assigned(DataDirPage) then
     Result := Trim(DataDirPage.Values[0])
   else
