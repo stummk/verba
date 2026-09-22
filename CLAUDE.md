@@ -38,8 +38,10 @@ report that the other platform is covered by CI.
 - `backend/verba/` — entire backend
   - `config.py` — settings (pydantic) ↔ `data/settings.json`; `auth.enabled` is
     backend-owned (only `/api/auth` writes it, never the settings form);
-    `base_data_dir()` (env/frozen/repo) belongs to the installation and keeps
-    settings.json, site-packages, tools and the models; `data_dir()` holds the
+    `base_data_dir()` (env / the directory the Windows setup was given and
+    wrote next to the program as `data-dir.txt` / frozen / repo) belongs to
+    the installation and keeps settings.json, site-packages, tools and the
+    models; `data_dir()` holds the
     database and the logs and is configurable (`general.data_dir`), answering
     with `general.data_dir_active` — where the data is right now; path resolution
     (configured directories are normalised to absolute paths; workspaces,

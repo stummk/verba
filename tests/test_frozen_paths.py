@@ -147,6 +147,66 @@ def test_run_internal_task_imports_a_module():
     assert run.run_internal_task([run.INTERNAL_IMPORT_FLAG, "json"]) == 0
 
 
+def test_the_setup_can_point_the_data_directory_elsewhere(tmp_path, monkeypatch):
+    """The Windows installer asks for the directory and leaves it next to the exe.
+
+    That answer is the way out of a profile whose AppData the installation
+    cannot use — no environment variable, no registry key, just a file that
+    belongs to this installation and is there at every logon.
+    """
+    program = tmp_path / "program"
+    program.mkdir()
+    target = tmp_path / "anderswo"
+    (program / config.DATA_DIR_MARKER).write_text(f"{target}\n", encoding="utf-8")
+    monkeypatch.setattr(sys, "executable", str(program / "Verba.exe"))
+    monkeypatch.setattr(config, "FROZEN", True)
+    monkeypatch.delenv("VERBA_DATA_DIR", raising=False)
+    monkeypatch.delenv("TRANSKRIPTOR_DATA_DIR", raising=False)
+
+    assert config.chosen_data_dir() == target
+    assert config.base_data_dir() == target
+
+
+def test_an_unanswered_marker_leaves_the_per_user_directory_alone(tmp_path, monkeypatch):
+    """An empty file is not a choice — and a missing one never was."""
+    program = tmp_path / "program"
+    program.mkdir()
+    monkeypatch.setattr(sys, "executable", str(program / "Verba.exe"))
+    assert config.chosen_data_dir() is None
+
+    (program / config.DATA_DIR_MARKER).write_text("   \n", encoding="utf-8")
+    assert config.chosen_data_dir() is None
+
+
+def test_the_environment_still_wins_over_the_installers_answer(tmp_path, monkeypatch):
+    """Tests and a server start pass VERBA_DATA_DIR, and that has to keep winning."""
+    program = tmp_path / "program"
+    program.mkdir()
+    (program / config.DATA_DIR_MARKER).write_text(str(tmp_path / "vom-setup"), encoding="utf-8")
+    monkeypatch.setattr(sys, "executable", str(program / "Verba.exe"))
+    monkeypatch.setattr(config, "FROZEN", True)
+    monkeypatch.setenv("VERBA_DATA_DIR", str(tmp_path / "aus-der-umgebung"))
+
+    assert config.base_data_dir() == tmp_path / "aus-der-umgebung"
+
+
+def test_the_installer_and_the_app_agree_on_the_marker():
+    """Nothing but this test ties the setup script to `config.py`.
+
+    The installer writes the chosen directory next to the program and the app
+    reads it from there; a renamed file would go unnoticed until an
+    installation quietly used the wrong directory. The two `runasoriginaluser`
+    flags are here for the same reason — Setup is elevated, and a Verba it
+    starts must not be, or the packages it installs land in the user's data
+    directory as somebody else.
+    """
+    script = (config.PROJECT_ROOT / "packaging" / "verba.iss").read_text(encoding="utf-8-sig")
+    assert f"{{app}}\\{config.DATA_DIR_MARKER}" in script
+    assert "Permissions: users-modify" in script
+    starts = [line for line in script.splitlines() if line.startswith("Filename:")]
+    assert starts and all("runasoriginaluser" in line for line in starts)
+
+
 def test_frozen_data_dir_is_per_user():
     path = config._frozen_data_dir()
     assert "Verba" in str(path) or "verba" in str(path)

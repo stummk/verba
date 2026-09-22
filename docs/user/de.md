@@ -9,9 +9,14 @@ optionaler KI-Bereinigung/Übersetzung, PDF-Export, semantischer Suche und einer
 **Fertige Pakete** (Releases-Seite des Projekts):
 
 - **Windows:** `Verba-Setup-….exe` — Doppelklick, Assistent, Startmenü-Eintrag.
-  Ein Update installiert Verba selbst (siehe *Aktualisieren*); der neue
-  Installer über die bestehende Installation funktioniert weiterhin. Die Daten
-  liegen pro Nutzer und überstehen Updates.
+  Der Assistent fragt nach zwei Ordnern: dem Programmordner und dem
+  **Datenordner**, in dem Aufnahmen, Transkripte, Datenbank, Modelle und
+  nachinstallierte Komponenten liegen (voreingestellt `%LOCALAPPDATA%\Verba`).
+  Der Datenordner übersteht Updates und die Deinstallation. Ein vorhandener
+  wird nicht verschoben — wer bei einer neuen Installation einen anderen
+  wählt, fängt dort neu an. Ein Update installiert Verba selbst (siehe
+  *Aktualisieren*) und behält den gewählten Datenordner; der neue Installer
+  über die bestehende Installation funktioniert weiterhin.
 - **Linux-Desktop:** `Verba-….AppImage` — ausführbar machen und starten.
 - **Linux-Server:** `verba-server-….zip` entpacken und `sudo ./deploy/install.sh`
   ausführen — richtet Dienst (systemd) und Autostart ein; Vorlagen für

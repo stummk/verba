@@ -3,7 +3,9 @@
 The *base* directory is resolved in this order:
 1. VERBA_DATA_DIR environment variable (also used by tests)
 2. TRANSKRIPTOR_DATA_DIR (legacy fallback for pre-rename installations)
-3. <project root>/data
+3. installed build: the directory the setup was given (`data-dir.txt` next to
+   the program), and without one the per-user directory of the platform
+4. <project root>/data
 
 It belongs to the installation and never moves: settings.json (the file that
 says where everything else goes), `site-packages` (frozen builds put it on
@@ -40,6 +42,12 @@ logger = logging.getLogger(__name__)
 FROZEN = getattr(sys, "frozen", False)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
+# Where an installer records the data directory it was told to use. Next to
+# the program, because that is what the answer belongs to: it is there at
+# every logon and for every user of this installation, and the setup writes
+# it again after an update, from the answer it remembered.
+DATA_DIR_MARKER = "data-dir.txt"
+
 
 def bundle_root() -> Path:
     """Directory holding the read-only bundled resources (frontend/, docs/).
@@ -52,9 +60,37 @@ def bundle_root() -> Path:
     return PROJECT_ROOT
 
 
+def chosen_data_dir() -> Path | None:
+    """The data directory an installer was given, or None if it was given none.
+
+    An empty or unreadable marker means "not chosen" and leaves the per-user
+    default alone — a directory nobody picked is never worse than one nobody
+    can read.
+    """
+    try:
+        raw = (Path(sys.executable).resolve().parent / DATA_DIR_MARKER).read_text(
+            encoding="utf-8-sig"
+        )
+    except OSError:
+        return None
+    chosen = raw.strip()
+    return Path(chosen) if chosen else None
+
+
 def _frozen_data_dir() -> Path:
     """Per-user data directory for installed (PyInstaller) builds — the install
-    location is read-only for normal users, so runtime data must live here."""
+    location is read-only for normal users, so runtime data must live here.
+
+    Unless the installation was told where to put it: the Windows setup asks
+    for the directory, creates it so the user may write there, and leaves the
+    answer next to the program. That is the way out of a profile whose
+    AppData the installation cannot use — an inherited "deny" on
+    `%LOCALAPPDATA%` makes every package pip writes unreadable, and no
+    amount of reinstalling fixes a folder.
+    """
+    chosen = chosen_data_dir()
+    if chosen is not None:
+        return chosen
     system = platform.system()
     if system == "Windows":
         base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))

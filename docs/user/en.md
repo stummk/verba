@@ -9,9 +9,14 @@ transcription API.
 **Ready-made packages** (project releases page):
 
 - **Windows:** `Verba-Setup-….exe` — double-click, wizard, start menu entry.
-  Verba installs an update itself (see *Updating*); running the newer
-  installer over the existing installation still works. Data is stored per
-  user and survives updates.
+  The wizard asks for two folders: the program folder and the **data folder**
+  holding recordings, transcripts, the database, the models and the
+  components installed later on (`%LOCALAPPDATA%\Verba` by default). The data
+  folder survives updates and uninstalling. An existing one is not moved —
+  picking a different one for a new installation starts afresh there. Verba
+  installs an update itself (see *Updating*) and keeps the chosen data
+  folder; running the newer installer over the existing installation still
+  works.
 - **Linux desktop:** `Verba-….AppImage` — make executable and run.
 - **Linux server:** unpack `verba-server-….zip` and run
   `sudo ./deploy/install.sh` — sets up the systemd service and autostart;
