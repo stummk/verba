@@ -41,7 +41,7 @@ def create_key(name: str) -> dict[str, Any]:
         row = conn.execute(
             f"SELECT {KEY_COLUMNS} FROM api_keys WHERE id = ?", (cursor.lastrowid,)
         ).fetchone()
-    result = dict(row)
+    result = db.row_to_dict(row)
     result["key"] = token  # shown exactly once — never retrievable again
     return result
 
@@ -76,7 +76,7 @@ def verify_key(token: str) -> dict[str, Any] | None:
         conn.execute(
             "UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?", (row["id"],)
         )
-    return dict(row)
+    return db.row_to_dict(row)
 
 
 # ── uploads ───────────────────────────────────────────────────────────

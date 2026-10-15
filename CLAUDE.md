@@ -291,6 +291,15 @@ report that the other platform is covered by CI.
 - **Runtime data** only under `data/` (gitignored) or the configured
   workspace directory. Never write into the repo.
 - Settings changes always go through the `config.py` models (validation), never raw JSON.
+- **A column whose name ends in `_at` holds a UTC instant**, written by
+  `datetime('now')` and left naive on disk, so the SQL comparisons stay string
+  comparisons. `db.row_to_dict`/`rows_to_dicts` mark it on the way out
+  (`2026-10-14T14:59:48Z`, `db.as_utc`), so a new timestamp column is right
+  from the start and no display has to guess the convention; `formatStamp` in
+  `frontend/js/dom.js` only renders it. A timestamp that reaches an answer past
+  that gate — a `meta` value such as the search index stand — marks itself
+  (`tests/test_timestamps.py`). The one `_at` that is no instant is
+  `files.recorded_at`: the calendar day a recording was made.
 - The session cookie is marked `Secure` from `request.url.scheme`, which uvicorn
   rewrites from `X-Forwarded-Proto` — TLS terminated at a reverse proxy is
   therefore recognised. That header is trusted from `127.0.0.1` only

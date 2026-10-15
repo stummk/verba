@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import math
 import re
 import threading
@@ -73,7 +74,14 @@ def test_index_file_writes_chunks_fts_and_vectors(tmp_path):
     assert status["files_indexed"] == 1
     assert status["chunk_count"] == 1
     assert status["index_models"] == [config.get_settings().search.embedding_model]
-    assert status["last_index"]
+    # A marked UTC instant, like every other stamp the backend hands out
+    # (`db.as_utc`): a meta row misses the gate the table rows go through, so
+    # `status()` marks this one itself. The UI has only the string to go by,
+    # and an unmarked one used to be shown shifted by the reader's own offset.
+    written = datetime.datetime.fromisoformat(status["last_index"])
+    assert written.tzinfo == datetime.UTC
+    drift = abs((written - datetime.datetime.now(datetime.UTC)).total_seconds())
+    assert drift < 120, "the index stamp is not UTC"
 
     with vectorstore._vec_conn() as conn:
         chunk = conn.execute("SELECT * FROM chunks").fetchone()

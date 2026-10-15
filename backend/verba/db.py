@@ -7,6 +7,7 @@ startup via init_db().
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -504,9 +505,66 @@ def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
     )
 
 
+# ── timestamps ────────────────────────────────────────────────────────
+#
+# Every instant in this database is UTC: it is written by `datetime('now')`
+# and lands as "2026-10-14 14:59:48" — a form that says nowhere which zone it
+# means. A reader left to guess reads it as its own local time and is an hour
+# or two off, every time, so the marker is added on the way out: a row leaves
+# the backend as "2026-10-14T14:59:48Z" and is a point in time, not a form to
+# interpret.
+#
+# Deliberately not a list of columns — a list is one a new column is forgotten
+# from, and the next timestamp would start out wrong again. The rule is the
+# convention instead: a column whose name ends in `_at` holds an instant. The
+# shape has to match as well, which is what keeps `files.recorded_at` out of
+# it — that one ends in `_at` but is a calendar day ("2026-10-14"), the day a
+# recording was made rather than a moment, and every date filter, the sort and
+# the PDF header compare it as such.
+#
+# Nothing changes on disk. `sessions.expires_at` is still compared against
+# `datetime('now')` in SQL, where both sides are naive UTC and the comparison
+# is the string one it always was.
+_NAIVE_STAMP = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
+
+
+def as_utc(value: Any) -> Any:
+    """Mark a stored timestamp as the UTC instant it is.
+
+    Anything that is not the naive form above comes back untouched: the empty
+    string a column defaults to, NULL, a calendar day, and a stamp that
+    already carries its own zone — an older installation's search index was
+    written in local time with a "T", and reading *that* as UTC would move a
+    correct value instead of fixing a wrong one.
+    """
+    if isinstance(value, str) and _NAIVE_STAMP.match(value):
+        return f"{value[:10]}T{value[11:]}Z"
+    return value
+
+
+def _stamp_keys(keys: list[str]) -> list[str]:
+    return [key for key in keys if key.endswith("_at")]
+
+
 def row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
-    return dict(row) if row is not None else None
+    if row is None:
+        return None
+    result = dict(row)
+    for key in _stamp_keys(row.keys()):
+        result[key] = as_utc(result[key])
+    return result
 
 
 def rows_to_dicts(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
-    return [dict(row) for row in rows]
+    if not rows:
+        return []
+    # every row of one query carries the same columns, so which of them hold a
+    # timestamp is asked once and not per row — a transcript brings thousands
+    keys = _stamp_keys(rows[0].keys())
+    result = [dict(row) for row in rows]
+    if not keys:
+        return result  # a transcript's segments carry none, and there are thousands
+    for item in result:
+        for key in keys:
+            item[key] = as_utc(item[key])
+    return result

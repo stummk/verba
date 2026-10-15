@@ -520,7 +520,12 @@ def index_file(file_id: int) -> int:
                     "INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?, ?)",
                     (cursor.lastrowid, _serialize(embedding)),
                 )
-        db.set_meta(conn, LAST_INDEX_KEY, datetime.datetime.now().isoformat(timespec="seconds"))
+        # UTC, shaped like every other stamp in the database (`datetime('now')`):
+        # one convention, so the UI can read a timestamp without asking which
+        # of them wrote it
+        db.set_meta(
+            conn, LAST_INDEX_KEY, datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M:%S")
+        )
     return len(rows)
 
 
@@ -922,7 +927,8 @@ def status() -> dict[str, Any]:
         # an index from an older version answers, but knows neither the
         # cleaned-up text nor where inside a passage a match sits
         "stale_index": row["chunks"] > 0 and (row["version"] or 0) < INDEX_VERSION,
-        "last_index": last_index,
+        # a meta row, so it misses the gate every table row goes through
+        "last_index": db.as_utc(last_index),
     }
 
 

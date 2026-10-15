@@ -1,5 +1,7 @@
 // Small DOM helpers — no framework, no build step.
 
+import { currentLanguage } from "./i18n.js";
+
 export function html(strings, ...values) {
   const template = document.createElement("template");
   template.innerHTML = strings.reduce(
@@ -41,6 +43,32 @@ export function formatDuration(seconds) {
   const s = total % 60;
   return h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
            : `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/**
+ * A timestamp from the backend, in the reader's own time zone.
+ *
+ * Every instant leaves the backend as the point in time it is — UTC with the
+ * marker on it ("2026-10-14T14:59:48Z", `db.as_utc`) — so there is nothing to
+ * recognise here and nothing to guess: the string is parsed as what it says
+ * and rendered where the reader sits.
+ *
+ * A stamp an older installation wrote without that marker still parses, as
+ * the local time it was written in, which is what it meant back then.
+ * Anything that is no date at all is passed through rather than swallowed.
+ *
+ * @param {string} stamp an ISO timestamp as the backend sends it
+ * @returns {string} the local rendering, or the input if it is not a date
+ */
+export function formatStamp(stamp) {
+  if (!stamp) return "";
+  const text = String(stamp).trim();
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return text;
+  return parsed.toLocaleString(currentLanguage(), {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 }
 
 /**
