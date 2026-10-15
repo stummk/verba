@@ -74,3 +74,17 @@ def test_the_audio_backup_can_be_switched_off_in_the_settings(client):
 
     config.reset_cache()
     assert config.get_settings().general.audio_backup is False
+
+
+def test_the_thinking_budget_is_stored_and_bounded(client):
+    data = client.get("/api/settings").json()
+    assert data["llm"]["reasoning_budget"] == 8192  # a ceiling by default
+
+    data["llm"]["reasoning_budget"] = 2048
+    assert client.put("/api/settings", json=data).status_code == 200
+    config.reset_cache()
+    assert config.get_settings().llm.reasoning_budget == 2048
+
+    # 0 is "no ceiling"; a negative number is not a budget at all
+    data["llm"]["reasoning_budget"] = -1
+    assert client.put("/api/settings", json=data).status_code == 422

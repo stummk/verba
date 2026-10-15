@@ -631,7 +631,9 @@ def test_a_memory_refusal_reaches_the_llm_caller_as_an_llm_error(monkeypatch):
     monkeypatch.setattr(
         llamacpp,
         "ensure_running",
-        lambda: (_ for _ in ()).throw(hardware.InsufficientMemory("Kein Speicher frei.")),
+        lambda _settings=None: (_ for _ in ()).throw(
+            hardware.InsufficientMemory("Kein Speicher frei.")
+        ),
     )
 
     with pytest.raises(llm.LLMError, match="Kein Speicher frei"):

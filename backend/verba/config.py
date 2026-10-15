@@ -215,6 +215,12 @@ class LLMSettings(BaseModel):
     # answer itself needs, which is where EmptyAnswer/TruncatedAnswer come
     # from. Hence "off" by default; "auto" leaves the model alone.
     reasoning: Literal["off", "low", "auto"] = "off"
+    # The ceiling for that thinking, in tokens — the answer to a model that
+    # thinks without ever arriving. "off" is a model's own decision to obey or
+    # ignore; a budget is enforced by the server, which forces the closing tag
+    # once it is spent. 0 means no ceiling, which is what a model that thinks
+    # forever was given before this existed.
+    reasoning_budget: int = Field(default=8192, ge=0, le=1_000_000)
     # empty = <base>/models/llm; GGUF files already lying in the configured
     # directory are used from there, never copied or downloaded again
     models_dir: str = ""

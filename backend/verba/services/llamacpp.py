@@ -1273,10 +1273,39 @@ def delete_model(filename: str) -> None:
 _server_lock = threading.RLock()
 _server_process: subprocess.Popen | None = None
 _server_model: str = ""
+# The settings the running server was started with. They live on its command
+# line, so changing one in the UI changes nothing until the server is started
+# again — and a reasoning budget that only takes effect after a restart is a
+# switch that looks broken. The next call notices and restarts instead.
+_server_signature: tuple[Any, ...] = ()
 
 
 def active_model_name() -> str:
     return _server_model
+
+
+def _launch_signature(settings: config.Settings) -> tuple[str, str, int]:
+    """Everything about the settings that ends up on llama-server's own argv.
+
+    `llm.model` and not the file `_pick_model_file()` resolves it to: emptying
+    the field leaves the same GGUF loaded without a restart. That errs on the
+    cheap side — a restart costs a full model reload — and the alternative
+    would mean listing the models directory on every call into a running
+    server, including to answer "nothing changed".
+    """
+    return (settings.llm.model, settings.llm.reasoning, settings.llm.reasoning_budget)
+
+
+def _reasoning_budget_arg(settings: config.Settings) -> str:
+    """`--reasoning-budget`: 0 ends the thought at once, -1 leaves it alone.
+
+    The CLI value is the floor under the per-request fields `llm.chat()`
+    sends: a client that asks for nothing still gets the configured ceiling,
+    which is what the llama.cpp web UI and the public API talk to.
+    """
+    if settings.llm.reasoning == "off":
+        return "0"
+    return str(settings.llm.reasoning_budget or -1)
 
 
 def _pid_file() -> Path:
@@ -1369,18 +1398,28 @@ def _drain_stderr(process: subprocess.Popen) -> list[str]:
     return tail
 
 
-def ensure_running() -> str:
+def ensure_running(settings: config.Settings | None = None) -> str:
     """Start llama-server if needed; returns the OpenAI-compatible base URL.
 
     Refuses before starting when the model cannot fit anywhere, and keeps the
     layers in RAM when they do not fit into the free VRAM — offloading a model
-    that is too large is what made llama-server die on startup.
+    that is too large is what made llama-server die on startup. Restarts a
+    server whose launch settings have since changed: they live on its command
+    line, and a budget that only took effect after a restart would look broken.
+
+    `settings` is the caller's own, so the one `chat()` already holds is not
+    looked up a second time.
     """
-    global _server_process, _server_model
+    global _server_process, _server_model, _server_signature
     with _server_lock:
         base_url = f"http://127.0.0.1:{SERVER_PORT}/v1"
+        settings = settings or config.get_settings()
+        signature = _launch_signature(settings)
         if _server_process is not None and _server_process.poll() is None:
-            return base_url
+            if signature == _server_signature:
+                return base_url
+            logger.info("llama-server settings changed — restarting it")
+            stop_server()
 
         binary = server_binary()
         if binary is None:
@@ -1415,6 +1454,12 @@ def ensure_running() -> str:
             "16384",
             "-ngl",
             "999" if on_gpu else "0",
+            # the GGUF's own chat template instead of llama.cpp's built-in
+            # one — without it the server supports no thinking at all, and
+            # both the reasoning switch and the budget below do nothing
+            "--jinja",
+            "--reasoning-budget",
+            _reasoning_budget_arg(settings),
         ]
         logger.info("starting llama-server: %s", " ".join(cmd))
         hub.publish(
@@ -1433,6 +1478,7 @@ def ensure_running() -> str:
             kill_with_parent=True,
         )
         _server_model = model_file.stem
+        _server_signature = signature
         _remember_server(_server_process.pid)
         tail = _drain_stderr(_server_process)
 
@@ -1479,7 +1525,7 @@ def _startup_failure(model_file: Path, tail: list[str], on_gpu: bool) -> str:
 
 def stop_server() -> None:
     """Stop the managed server (frees VRAM/RAM for Whisper)."""
-    global _server_process, _server_model
+    global _server_process, _server_model, _server_signature
     with _server_lock:
         if _server_process is None:
             return
@@ -1491,6 +1537,7 @@ def stop_server() -> None:
             _server_process.kill()
         _server_process = None
         _server_model = ""
+        _server_signature = ()
         _forget_server()
         hub.publish("engine.status", {"engine": "llm", "state": "stopped", "detail": ""})
 

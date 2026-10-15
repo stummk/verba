@@ -12,6 +12,11 @@ because nothing Verba asks an LLM for benefits from deliberation: cleaning up,
 translating and structuring are transformations with an explicit prompt. What
 thinking does cost is the token budget the answer itself needs — which is
 exactly where EmptyAnswer and TruncatedAnswer come from.
+
+Switching it off, though, is a request: a model free to ignore it is also free
+to hand the transcript back unchanged. `settings.llm.reasoning_budget` is the
+enforced half — the server closes the thought once the budget is spent — and
+it is what stands between a long recording and a model that never arrives.
 """
 
 from __future__ import annotations
@@ -37,21 +42,46 @@ ERROR_BODY_CHARS = 400  # LM Studio & co. explain a refusal in the response body
 
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"}
 
-# Two levers, because no single one reaches every server:
+# Several levers, because no single one reaches every server:
 # - `reasoning_effort` is the OpenAI parameter; llama.cpp reads "none" from it
 #   as "do not think at all".
 # - `chat_template_kwargs.enable_thinking` is what the Qwen3-style templates
 #   look at, used by llama.cpp, vLLM and LM Studio. It has to be a real JSON
 #   boolean — a string is rejected.
-# Sending both is safe for those servers and rejected by api.openai.com, which
-# does not know the second one; `_reasoning_unsupported` remembers that after
-# the first refusal so the detour is paid once per endpoint, not per call.
-REASONING_FIELDS: dict[str, dict[str, Any]] = {
-    "off": {"reasoning_effort": "none", "chat_template_kwargs": {"enable_thinking": False}},
-    "low": {"reasoning_effort": "low"},
-    "auto": {},
-}
-_reasoning_unsupported: set[str] = set()
+# - the budget fields are the only ones a server *enforces*: switching thinking
+#   off is a request the model may ignore (and a model that then returns the
+#   transcript unchanged is exactly what it looks like), while a budget forces
+#   the closing tag once it is spent. llama.cpp reads either name.
+# What an endpoint does not know it answers with a 400 that names the field,
+# and `_reasoning_unsupported` remembers *that field* for that endpoint — the
+# detour is paid once, and one unknown field does not cost the others.
+BUDGET_FIELDS = ("reasoning_budget_tokens", "thinking_budget_tokens")
+
+# Put in front of the forced closing tag when the budget is spent. Without it
+# the thought simply stops, and what follows reads like the model finishing a
+# sentence instead of starting its answer.
+BUDGET_MESSAGE = "\n\nDas Denk-Budget ist aufgebraucht — ich antworte jetzt."
+
+_reasoning_unsupported: dict[str, set[str]] = {}
+
+
+def reasoning_fields(settings: config.Settings, mode: str = "") -> dict[str, Any]:
+    """The request fields that turn this endpoint's thinking down.
+
+    `mode` overrides the configured one for a single call; the budget is the
+    setting's either way, because it answers a different question — not
+    whether the model may think, but when it has to stop.
+    """
+    mode = mode or settings.llm.reasoning
+    if mode == "off":
+        # nothing left to cap, and every field sent is one more to be refused
+        return {"reasoning_effort": "none", "chat_template_kwargs": {"enable_thinking": False}}
+    fields: dict[str, Any] = {"reasoning_effort": "low"} if mode == "low" else {}
+    if budget := settings.llm.reasoning_budget:
+        fields.update(dict.fromkeys(BUDGET_FIELDS, budget))
+        fields["reasoning_budget_message"] = BUDGET_MESSAGE
+    return fields
+
 
 # A reasoning model puts its chain of thought in front of the answer. Some
 # servers hand it over unchanged, others strip only the opening tag — and an
@@ -111,6 +141,27 @@ def llm_location(settings: config.Settings | None = None) -> str:
         return "local"
     host = (urlparse(settings.llm.base_url).hostname or "").lower()
     return "local" if host in LOCAL_HOSTS else "remote"
+
+
+def configured_model(settings: config.Settings | None = None) -> str:
+    """The model a call would run on right now, without starting anything.
+
+    Which model produced a text belongs to that text (`derived_texts.model`),
+    and the pipeline rarely passes one: a project only overrides the model, it
+    does not normally name it. Asked here, because this is where the answer
+    lives — including the local server, whose model is a file on disk the
+    settings may not name at all.
+    """
+    settings = settings or config.get_settings()
+    if settings.llm.mode == "none":
+        return ""
+    if settings.llm.model:
+        return settings.llm.model
+    if settings.llm.mode == "local":
+        from . import llamacpp
+
+        return llamacpp.active_model_name()
+    return ""
 
 
 def strip_reasoning(text: str) -> str:
@@ -238,16 +289,17 @@ def _resolve_endpoint(settings: config.Settings) -> tuple[str, str, str]:
     if settings.llm.mode == "openai":
         if not settings.llm.base_url:
             raise LLMNotConfigured("LLM endpoint (base URL) is not configured")
-        return settings.llm.base_url.rstrip("/"), settings.llm.api_key, settings.llm.model
+        return settings.llm.base_url.rstrip("/"), settings.llm.api_key, configured_model(settings)
     if settings.llm.mode == "local":
         from . import hardware, llamacpp
 
         try:
-            base_url = llamacpp.ensure_running()
+            base_url = llamacpp.ensure_running(settings)
         except hardware.InsufficientMemory as exc:
             # not a bug but a machine limit: the caller shows this verbatim
             raise LLMError(str(exc)) from exc
-        return base_url.rstrip("/"), "", settings.llm.model or llamacpp.active_model_name()
+        # asked after the server is up, which is when it knows its own model
+        return base_url.rstrip("/"), "", configured_model(settings)
     raise LLMNotConfigured("No LLM configured (mode: none)")
 
 
@@ -287,18 +339,19 @@ def chat(
     }
     if max_tokens:
         body["max_tokens"] = max_tokens
-    extras = REASONING_FIELDS.get(reasoning or settings.llm.reasoning, {})
+    extras = reasoning_fields(settings, reasoning)
 
     last_error: Exception | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
         # re-evaluated per attempt: a refusal in the previous one may just
-        # have taught us that this endpoint does not take the controls
-        sent_extras = bool(extras) and base_url not in _reasoning_unsupported
+        # have taught us which of the controls this endpoint does not take
+        refused = _reasoning_unsupported.get(base_url, frozenset())
+        sent_extras = {k: v for k, v in extras.items() if k not in refused}
         try:
             _publish_status("busy", f"{model} (attempt {attempt}/{MAX_ATTEMPTS})")
             response = httpx.post(
                 f"{base_url}/chat/completions",
-                json={**body, **extras} if sent_extras else body,
+                json={**body, **sent_extras},
                 headers=headers,
                 timeout=REQUEST_TIMEOUT,
             )
@@ -323,13 +376,14 @@ def chat(
             return text
         except (httpx.HTTPError, EmptyAnswer, KeyError, IndexError, ValueError) as exc:
             last_error = exc
-            if sent_extras and _rejects_reasoning_controls(exc):
+            if rejected := _rejected_reasoning_fields(exc, sent_extras):
                 # not a failure of the request, only of one of its fields:
-                # retry immediately without them instead of burning a backoff
-                _reasoning_unsupported.add(base_url)
+                # retry immediately without it instead of burning a backoff
+                _reasoning_unsupported.setdefault(base_url, set()).update(rejected)
                 logger.info(
-                    "%s does not accept the reasoning controls — retrying without them",
+                    "%s does not accept %s — retrying without it",
                     base_url,
+                    ", ".join(sorted(rejected)),
                 )
                 continue
             logger.warning(
@@ -339,6 +393,12 @@ def chat(
                 model,
                 _error_detail(exc),
             )
+            if isinstance(exc, httpx.TimeoutException):
+                # Repeating it would cost another five minutes for the same
+                # answer. A model that never finishes is a budget question,
+                # not a flaky connection — so say that instead of waiting.
+                _publish_status("error", _error_detail(exc))
+                raise LLMError(_timeout_message(model, settings)) from exc
             if attempt < MAX_ATTEMPTS:
                 time.sleep(RETRY_BACKOFF_S * attempt)
 
@@ -347,17 +407,33 @@ def chat(
     raise LLMError(f"LLM-Aufruf fehlgeschlagen ({model}): {detail}") from last_error
 
 
-def _rejects_reasoning_controls(exc: Exception) -> bool:
-    """Did the endpoint answer 400 because of the reasoning fields?
+def _timeout_message(model: str, settings: config.Settings) -> str:
+    """Why a call was given up on — shown verbatim in the web UI (German)."""
+    minutes = int(REQUEST_TIMEOUT // 60)
+    advice = (
+        " Ein kleineres Denk-Budget oder ein schnelleres Modell hilft hier."
+        if settings.llm.reasoning_budget
+        else " Unter Einstellungen → KI-Aufbereitung lässt sich das Denk-Budget begrenzen, "
+        "damit das Modell zu einem Ergebnis kommt."
+    )
+    return f"Das Modell '{model}' hat nach {minutes} Minuten nicht geantwortet.{advice}"
+
+
+def _rejected_reasoning_fields(exc: Exception, sent: dict[str, Any]) -> set[str]:
+    """Which of the reasoning fields this 400 was about, if any.
 
     Deliberately narrow: a 400 for any other reason must stay a 400, or one
     bad request would silently switch the reasoning control off for good.
-    Every server that rejects an unknown parameter names it in the message.
+    Every server that rejects an unknown parameter names it in the message —
+    and only that one is given up, so an endpoint that knows `reasoning_effort`
+    but not the budget keeps the half it understands.
     """
     if not isinstance(exc, httpx.HTTPStatusError) or exc.response.status_code != 400:
-        return False
-    body = exc.response.text.lower()
-    return "chat_template_kwargs" in body or "reasoning_effort" in body
+        return set()
+    # searched, not lower-cased: some servers echo the whole request back in
+    # the error body, and that is a transcript chunk, not a sentence
+    body = exc.response.text
+    return {name for name in sent if re.search(re.escape(name), body, re.IGNORECASE)}
 
 
 def probe(base_url: str, api_key: str = "") -> dict[str, Any]:

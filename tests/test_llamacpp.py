@@ -913,3 +913,96 @@ def test_a_server_that_never_becomes_ready_tears_itself_down(monkeypatch, tmp_pa
     assert isinstance(outcome[0], RuntimeError)
     assert stopped == ["terminate"]
     assert not llamacpp._pid_file().exists()
+
+
+# ── what the local server is started with ──────────────────────────────
+
+
+@pytest.fixture
+def started_server(monkeypatch, tmp_path):
+    """Run ensure_running() against a fake process and return its argv."""
+    model_file = tmp_path / "qwen3-4b-q4.gguf"
+    model_file.write_bytes(b"gguf")
+    binary = tmp_path / "llama-server"
+    binary.write_bytes(b"bin")
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(llamacpp, "server_binary", lambda: binary)
+    monkeypatch.setattr(llamacpp, "_pick_model_file", lambda: model_file)
+    monkeypatch.setattr(llamacpp, "file_needs_mb", lambda _file: 100)
+    monkeypatch.setattr(llamacpp.hardware, "probe", lambda fresh=False: machine(32000))
+    monkeypatch.setattr(
+        llamacpp.hardware, "check_llm_model", lambda *a, **k: {"level": "ok", "message": ""}
+    )
+    monkeypatch.setattr(llamacpp.hardware, "offload_to_gpu", lambda *a, **k: False)
+    monkeypatch.setattr(llamacpp.hardware, "has_gpu", lambda _hw: False)
+    monkeypatch.setattr(llamacpp, "_drain_stderr", lambda _process: [])
+    monkeypatch.setattr(llamacpp, "_remember_server", lambda _pid: None)
+    monkeypatch.setattr(llamacpp, "_forget_server", lambda: None)
+
+    def popen(cmd, **_kwargs):
+        commands.append(list(cmd))
+        return SimpleNamespace(
+            pid=1234, poll=lambda: None, terminate=lambda: None, wait=lambda **k: 0
+        )
+
+    monkeypatch.setattr(llamacpp.procutil, "popen", popen)
+    monkeypatch.setattr(llamacpp.httpx, "get", lambda *a, **k: SimpleNamespace(status_code=200))
+    llamacpp._server_process = None
+    llamacpp._server_signature = ()
+    yield commands
+    llamacpp._server_process = None
+    llamacpp._server_signature = ()
+
+
+def test_the_server_is_started_with_a_template_that_can_think(started_server):
+    """Without --jinja llama.cpp supports no thinking at all — and no budget."""
+    config.get_settings().llm.reasoning = "low"
+    config.get_settings().llm.reasoning_budget = 4096
+
+    llamacpp.ensure_running()
+
+    assert "--jinja" in started_server[0]
+    budget = started_server[0][started_server[0].index("--reasoning-budget") + 1]
+    assert budget == "4096"
+
+
+def test_thinking_switched_off_ends_the_thought_at_once(started_server):
+    config.get_settings().llm.reasoning = "off"
+    config.get_settings().llm.reasoning_budget = 4096
+
+    llamacpp.ensure_running()
+
+    assert started_server[0][started_server[0].index("--reasoning-budget") + 1] == "0"
+
+
+def test_no_budget_leaves_the_thought_alone(started_server):
+    config.get_settings().llm.reasoning = "auto"
+    config.get_settings().llm.reasoning_budget = 0
+
+    llamacpp.ensure_running()
+
+    assert started_server[0][started_server[0].index("--reasoning-budget") + 1] == "-1"
+
+
+def test_the_running_server_is_reused(started_server):
+    config.get_settings().llm.reasoning = "low"
+    config.get_settings().llm.reasoning_budget = 4096
+
+    llamacpp.ensure_running()
+    llamacpp.ensure_running()
+
+    assert len(started_server) == 1
+
+
+def test_a_changed_budget_restarts_the_server(started_server):
+    """It lives on the command line: a setting that needs a restart looks broken."""
+    config.get_settings().llm.reasoning = "low"
+    config.get_settings().llm.reasoning_budget = 4096
+    llamacpp.ensure_running()
+
+    config.get_settings().llm.reasoning_budget = 512
+    llamacpp.ensure_running()
+
+    assert len(started_server) == 2
+    assert started_server[1][started_server[1].index("--reasoning-budget") + 1] == "512"

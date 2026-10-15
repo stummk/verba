@@ -787,7 +787,14 @@ transkribierten Datei öffnet den Editor — einen
   Abschnitt „Sprechererkennung".
 - **Text und Sprecher** direkt in den Segmentzeilen bearbeiten — Änderungen werden
   automatisch gespeichert („Gespeichert"-Anzeige), **Rückgängig** hebt die letzten
-  Änderungen schrittweise auf
+  Änderungen schrittweise auf, **Wiederherstellen** holt sie zurück. Beides geht
+  auch über die Tastatur: **Strg+Z** und **Strg+Y** (oder Strg+Umschalt+Z). Solange
+  noch nichts gespeichert ist, greift das gewohnte Rückgängig des Browsers im
+  Feld selbst; danach übernehmen die Knöpfe. Sie reichen über die Segmente
+  hinaus und nehmen auch Änderungen am bereinigten Text und an einer Übersetzung
+  zurück — eingefügte Passagen eingeschlossen. Die Liste der Schritte ist
+  begrenzt: sehr viele oder sehr große Änderungen lassen die ältesten
+  herausfallen.
 - **Rechtschreibprüfung**: Segmente, bereinigter Text und Übersetzung werden von
   der Rechtschreibprüfung des Browsers geprüft — jeder Text **in seiner eigenen
   Sprache**: Segmente und Bereinigung in der Sprache der Transkription, jede
@@ -1254,12 +1261,27 @@ Unter Einstellungen → KI-Aufbereitung steht dafür **Reasoning**:
 - **Modell entscheidet** — Verba mischt sich nicht ein (Verhalten vor dieser
   Einstellung).
 
+**Denk-Budget (Token).** „Aus" ist eine Bitte — ein Modell darf sie überhören,
+und manche tun das auf eine unangenehme Weise: Sie liefern den Text nahezu
+unverändert zurück, weil sie die Anweisung ohne Nachdenken nicht umsetzen. Das
+Budget ist die andere Hälfte und wird vom Server **erzwungen**: Ist es
+aufgebraucht, wird der Gedanke geschlossen und die Antwort muss beginnen.
+Vorgabe sind 8192 Token; **0 heißt: keine Grenze** — dann kann ein Modell
+beliebig lange denken, ohne je zu einem Ergebnis zu kommen. Beim lokalen Server
+wirkt das Budget immer (Verba startet llama.cpp entsprechend und startet es neu,
+wenn Sie den Wert ändern), bei einem fremden Endpunkt nur, wenn er das Feld
+kennt — LM Studio und llama.cpp tun das, die OpenAI-API nicht.
+
+Antwortet ein Modell gar nicht, bricht Verba nach fünf Minuten ab und sagt das,
+statt denselben Aufruf noch zweimal zu wiederholen.
+
 Die Einstellung gilt für alles: Aufbereitung, PDF-Strukturierung, KI-Antworten
-der Suche und Fragen zur Hilfe. Technisch schickt Verba `reasoning_effort` und
-— für Vorlagen, die nur dort nachsehen — `chat_template_kwargs`. Endpunkte, die
-diese Felder nicht kennen (etwa die OpenAI-API selbst), lehnen sie einmal ab;
-Verba merkt sich das und lässt sie danach weg. Modelle ohne Denkmodus ignorieren
-die Angabe ohnehin.
+der Suche und Fragen zur Hilfe. Technisch schickt Verba `reasoning_effort`, —
+für Vorlagen, die nur dort nachsehen — `chat_template_kwargs` und das Budget
+als `reasoning_budget_tokens`/`thinking_budget_tokens`. Endpunkte, die eines
+dieser Felder nicht kennen (etwa die OpenAI-API selbst), lehnen es einmal ab;
+Verba merkt sich **dieses eine Feld** und lässt es danach weg — die übrigen
+bleiben in Kraft. Modelle ohne Denkmodus ignorieren die Angabe ohnehin.
 
 ## PDF-Export {#pdf}
 

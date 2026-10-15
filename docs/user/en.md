@@ -752,7 +752,12 @@ transcript and AI texts:
   "Speaker recognition".
 - **Text and speaker** are edited directly in the segment rows — changes are
   saved automatically ("Saved" indicator), **Undo** reverts recent changes
-  step by step
+  step by step and **Redo** brings them back. Both are on the keyboard too:
+  **Ctrl+Z** and **Ctrl+Y** (or Ctrl+Shift+Z). While nothing has been saved yet
+  the browser's own undo still works inside the field; after that the buttons
+  take over. They reach past the segments and also take back changes to the
+  cleaned text and to a translation, pasted passages included. The list of
+  steps is bounded: very many or very large changes push the oldest ones out.
 - **Spell checking**: segments, cleaned text and translation are checked by the
   browser's own spell checker — each text **in its own language**: segments and
   cleanup in the language of the transcription, every translation in its target
@@ -1200,12 +1205,28 @@ Under Settings → AI processing there is **Reasoning** for this:
 - **Let the model decide** — Verba does not interfere (the behaviour before
   this setting existed).
 
+**Thinking budget (tokens).** "Off" is a request — a model is free to ignore
+it, and some do so in an unpleasant way: they hand the text back almost
+unchanged, because without thinking they cannot carry the instruction out. The
+budget is the other half, and the server **enforces** it: once it is spent the
+thought is closed and the answer has to begin. The default is 8192 tokens;
+**0 means no ceiling** — a model may then think for as long as it likes without
+ever arriving. On the local server the budget always applies (Verba starts
+llama.cpp accordingly, and restarts it when you change the value); on someone
+else's endpoint only where the field is known — LM Studio and llama.cpp know
+it, the OpenAI API does not.
+
+If a model does not answer at all, Verba gives up after five minutes and says
+so, instead of repeating the same call twice more.
+
 The setting applies to everything: processing, PDF structuring, the AI answers
 in the search and questions about the guide. Technically Verba sends
-`reasoning_effort` and — for templates that only look there —
-`chat_template_kwargs`. Endpoints that do not know these fields (the OpenAI API
-itself, for one) refuse them once; Verba remembers that and leaves them out
-afterwards. Models without a thinking mode ignore them anyway.
+`reasoning_effort`, — for templates that only look there —
+`chat_template_kwargs`, and the budget as
+`reasoning_budget_tokens`/`thinking_budget_tokens`. An endpoint that does not
+know one of these fields (the OpenAI API itself, for one) refuses it once;
+Verba remembers **that one field** and leaves it out afterwards — the others
+stay in force. Models without a thinking mode ignore them anyway.
 
 ## PDF export {#pdf}
 

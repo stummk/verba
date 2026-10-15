@@ -98,7 +98,13 @@ def save_text(
     wrote of a text that no longer exists — a delta between two strangers.
     `rules_used` are the learned rules this run was given, written down so a
     later correction knows what to count against (services/learning.py).
+
+    `model` is the project's override, which is usually empty — the run then
+    went to whatever the settings point at, and that is what belongs in the
+    row. Asking afterwards is right here: the call has happened, so a local
+    server has long since named the file it loaded.
     """
+    model = model or llm.configured_model()
     used = ",".join(str(rule_id) for rule_id in rules_used or [])
     with db.get_conn() as conn:
         conn.execute(
@@ -129,7 +135,7 @@ def delete_text(file_id: int, kind: str, language: str = "") -> bool:
     return True
 
 
-def _publish_change(file_id: int, kind: str, language: str) -> None:
+def _publish_change(file_id: int, kind: str, language: str, origin: str = "model") -> None:
     # The search indexes the derived texts alongside the transcript, so every
     # write here is a change to what is findable — a name the cleanup corrected
     # is only searchable once this ran. Imported late: the vectorstore builds
@@ -141,6 +147,15 @@ def _publish_change(file_id: int, kind: str, language: str) -> None:
     # The kinds travel with the event: an emptied or deleted text has to take
     # the "cleaned"/"translated" chip off the file row, and the receiver cannot
     # tell from one language alone whether the kind is gone for the whole file.
+    #
+    # So does the origin: an edit typed into an editor comes back to it, and
+    # that editor holds the text already — it wrote it. "user" is what lets
+    # it skip fetching the file's texts just to read its own back, which
+    # while someone types would be one fetch per pause. It names the kind of
+    # write, not who made it, so an editor pairs it with its own record of
+    # what it sent: somebody else's edit arrives as "user" too, and that one
+    # has to be fetched. Everything else — a finished step, a deleted text —
+    # is "model" and is fetched in any case.
     hub.publish(
         "texts.changed",
         {
@@ -148,6 +163,7 @@ def _publish_change(file_id: int, kind: str, language: str) -> None:
             "kind": kind,
             "language": language,
             "kinds": present_kinds(file_id),
+            "origin": origin,
         },
         file_id=file_id,
     )
@@ -189,7 +205,7 @@ def update_text_content(
         if cursor.rowcount == 0:
             return None
     _write_workspace_copy(file_id, kind, language, content)
-    _publish_change(file_id, kind, language)
+    _publish_change(file_id, kind, language, origin="user")
     _learn_the_spellings(file_id, kind, language, before["content"], content)
     _count_against_the_rules(file_id, kind, language)
     _maybe_learn_rules(file_id, kind)

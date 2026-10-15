@@ -2,7 +2,7 @@
 
 import { api } from "../api.js";
 import { confirmDelete } from "../confirm.js";
-import { el, html, raw, toast } from "../dom.js";
+import { el, formatStamp, html, raw, toast } from "../dom.js";
 import { fillEmbeddingSelect } from "../embeddings.js";
 import { applyFitHint, endpointEstimate, fitBadge, hardwareLine, isLocalEndpoint } from "../hardware.js";
 import { checkLine, fieldLabel, helpSlot, helpText, labelHelp, setHelp } from "../help.js";
@@ -180,6 +180,14 @@ export async function render(view) {
               <option value="low">${t("settings.reasoningLow")}</option>
               <option value="auto">${t("settings.reasoningAuto")}</option>
             </select>
+          </div>
+          <div class="setting-field">
+            ${raw(fieldLabel(
+              "llm-reasoning-budget",
+              t("settings.reasoningBudget"),
+              t("settings.reasoningBudgetHint")
+            ))}
+            <input type="number" id="llm-reasoning-budget" min="0" max="1000000" step="512">
           </div>
         </div>
 
@@ -446,6 +454,7 @@ export async function render(view) {
   });
 
   el("llm-reasoning").value = settings.llm.reasoning ?? "off";
+  el("llm-reasoning-budget").value = settings.llm.reasoning_budget ?? 8192;
   el("whisper-device").value = settings.whisper.device;
   el("whisper-compute").value = settings.whisper.compute_type;
   el("log-level").value = settings.logging.level;
@@ -732,6 +741,8 @@ export async function render(view) {
         api_key: el("llm-api-key").value,
         models_dir: el("llm-models-dir").value.trim(),
         reasoning: el("llm-reasoning").value,
+        // an emptied field is "no ceiling", the same thing a 0 says
+        reasoning_budget: Number(el("llm-reasoning-budget").value) || 0,
         model:
           currentMode() === "local"
             ? el("llm-local-model").value
@@ -1653,7 +1664,9 @@ async function refreshSearchStatus() {
     t("settings.searchStatus", { files: status.files_indexed, chunks: status.chunk_count }),
   ];
   if (status.configured_label) parts.push(status.configured_label);
-  if (status.last_index) parts.push(t("settings.searchLastIndex", { date: status.last_index }));
+  if (status.last_index) {
+    parts.push(t("settings.searchLastIndex", { date: formatStamp(status.last_index) }));
+  }
   if (status.model_mismatch) parts.push(t("settings.searchModelMismatch"));
   if (status.stale_index) parts.push(t("settings.searchStaleIndex"));
   host.textContent = parts.join(" — ");
@@ -1689,7 +1702,7 @@ async function refreshApiKeys() {
     const meta = document.createElement("span");
     meta.className = "muted small";
     meta.textContent = key.last_used_at
-      ? t("settings.apiKeyLastUsed", { date: key.last_used_at })
+      ? t("settings.apiKeyLastUsed", { date: formatStamp(key.last_used_at) })
       : t("settings.apiKeyNeverUsed");
     row.append(name, meta, Object.assign(document.createElement("span"), { className: "spacer" }));
     row.append(iconButton("delete", t("common.delete"), async () => {

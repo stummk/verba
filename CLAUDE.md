@@ -139,8 +139,14 @@ report that the other platform is covered by CI.
     sync), audio (ffmpeg cutting), media (duration probe),
     llm (OpenAI-compatible client; `settings.llm.reasoning` turns a
     reasoning model down or off via `reasoning_effort` plus
-    `chat_template_kwargs` — an endpoint that refuses those is remembered and
-    served without them from then on), llamacpp (local LLM: hardware probe,
+    `chat_template_kwargs`, and `settings.llm.reasoning_budget` caps what is
+    left — the asking half is a request a model may ignore, the budget
+    (`reasoning_budget_tokens`/`thinking_budget_tokens`) is closed by the
+    server once it is spent. An endpoint that refuses one of those fields
+    names it, and `_reasoning_unsupported` drops *that field* for that
+    endpoint from then on, never the others. A call that times out is not
+    repeated: a model that never arrives is a budget question, not a flaky
+    connection), llamacpp (local LLM: hardware probe,
     binary/GGUF download into the configured directory — files already there
     are loaded in place, `recommended` entries drive the hardware suggestion.
     The binary is not one download but a ladder (`_candidates`), walked until a

@@ -263,3 +263,33 @@ def test_texts_changed_event_carries_the_remaining_kinds(done_file, monkeypatch)
 
     pipeline.delete_text(done_file["id"], "cleanup")
     assert seen[-1]["kinds"] == ""
+
+
+def test_the_event_says_whether_the_model_or_the_user_wrote(done_file, monkeypatch):
+    """An editor that wrote the text itself must not have to fetch it back."""
+    seen: list = []
+    monkeypatch.setattr(
+        pipeline.hub, "publish", lambda name, payload, **kwargs: seen.append(payload)
+    )
+
+    pipeline.save_text(done_file["id"], "cleanup", "Vom Modell")
+    assert seen[-1]["origin"] == "model"
+
+    pipeline.update_text_content(done_file["id"], "cleanup", "", "Von Hand")
+    assert seen[-1]["origin"] == "user"
+
+    # a text that is gone has to disappear from every screen showing it
+    pipeline.delete_text(done_file["id"], "cleanup")
+    assert seen[-1]["origin"] == "model"
+
+
+def test_a_stored_text_names_the_model_that_wrote_it(done_file, monkeypatch):
+    """The project rarely overrides the model — the row must still say which."""
+    monkeypatch.setattr(pipeline.llm, "configured_model", lambda: "gemma-4-26b")
+
+    pipeline.save_text(done_file["id"], "cleanup", "Bereinigt")
+    assert pipeline.get_text(done_file["id"], "cleanup")["model"] == "gemma-4-26b"
+
+    # an override still wins: that is the model the run actually went to
+    pipeline.save_text(done_file["id"], "cleanup", "Bereinigt", model="mistral-small")
+    assert pipeline.get_text(done_file["id"], "cleanup")["model"] == "mistral-small"

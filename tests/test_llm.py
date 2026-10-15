@@ -389,4 +389,117 @@ def test_an_unrelated_bad_request_does_not_disable_the_controls(monkeypatch):
     with pytest.raises(llm.LLMError, match="context length"):
         llm.chat([{"role": "user", "content": "x"}])
 
-    assert llm._reasoning_unsupported == set()
+    assert llm._reasoning_unsupported == {}
+
+
+# ── the budget: the half a server enforces ─────────────────────────────
+
+
+def test_a_budget_rides_along_with_the_thinking(monkeypatch):
+    """Switching thinking off is a request; a budget is a limit."""
+    configure_endpoint(monkeypatch)
+    config.get_settings().llm.reasoning = "low"
+    config.get_settings().llm.reasoning_budget = 4096
+    bodies = capture_bodies(monkeypatch)
+
+    llm.chat([{"role": "user", "content": "x"}])
+
+    # both names, because llama.cpp reads either and servers differ on which
+    assert bodies[0]["reasoning_budget_tokens"] == 4096
+    assert bodies[0]["thinking_budget_tokens"] == 4096
+    assert bodies[0]["reasoning_budget_message"] == llm.BUDGET_MESSAGE
+
+
+def test_no_budget_fields_without_a_budget(monkeypatch):
+    configure_endpoint(monkeypatch)
+    config.get_settings().llm.reasoning = "auto"
+    config.get_settings().llm.reasoning_budget = 0
+    bodies = capture_bodies(monkeypatch)
+
+    llm.chat([{"role": "user", "content": "x"}])
+
+    assert not [name for name in llm.BUDGET_FIELDS if name in bodies[0]]
+
+
+def test_switched_off_thinking_needs_no_budget(monkeypatch):
+    """Nothing to cap: the fields would only be one more thing to refuse."""
+    configure_endpoint(monkeypatch)
+    config.get_settings().llm.reasoning = "off"
+    config.get_settings().llm.reasoning_budget = 4096
+    bodies = capture_bodies(monkeypatch)
+
+    llm.chat([{"role": "user", "content": "x"}])
+
+    assert bodies[0]["reasoning_effort"] == "none"
+    assert not [name for name in llm.BUDGET_FIELDS if name in bodies[0]]
+
+
+def test_one_refused_field_does_not_cost_the_others(monkeypatch):
+    """An endpoint that knows reasoning_effort but not the budget keeps it."""
+    configure_endpoint(monkeypatch)
+    llm._reasoning_unsupported.clear()
+    config.get_settings().llm.reasoning = "low"
+    config.get_settings().llm.reasoning_budget = 4096
+    bodies: list[dict] = []
+
+    def post(url, json=None, headers=None, timeout=None):
+        bodies.append(json)
+        if "reasoning_budget_tokens" in json:
+            return httpx.Response(
+                400,
+                json={"error": {"message": "Unknown parameter: reasoning_budget_tokens"}},
+                request=httpx.Request("POST", url),
+            )
+        return httpx.Response(200, json=completion("Antwort."), request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(llm.httpx, "post", post)
+
+    assert llm.chat([{"role": "user", "content": "x"}]) == "Antwort."
+    assert len(bodies) == 2
+    assert "reasoning_budget_tokens" not in bodies[1]
+    assert bodies[1]["reasoning_effort"] == "low"  # the half it understands stays
+    llm._reasoning_unsupported.clear()
+
+
+def test_a_timed_out_call_is_not_repeated_twice_more(monkeypatch):
+    """Three times five minutes for the same answer is what "runs forever" was."""
+    configure_endpoint(monkeypatch)
+    calls = []
+
+    def post(url, json=None, headers=None, timeout=None):
+        calls.append(url)
+        raise httpx.ReadTimeout("timed out", request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(llm.httpx, "post", post)
+    config.get_settings().llm.reasoning_budget = 0
+
+    with pytest.raises(llm.LLMError) as excinfo:
+        llm.chat([{"role": "user", "content": "x"}])
+
+    assert len(calls) == 1
+    assert "nicht geantwortet" in str(excinfo.value)
+    assert "Denk-Budget" in str(excinfo.value)  # names the way out
+
+
+# ── which model a stored text came from ────────────────────────────────
+
+
+def test_configured_model_names_the_endpoint_model(monkeypatch):
+    settings = configured("openai", "http://localhost:1234/v1")
+    settings.llm.model = "gemma"
+    monkeypatch.setattr(config, "get_settings", lambda: settings)
+    assert llm.configured_model() == "gemma"
+
+
+def test_configured_model_falls_back_to_the_running_local_server(monkeypatch):
+    from verba.services import llamacpp
+
+    settings = configured("local")
+    monkeypatch.setattr(config, "get_settings", lambda: settings)
+    monkeypatch.setattr(llamacpp, "active_model_name", lambda: "qwen3-4b-q4")
+    assert llm.configured_model() == "qwen3-4b-q4"
+
+
+def test_configured_model_is_empty_without_an_llm(monkeypatch):
+    monkeypatch.setattr(config, "get_settings", lambda: configured("none"))
+    assert llm.configured_model() == ""

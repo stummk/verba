@@ -7,7 +7,7 @@ import WaveSurfer from "/vendor/wavesurfer.esm.js";
 import RegionsPlugin from "/vendor/wavesurfer.regions.esm.js";
 import { api } from "../api.js";
 import { confirmAction, confirmDelete } from "../confirm.js";
-import { el, formatDuration, html, raw, toast } from "../dom.js";
+import { el, formatDuration, formatStamp, html, raw, toast } from "../dom.js";
 import { closeExportDialog, openExportDialog } from "../export-dialog.js";
 import { iconButton, iconSvg, setIcon } from "../icons.js";
 import { labelHelp } from "../help.js";
@@ -281,6 +281,8 @@ export async function render(view, _status, params) {
                 title="${t("editor.spellcheck")}" aria-label="${t("editor.spellcheck")}"></button>
         <button id="undo-button" class="icon-btn" disabled
                 title="${t("editor.undo")}" aria-label="${t("editor.undo")}"></button>
+        <button id="redo-button" class="icon-btn" disabled
+                title="${t("editor.redo")}" aria-label="${t("editor.redo")}"></button>
       </div>
       <div class="editor-panels" id="editor-panels">
         <section class="panel" data-panel="segments">
@@ -338,6 +340,7 @@ export async function render(view, _status, params) {
   // icon-only tool buttons (labels live in title/aria-label)
   el("play-toggle").innerHTML = iconSvg("play");
   el("undo-button").innerHTML = iconSvg("undo");
+  el("redo-button").innerHTML = iconSvg("redo");
   el("spellcheck-toggle").innerHTML = iconSvg("spellcheck");
   el("file-transcribe").innerHTML = iconSvg("audioToText");
   el("speakers-detect").innerHTML = iconSvg("people");
@@ -1049,19 +1052,283 @@ export async function render(view, _status, params) {
   // ── segment list with autosave + undo ───────────────────────────────
   let segments = data.segments;
   const timers = new Map();   // segment id -> debounce timer
-  const undoStack = [];       // {id, field, before}
 
   // A row that has just been added is the one the user wants to type in — it
   // is remembered by id rather than focused on the spot, because the same
   // change also arrives as an event and renders the list a second time.
   let focusSegmentId = null;
 
+  // ── undo across everything that autosaves ───────────────────────────
+  //
+  // The browser's own undo lives in the DOM node and knows only what was
+  // typed into that one field: it cannot reach back into the field edited
+  // before, it goes with a row that really is rebuilt (a diarisation splits a
+  // segment in two), and it never saw what the editor wrote itself — a bulk
+  // rename across two hundred rows. Taking such a change back means saving
+  // the previous value again, and that is what these two stacks hold.
+  //
+  // Bounded on purpose: a cleaned two-hour recording is a megabyte of text,
+  // and keeping every version of it would cost more memory than the audio.
+  // Two caps, because either alone has a bad case — many tiny segment edits,
+  // or three versions of a huge cleanup.
+  const UNDO_MAX_STEPS = 50;
+  const UNDO_MAX_CHARS = 400_000;
+  const undoStack = [];
+  const redoStack = [];
+  // One per visit to a field: a burst of typing is a single step, not one per
+  // autosave tick. Pasting a passage and correcting it afterwards is the same
+  // burst, and comes back in one go.
+  let editToken = 0;
+  // What each field held when its burst began, keyed like an undo entry. In
+  // the editor, not on the element: a cleaned-up two-hour recording is a
+  // megabyte, and parking that in a `data-` attribute would store it a third
+  // time and rewrite the attribute on every autosave tick.
+  const editedFrom = new Map();
+
+  const entryKey = (entry) => (entry.target === "segment"
+    ? `s:${entry.id}:${entry.field}`
+    : `t:${entry.kind}:${entry.language}`);
+  const entryChars = (entry) => entry.before.length + entry.after.length;
+
+  function pushUndo(entry) {
+    const top = undoStack.at(-1);
+    if (top && top.token === entry.token && entryKey(top) === entryKey(entry)) {
+      top.after = entry.after;
+      // Typed and taken straight back again — the browser's own undo inside
+      // the field does this. The burst changed nothing in the end, so it is
+      // not a step: leaving it would cost a press of Ctrl+Z that does nothing.
+      if (top.before === top.after) undoStack.pop();
+    } else {
+      undoStack.push(entry);
+    }
+    redoStack.length = 0;  // a fresh edit ends the branch that was redoable
+    let chars = undoStack.reduce((sum, item) => sum + entryChars(item), 0);
+    // never below one step: the change just made has to stay undoable, even
+    // when it is a whole transcript on its own
+    while (undoStack.length > 1
+           && (undoStack.length > UNDO_MAX_STEPS || chars > UNDO_MAX_CHARS)) {
+      chars -= entryChars(undoStack.shift());
+    }
+    refreshUndoButtons();
+  }
+
+  /**
+   * Remember a field's state on focus, and put the change on the stack when
+   * the autosave fires. Both kinds of field — a segment row and a derived
+   * text — differ only in what identifies them, so that is all they pass.
+   *
+   * @param {object} what the entry's identity half, e.g. {target:"segment", id, field}
+   * @returns {string} the value before this burst of typing (the bulk rename needs it)
+   */
+  function trackEdits(field, what) {
+    const key = entryKey(what);
+    field.addEventListener("focus", () => {
+      editedFrom.set(key, { value: field.value, token: ++editToken });
+    });
+    return () => {
+      const state = editedFrom.get(key);
+      if (!state) {
+        // No baseline — the field was written without ever being focused.
+        // Assuming it was empty would turn the next undo into a delete, so
+        // this value becomes the baseline and nothing goes on the stack.
+        editedFrom.set(key, { value: field.value, token: ++editToken });
+        return field.value;
+      }
+      if (state.value === field.value) return state.value;
+      pushUndo({ ...what, before: state.value, after: field.value, token: state.token });
+      editedFrom.set(key, { value: field.value, token: state.token });
+      return state.value;
+    };
+  }
+
+  function refreshUndoButtons() {
+    el("undo-button").disabled = undoStack.length === 0;
+    el("redo-button").disabled = redoStack.length === 0;
+  }
+
+  /** Write one remembered value back — to the server and, if on screen, to its field. */
+  async function applyUndoEntry(entry, value) {
+    if (entry.target === "segment") {
+      const updated = await api.updateSegment(entry.id, { [entry.field]: value });
+      const local = segments.find((s) => s.id === entry.id);
+      if (local) Object.assign(local, updated);
+      const row = el("segment-list").querySelector(`.seg-row[data-id="${entry.id}"]`);
+      const input = row?.querySelector(entry.field === "text" ? ".seg-text" : ".seg-speaker");
+      if (input) {
+        input.value = value;
+        if (entry.field === "text") autoGrow(input);
+      }
+      rebaseEdit(entry, value);
+      return;
+    }
+    const local = derivedText(entry.kind, entry.language);
+    if (local) local.content = value;
+    const updated = await saveDerivedText(entry.kind, entry.language, value);
+    if (local) local.content = updated.content;
+    // the translation panel shows one language at a time: a step that belongs
+    // to another one is still written, it just has no field to write into
+    const area = el("editor-panels").querySelector(
+      `.dtext[data-kind="${entry.kind}"][data-lang="${entry.language}"]`
+    );
+    if (area) area.value = value;
+    rebaseEdit(entry, value);
+  }
+
+  /**
+   * Every write of a derived text this editor makes goes through here.
+   *
+   * The server announces each one as `texts.changed`, and that echo comes
+   * back here too. What this editor wrote it already has, so fetching the
+   * file's texts to read it back would be a megabyte for nothing — but only
+   * *this* editor's writes are already in hand. Another person's edit of the
+   * same transcript is announced exactly the same way, so the editor notes
+   * what it sent and recognises its own echo by that, not by the event
+   * saying that some user wrote.
+   *
+   * Noted before the request: the server publishes while it is still
+   * answering, so the echo regularly arrives first.
+   */
+  const ownWrites = new Set();
+
+  async function saveDerivedText(kind, language, content) {
+    const key = `${kind}:${language}`;
+    ownWrites.add(key);
+    try {
+      return await api.updateText(fileId, kind, language, content);
+    } catch (error) {
+      ownWrites.delete(key);  // nothing was written, so no echo is coming
+      throw error;
+    }
+  }
+
+  // An undo wrote a value the field never typed: the next autosave has to
+  // measure against *that*, or the step just taken back would come straight
+  // back as a new step forward.
+  function rebaseEdit(entry, value) {
+    const key = entryKey(entry);
+    const state = editedFrom.get(key);
+    if (state) editedFrom.set(key, { value, token: state.token });
+  }
+
+  /**
+   * Write a value into a field without taking anything away from the user.
+   *
+   * A field that already holds the value is left untouched — with its node,
+   * its cursor and the browser's own undo history. That is what makes a
+   * redraw survivable while someone is typing in it. And a field under the
+   * cursor with keystrokes not yet saved is never overwritten: those
+   * keystrokes are the only copy there is, and the autosave is about to write
+   * them over whatever arrived here anyway.
+   *
+   * @param {object} what the entry's identity half, as `trackEdits` takes it
+   * @returns {boolean} whether the field was written
+   */
+  function setFieldValue(field, value, what) {
+    if (field.value === value) return false;
+    const focused = document.activeElement === field;
+    if (focused) {
+      const state = editedFrom.get(entryKey(what));
+      if (!state || state.value !== field.value) return false;
+    }
+    const { selectionStart, selectionEnd, selectionDirection } = field;
+    const { scrollTop, scrollLeft } = field;
+    field.value = value;
+    if (focused) {
+      const end = value.length;
+      field.setSelectionRange(
+        Math.min(selectionStart, end), Math.min(selectionEnd, end), selectionDirection
+      );
+    }
+    // writing the value scrolls the box back to the top on its own
+    field.scrollTop = scrollTop;
+    field.scrollLeft = scrollLeft;
+    rebaseEdit(what, value);
+    return true;
+  }
+
+  async function undoStep(from, to, field) {
+    const entry = from.pop();
+    if (!entry) return;
+    refreshUndoButtons();
+    try {
+      await applyUndoEntry(entry, entry[field]);
+      to.push(entry);
+      el("save-state").textContent = t("editor.saved");
+    } catch (error) {
+      from.push(entry);  // nothing was written: the step is still outstanding
+      toast(t("editor.saveError", { message: error.message }));
+    }
+    refreshUndoButtons();
+  }
+
+  const undo = () => undoStep(undoStack, redoStack, "before");
+  const redo = () => undoStep(redoStack, undoStack, "after");
+
+  el("undo-button").onclick = undo;
+  el("redo-button").onclick = redo;
+
+  /**
+   * Ctrl+Z / Ctrl+Y for everything the editor saves by itself.
+   *
+   * Inside a field the browser goes first: what was typed there is in its own
+   * history, and taking that over would make the editor worse at the one case
+   * it already handles. The stack answers only where the browser has nothing
+   * left — a field just entered, or a history reaching back to the state the
+   * editor opened in — and that it has nothing shows only once the keystroke
+   * has had its effect, which is what the probe below waits for.
+   */
+  function onUndoKey(event) {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+    const key = event.key.toLowerCase();
+    if (key !== "z" && key !== "y") return;
+    const run = key === "y" || event.shiftKey ? redo : undo;
+    // only `value` fields: the probe below compares one, and nothing in the
+    // editor is contenteditable
+    const field = event.target?.closest?.("input, textarea");
+    if (!field) {
+      event.preventDefault();
+      run();
+      return;
+    }
+    const before = field.value;
+    setTimeout(() => {
+      if (field.value === before) run();
+    }, 0);
+  }
+  document.addEventListener("keydown", onUndoKey, true);
+  unsubscribers.push(() => document.removeEventListener("keydown", onUndoKey, true));
+
   renderSegments();
 
+  /**
+   * Bring the list in line with `segments` by updating the rows that are
+   * already there — building them anew is what used to cost the cursor, the
+   * browser's undo history and the keystrokes not yet saved. A row is only
+   * built where a segment appeared, and only dropped where one is gone.
+   */
   function renderSegments() {
     const list = el("segment-list");
     el("no-segments").hidden = segments.length > 0;
-    list.replaceChildren(...segments.map((segment) => buildRow(segment)));
+    const known = new Map([...list.children].map((row) => [row.dataset.id, row]));
+    const rows = segments.map((segment) => {
+      const row = known.get(String(segment.id));
+      if (!row) return buildRow(segment);
+      known.delete(String(segment.id));
+      row.update(segment);
+      return row;
+    });
+    for (const gone of known.values()) gone.remove();
+    // Only what sits in the wrong place is moved: re-inserting a node that is
+    // already where it belongs takes it out of the document for a moment, and
+    // that is a lost focus for the field someone is typing in.
+    let anchor = list.firstElementChild;
+    for (const row of rows) {
+      if (row === anchor) {
+        anchor = row.nextElementSibling;
+        continue;
+      }
+      list.insertBefore(row, anchor);
+    }
     if (focusSegmentId === null) return;
     const row = list.querySelector(`.seg-row[data-id="${focusSegmentId}"]`);
     if (!row) return;
@@ -1103,6 +1370,10 @@ export async function render(view, _status, params) {
   function buildRow(segment) {
     const row = document.createElement("div");
     row.className = "seg-row";
+    // What this row shows right now. The handlers below read it instead of the
+    // segment they were built with: a diarisation rewrites the times under a
+    // row that stays, and a timestamp playing the old second is a wrong row.
+    let data = segment;
     row.dataset.id = segment.id;
     row.dataset.start = segment.start_s;
     row.dataset.end = segment.end_s;
@@ -1111,7 +1382,7 @@ export async function render(view, _status, params) {
     ts.type = "button";
     ts.className = "seg-ts";
     ts.textContent = formatDuration(segment.start_s);
-    ts.onclick = () => playFrom(segment.start_s);
+    ts.onclick = () => playFrom(data.start_s);
 
     const speaker = document.createElement("input");
     speaker.className = "seg-speaker";
@@ -1145,23 +1416,32 @@ export async function render(view, _status, params) {
       }
     };
 
+    row.update = (next) => {
+      data = next;
+      row.dataset.start = next.start_s;
+      row.dataset.end = next.end_s;
+      ts.textContent = formatDuration(next.start_s);
+      setFieldValue(speaker, next.speaker ?? "", {
+        target: "segment", id: next.id, field: "speaker",
+      });
+      const written = setFieldValue(text, next.text, {
+        target: "segment", id: next.id, field: "text",
+      });
+      if (written) autoGrow(text);
+    };
+
     row.append(ts, speaker, text, remove);
     return row;
   }
 
   function bindAutosave(input, segmentId, field) {
-    input.addEventListener("focus", () => { input.dataset.before = input.value; });
+    const record = trackEdits(input, { target: "segment", id: segmentId, field });
     input.addEventListener("input", () => {
       el("save-state").textContent = "…";
       clearTimeout(timers.get(`${segmentId}:${field}`));
       timers.set(`${segmentId}:${field}`, setTimeout(async () => {
         try {
-          const before = input.dataset.before ?? "";
-          if (before !== input.value) {
-            undoStack.push({ id: segmentId, field, before });
-            input.dataset.before = input.value;
-            el("undo-button").disabled = false;
-          }
+          const before = record();
           const updated = await api.updateSegment(segmentId, { [field]: input.value });
           const local = segments.find((s) => s.id === segmentId);
           if (local) Object.assign(local, updated);
@@ -1206,27 +1486,6 @@ export async function render(view, _status, params) {
       toast(error.message);
     }
   }
-
-  el("undo-button").onclick = async () => {
-    const entry = undoStack.pop();
-    if (!entry) return;
-    el("undo-button").disabled = undoStack.length === 0;
-    try {
-      const updated = await api.updateSegment(entry.id, { [entry.field]: entry.before });
-      const local = segments.find((s) => s.id === entry.id);
-      if (local) Object.assign(local, updated);
-      const row = el("segment-list").querySelector(`.seg-row[data-id="${entry.id}"]`);
-      const input = row?.querySelector(entry.field === "text" ? ".seg-text" : ".seg-speaker");
-      if (input) {
-        input.value = entry.before;
-        input.dataset.before = entry.before;
-        if (entry.field === "text") autoGrow(input);
-      }
-      el("save-state").textContent = t("editor.saved");
-    } catch (error) {
-      toast(t("editor.saveError", { message: error.message }));
-    }
-  };
 
   let activeRow = null;
 
@@ -1357,7 +1616,7 @@ export async function render(view, _status, params) {
   }
 
   function renderDerivedPanels() {
-    renderTextPanel("cleanup-panel", "cleanup", "");
+    syncTextPanel(el("cleanup-panel"), "cleanup", "");
     renderTranslationPanel();
     renderSourceHints();
     bindScrollSync();
@@ -1382,13 +1641,13 @@ export async function render(view, _status, params) {
     cleanHint.hidden = false;
   }
 
-  function buildTextEditor(text, kind, language) {
+  function buildTextHead(text, kind, language) {
     const head = document.createElement("div");
     head.className = "dtext-head";
     const meta = document.createElement("span");
     meta.className = "muted small";
     meta.textContent = t("editor.textMeta", {
-      model: text.model || "—", date: text.created_at,
+      model: text.model || "—", date: formatStamp(text.created_at),
     });
     head.append(meta, Object.assign(document.createElement("span"), { className: "spacer" }));
     if (llmEnabled) {
@@ -1402,13 +1661,21 @@ export async function render(view, _status, params) {
       rerun.onclick = () => startStep(kind, language, rerun);
       head.append(rerun);
     }
+    return head;
+  }
+
+  function buildTextArea(text, kind, language) {
     const area = document.createElement("textarea");
     area.className = "dtext";
+    // which text this field holds — an undo step has to find it again, and
+    // the panel it sits in does not say which translation is on screen
+    area.dataset.kind = kind;
+    area.dataset.lang = language;
     area.value = text.content;
     if (kind === "translation") bindSpellcheck(area, language);
     else bindSourceSpellcheck(area);
     bindTextAutosave(area, kind, language);
-    return [head, area];
+    return area;
   }
 
   async function startStep(kind, language, button) {
@@ -1425,13 +1692,33 @@ export async function render(view, _status, params) {
     }
   }
 
-  function renderTextPanel(hostId, kind, language) {
-    const host = el(hostId);
+  /**
+   * Put the panel's content where it belongs, keeping the text field itself.
+   *
+   * The head is built anew every time — it holds nothing that was typed, and
+   * its "run again" button has to come back enabled after a step that failed.
+   * The field is replaced only when it belongs to another text; otherwise it
+   * keeps its node and is written only where the content really differs.
+   */
+  function syncTextPanel(host, kind, language) {
     if (!host) return;
     const text = derivedText(kind, language);
-    host.replaceChildren(
-      ...(text ? buildTextEditor(text, kind, language) : [buildCreateAction(kind, language)])
+    if (!text) {
+      host.replaceChildren(buildCreateAction(kind, language));
+      return;
+    }
+    const area = host.querySelector(
+      `.dtext[data-kind="${kind}"][data-lang="${language}"]`
     );
+    const head = host.querySelector(".dtext-head");
+    if (!area || !head) {
+      host.replaceChildren(
+        buildTextHead(text, kind, language), buildTextArea(text, kind, language)
+      );
+      return;
+    }
+    host.replaceChild(buildTextHead(text, kind, language), head);
+    setFieldValue(area, text.content, { target: "text", kind, language });
   }
 
   function renderTranslationPanel() {
@@ -1486,19 +1773,20 @@ export async function render(view, _status, params) {
         toast(error.message);
       }
     };
-    const body = document.createElement("div");
+    // The box around the text outlives the redraw — hanging a new one in
+    // would take the field with it, and with the field the cursor standing
+    // in it. Only its content is brought up to date.
+    let body = host.firstElementChild;
+    if (!body) {
+      body = document.createElement("div");
+      host.append(body);
+    }
     function fillBody() {
-      const text = derivedText("translation", translationLanguage);
-      remove.hidden = !text;
-      body.replaceChildren(
-        ...(text
-          ? buildTextEditor(text, "translation", translationLanguage)
-          : [buildCreateAction("translation", translationLanguage)])
-      );
+      remove.hidden = !derivedText("translation", translationLanguage);
+      syncTextPanel(body, "translation", translationLanguage);
     }
     fillBody();
     tools.replaceChildren(chip, remove);
-    host.replaceChildren(body);
   }
 
   function buildCreateAction(kind, language) {
@@ -1527,14 +1815,22 @@ export async function render(view, _status, params) {
   }
 
   function bindTextAutosave(area, kind, language) {
+    const record = trackEdits(area, { target: "text", kind, language });
     area.addEventListener("input", () => {
       el("save-state").textContent = "…";
       const key = `${kind}:${language}`;
       clearTimeout(textTimers.get(key));
       textTimers.set(key, setTimeout(async () => {
         try {
-          const updated = await api.updateText(fileId, kind, language, area.value);
+          record();
+          const sent = area.value;
           const local = derivedText(kind, language);
+          // Noted before the request, not after it: the echo redraws the
+          // panels from here without fetching, and it can do so before this
+          // call returns. An older text would then land in the field, which
+          // is exactly what the user has just typed over.
+          if (local) local.content = sent;
+          const updated = await saveDerivedText(kind, language, sent);
           if (local) local.content = updated.content;
           el("save-state").textContent = t("editor.saved");
         } catch (error) {
@@ -1557,9 +1853,7 @@ export async function render(view, _status, params) {
       const fresh = await api.getSegments(fileId).catch(() => null);
       if (!fresh) return;
       segments = fresh.segments;
-      // don't re-render under the user's cursor — their own edit caused this
-      const editing = document.activeElement?.closest?.(".seg-row");
-      if (!editing) renderSegments();
+      renderSegments();
     }),
     on("range.text", (payload) => {
       if (payload.file_id === fileId) showRangeText(payload);
@@ -1571,14 +1865,40 @@ export async function render(view, _status, params) {
       Object.assign(file, row);
       setChipLanguage(audioLanguageChip, file.language ?? "", audioChipOptions);
     }),
-    on("texts.changed", async ({ file_id }) => {
+    on("texts.changed", async ({ file_id, kind, language, origin }) => {
       if (file_id !== fileId) return;
+      // This editor's own save, coming back: `derivedTexts` already holds
+      // what it says, so fetching every text of the file to compare it with
+      // itself is the most expensive way to learn nothing. Only the redraw
+      // is left, and that costs nothing — the panels update the nodes they
+      // find, so the field being typed in keeps its cursor whoever wrote.
+      //
+      // "user" alone would not do: somebody else editing the same transcript
+      // is announced the same way, and their text has to be fetched like any
+      // other. `ownWrites` is what tells the two apart.
+      if (origin === "user" && ownWrites.delete(`${kind}:${language}`)) {
+        renderDerivedPanels();
+        return;
+      }
+      // what was there before the fetch, for "did this kind just appear?" —
+      // the two answers, not the whole array, so the old texts can go
+      const had = { cleanup: hasText("cleanup"), translation: hasText("translation") };
       const fresh = await api.getTexts(fileId).catch(() => null);
       if (!fresh) return;
       derivedTexts = fresh.texts;
-      // don't re-render under the user's cursor — their edit triggered this event
-      const editing = document.activeElement?.classList?.contains("dtext");
-      if (!editing) renderDerivedPanels();
+      // A text that was not there when the editor opened has no panel open to
+      // appear in: the result would land behind a tab nobody thinks to press.
+      let opened = false;
+      if (desktopQuery.matches) {
+        for (const kind of ["cleanup", "translation"]) {
+          if (hasText(kind) && !had[kind]) {
+            activePanels.add(kind);
+            opened = true;
+          }
+        }
+      }
+      if (opened) applyPanels();
+      renderDerivedPanels();
     }),
     on("job.update", (job) => {
       if (job.file_id !== fileId) return;
@@ -1617,6 +1937,13 @@ export async function render(view, _status, params) {
       }
     })
   );
+
+  // A debounced save still pending when the editor closes would fire into a
+  // view nobody is looking at, and hold this whole closure — segments, texts
+  // and both stacks — alive until it did.
+  unsubscribers.push(() => {
+    for (const id of [...timers.values(), ...textTimers.values()]) clearTimeout(id);
+  });
 
   setupPanels();
 }
