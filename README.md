@@ -56,6 +56,60 @@ On first start, the **in-app first-run setup** checks the system and installs
 missing components (ffmpeg, Whisper, PDF export, search) automatically with live
 progress. An existing ffmpeg installation is used; otherwise a static build is
 set up.
+  ### Update server packages from Settings
+
+  The Linux server row in Settings → System can run `apt-get update` and
+  `apt-get upgrade`. The service runs as the unprivileged `verba` user, so this
+  is disabled by default. On Debian/Ubuntu, enable it with a narrow sudoers
+  rule and a systemd override:
+
+  ```bash
+  printf 'verba ALL=(root) NOPASSWD: /usr/bin/apt-get, /usr/bin/true, /bin/true\n' \
+    | sudo tee /etc/sudoers.d/verba-apt >/dev/null
+  sudo chmod 440 /etc/sudoers.d/verba-apt
+  sudo visudo -c
+  sudo systemctl edit verba
+  ```
+
+  Add this to the editor that `systemctl edit` opens:
+
+  ```ini
+  [Service]
+  NoNewPrivileges=false
+  ProtectSystem=no
+  ```
+
+  Then apply the override and restart Verba:
+
+  ```bash
+  sudo systemctl daemon-reload
+  sudo systemctl restart verba
+  ```
+
+  This grants `verba` passwordless access to `apt-get`; because apt can install
+  packages and run their maintainer scripts as root, this is effectively a
+  significant root privilege. Only enable it on a server whose Verba
+  administrator accounts and network access are appropriately restricted. The
+  button does not reboot the server; perform any required reboot manually.
+
+  ### Uninstall the Linux server
+
+  This removes the service, application, settings, database, models and default
+  workspaces under `/opt/verba`. Back up anything you need first. Also check for
+  custom data or workspace paths outside `/opt/verba` and remove those separately
+  if desired.
+
+  ```bash
+  sudo systemctl disable --now verba
+  sudo rm -f /etc/systemd/system/verba.service
+  sudo rm -rf /etc/systemd/system/verba.service.d
+  sudo systemctl daemon-reload
+  sudo rm -rf -- /opt/verba
+  sudo userdel verba 2>/dev/null || true
+  sudo rm -f /etc/sudoers.d/verba-apt
+  sudo visudo -c
+  ```
+
 
 ### From source
 
