@@ -299,12 +299,70 @@ def test_no_build_without_a_way_to_install_the_tools(real_possible, monkeypatch)
     monkeypatch.setattr(llamabuild.hardware, "has_gpu", lambda *a, **k: True)
     monkeypatch.setattr(llamabuild.cudalibs, "driver_state", lambda: (True, "libcuda.so.1"))
     monkeypatch.setattr(llamabuild, "missing_tools", lambda: ["nvcc"])
+    monkeypatch.setattr(llamabuild, "toolkit_refusal", lambda: "")
     monkeypatch.setattr(llamacpp, "can_install_packages", lambda: False)
 
     possible, reason = llamabuild.possible()
 
     assert possible is False
     assert "nvcc" in reason and "sudo" in reason
+
+
+def test_a_container_never_gets_the_distributions_toolkit(real_possible, monkeypatch, tmp_path):
+    """Ubuntu's nvidia-cuda-toolkit pulls a driver package, which wrecks dpkg
+    where the driver is the host's, mounted into the container."""
+    marker = tmp_path / "container"
+    marker.write_text("lxc")
+    monkeypatch.setattr(llamabuild.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(llamabuild.hardware, "has_gpu", lambda *a, **k: True)
+    monkeypatch.setattr(llamabuild.cudalibs, "driver_state", lambda: (True, "libcuda.so.1"))
+    monkeypatch.setattr(llamabuild, "missing_tools", lambda: ["nvcc"])
+    monkeypatch.setattr(llamabuild.shutil, "which", lambda tool: "/usr/bin/apt-get")
+    monkeypatch.setattr(llamabuild, "_CONTAINER_MARKERS", (str(marker),))
+    monkeypatch.setattr(
+        llamacpp,
+        "install_packages",
+        lambda *a, **k: pytest.fail("installed a toolkit with a driver dependency"),
+    )
+
+    possible, reason = llamabuild.possible()
+
+    assert possible is False
+    assert "NVIDIA-Repository" in reason
+    with pytest.raises(RuntimeError, match="NVIDIA-Repository"):
+        llamabuild._ensure_tools(lambda *a, **k: None, 0, 100)
+
+
+def test_the_toolkit_refusal_needs_both_apt_and_a_container(monkeypatch, tmp_path):
+    marker = tmp_path / "container"
+    marker.write_text("lxc")
+    monkeypatch.setattr(llamabuild, "_CONTAINER_MARKERS", (str(marker),))
+    monkeypatch.setattr(llamabuild.shutil, "which", lambda tool: None)
+    assert llamabuild.toolkit_refusal() == "", "no apt: nothing to refuse"
+
+    monkeypatch.setattr(llamabuild.shutil, "which", lambda tool: "/usr/bin/apt-get")
+    monkeypatch.setattr(llamabuild, "_CONTAINER_MARKERS", (str(tmp_path / "absent"),))
+    assert llamabuild.toolkit_refusal() == "", "a real host owns its driver packages"
+
+
+def test_the_disk_is_checked_before_the_toolkit_is_installed(monkeypatch, tmp_path):
+    """The toolkit eats the room the build needs; refusing afterwards leaves it behind."""
+    monkeypatch.setattr(llamabuild.config, "tools_dir", lambda: tmp_path)
+    monkeypatch.setattr(llamabuild, "missing_tools", lambda: ["nvcc"])
+    needed: list[int] = []
+    monkeypatch.setattr(
+        llamabuild.download, "require_free_space", lambda target, size: needed.append(size)
+    )
+
+    def refuse(*args):
+        raise RuntimeError("stop")
+
+    monkeypatch.setattr(llamabuild, "_ensure_tools", refuse)
+
+    with pytest.raises(RuntimeError, match="stop"):
+        llamabuild.build("b1", lambda *a, **k: None)
+
+    assert needed == [llamabuild.BUILD_SPACE_BYTES + llamabuild.TOOLKIT_BYTES]
 
 
 def test_a_build_is_possible_with_the_tools_in_place(real_possible, monkeypatch):

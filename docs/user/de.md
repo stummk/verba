@@ -1153,8 +1153,14 @@ Build, der sie nicht findet, würde sonst unbemerkt im Arbeitsspeicher rechnen:
    sie vorher — das Toolkit ist mehrere GB groß, der Build dauert 10 bis 20
    Minuten, und beides steht im Protokoll. Gebaut wird nur für die eingebaute
    Karte, und die Zahl paralleler Compiler richtet sich nach dem
-   Arbeitsspeicher, nicht nach den Kernen. Nur unter Linux; Windows hat ja ein
-   CUDA-Paket.
+   Arbeitsspeicher, nicht nach den Kernen. Der Platz wird vorher geprüft (etwa
+   2 GB, dazu das Toolkit). Nur unter Linux; Windows hat ja ein CUDA-Paket.
+   **In einem Container** (Proxmox LXC, Docker) installiert Verba das
+   CUDA-Toolkit der Distribution nicht: Es bringt ein Treiberpaket mit, das den
+   vom Host durchgereichten Treiber überschreiben will und die Paketverwaltung
+   unbrauchbar macht. Stattdessen sagt das Protokoll, was zu tun ist — das
+   Toolkit einmal aus dem NVIDIA-Repository **ohne Treiber** installieren
+   (`nvcc` unter `/usr/local/cuda`), dann baut Verba selbst.
 3. **Der CPU-Build.** Was übrig bleibt, wenn nichts die Karte erreicht — dann
    läuft das Sprachmodell eben langsamer, aber es läuft.
 

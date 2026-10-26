@@ -50,8 +50,14 @@ logger = logging.getLogger(__name__)
 SOURCE_URL = "https://github.com/ggml-org/llama.cpp/archive/refs/tags/{tag}.tar.gz"
 #: The source tree is ~30 MB packed; anything far beyond that is not it.
 MAX_SOURCE_BYTES = 200 * 1024 * 1024
-#: Objects, libraries and the CUDA fat binaries of one build.
-BUILD_SPACE_BYTES = 8 * 1024 * 1024 * 1024
+#: Source, objects and the CUDA binaries of one build for a single architecture.
+#: Measured at ~280 MB for llama-server alone; the rest is margin for the
+#: static link of every tool.
+BUILD_SPACE_BYTES = 2 * 1024 * 1024 * 1024
+#: What the distribution's CUDA toolkit adds to the disk, unpacked.
+TOOLKIT_BYTES = 4 * 1024 * 1024 * 1024
+#: How a container says so about itself: systemd's note (LXC, nspawn), Docker, Podman.
+_CONTAINER_MARKERS = ("/run/systemd/container", "/.dockerenv", "/run/.containerenv")
 #: A CUDA build takes minutes, not seconds — and on a small machine many of
 #: them. This is the point at which something is wrong rather than slow.
 BUILD_TIMEOUT_S = 90 * 60
@@ -124,6 +130,25 @@ def missing_tools() -> list[str]:
     return [tool for tool in TOOLS if _find(tool) is None]
 
 
+def toolkit_refusal() -> str:
+    """Why the distribution's CUDA toolkit must not be installed here; empty if it may.
+
+    Debian's and Ubuntu's toolkit packages depend on a driver package. Where a
+    card works at all inside a container, its driver is the host's, mounted in
+    from outside — and apt unpacking a driver package of its own over those
+    files fails halfway and leaves dpkg unusable. The toolkit has to come from
+    NVIDIA's repository, which has no driver dependency.
+    """
+    if shutil.which("apt-get") is None or not any(Path(p).exists() for p in _CONTAINER_MARKERS):
+        return ""
+    return (
+        "In einem Container bringt das CUDA-Toolkit der Distribution einen eigenen "
+        "Treiber mit und würde den vom Host durchgereichten beschädigen. Bitte das "
+        "CUDA-Toolkit aus dem NVIDIA-Repository ohne Treiber installieren (nvcc unter "
+        "/usr/local/cuda) — dann baut Verba llama.cpp selbst."
+    )
+
+
 def possible() -> tuple[bool, str]:
     """Whether a CUDA build can be attempted here, and why not when it cannot.
 
@@ -144,6 +169,8 @@ def possible() -> tuple[bool, str]:
             "fehlen dafür meist /dev/nvidia-uvm und /dev/nvidia-uvm-tools."
         )
     missing = missing_tools()
+    if "nvcc" in missing and (refusal := toolkit_refusal()):
+        return False, refusal
     if missing:
         from . import llamacpp
 
@@ -166,14 +193,16 @@ def build(tag: str, emit: Any, *, base: int = 0, span: int = 100) -> Path:
     def step(fraction: float, message: str) -> None:
         emit(base + int(span * fraction), message)
 
-    step(0.02, "Prüfe die Werkzeuge für den CUDA-Build ...")
-    _ensure_tools(emit, base, span)
-
     workspace = config.tools_dir() / "llama-build"
     shutil.rmtree(workspace, ignore_errors=True)
     workspace.mkdir(parents=True, exist_ok=True)
     try:
-        download.require_free_space(workspace, BUILD_SPACE_BYTES)
+        step(0.02, "Prüfe die Werkzeuge für den CUDA-Build ...")
+        # before anything is installed: the toolkit itself eats the room the
+        # build needs, and a refusal afterwards leaves the toolkit behind
+        toolkit = TOOLKIT_BYTES if "nvcc" in missing_tools() else 0
+        download.require_free_space(workspace, BUILD_SPACE_BYTES + toolkit)
+        _ensure_tools(emit, base, span)
         source = _fetch_source(tag, workspace, emit, base, span)
         build_dir = workspace / "build"
         _configure(source, build_dir, emit, base, span)
@@ -192,6 +221,8 @@ def _ensure_tools(emit: Any, base: int, span: int) -> None:
     missing = missing_tools()
     if not missing:
         return
+    if "nvcc" in missing and (refusal := toolkit_refusal()):
+        raise RuntimeError(refusal)
     emit(base + int(span * 0.05), f"Installiere Build-Werkzeuge: {', '.join(missing)} ...")
     if "nvcc" in missing:
         emit(

@@ -1102,7 +1102,13 @@ otherwise compute in main memory unnoticed:
    toolkit) — the toolkit is several GB, the build takes 10 to 20 minutes, and
    both are in the log. It builds for the installed card only, and the number
    of parallel compilers follows the available memory rather than the core
-   count. Linux only; Windows has a CUDA package anyway.
+   count. The disk space is checked first (about 2 GB, plus the toolkit).
+   Linux only; Windows has a CUDA package anyway. **In a container** (Proxmox
+   LXC, Docker) Verba does not install the distribution's CUDA toolkit: it
+   brings a driver package that would overwrite the driver passed through
+   from the host and leave the package manager unusable. The log says what to
+   do instead — install the toolkit once from NVIDIA's repository **without
+   the driver** (`nvcc` under `/usr/local/cuda`), and Verba builds on its own.
 3. **The CPU build.** What is left when nothing reaches the card — the
    language model is then slower, but it runs.
 
