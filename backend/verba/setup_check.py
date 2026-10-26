@@ -31,7 +31,7 @@ import time
 import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from importlib import invalidate_caches
+from importlib import invalidate_caches, metadata
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
@@ -78,6 +78,9 @@ class FeatureGroup:
     import_name: str
     required: bool = True
     extra_imports: list[str] = field(default_factory=list)
+    #: Distribution name -> highest major version the feature works with. A
+    #: dependency that pip resolved to something newer is as good as missing.
+    max_major: dict[str, int] = field(default_factory=dict)
 
     @property
     def import_names(self) -> list[str]:
@@ -88,8 +91,13 @@ FEATURE_GROUPS: list[FeatureGroup] = [
     FeatureGroup(
         key="transcribe",
         label="Transkription (faster-whisper)",
-        packages=["faster-whisper>=1.0"],
+        # faster-whisper opens audio with `av.open(metadata_errors=...)`, which
+        # PyAV removed after 15.x, and its own requirement has no upper bound —
+        # on a fresh install pip resolves to the newest PyAV and every
+        # transcription fails with a TypeError.
+        packages=["faster-whisper>=1.0", "av>=11,<16"],
         import_name="faster_whisper",
+        max_major={"av": 15},
         # numpy comes with faster-whisper and is asked after all the same: a
         # half-installed one leaves faster_whisper findable and the
         # transcription broken, and the checklist has to say so. Otherwise
@@ -277,9 +285,26 @@ def _module_installed(name: str) -> bool:
     return spec is not None and spec.origin is not None
 
 
+def too_new(group: FeatureGroup) -> list[str]:
+    """The group's distributions installed in a newer major version than it supports.
+
+    Reads the package metadata instead of importing, like `_module_installed`.
+    A distribution without readable metadata is given the benefit of the doubt.
+    """
+    found = []
+    for name, limit in group.max_major.items():
+        try:
+            major = int(metadata.version(name).split(".")[0])
+        except (metadata.PackageNotFoundError, ValueError):
+            continue
+        if major > limit:
+            found.append(name)
+    return found
+
+
 def group_installed(group: FeatureGroup) -> bool:
-    """Whether every module of the group can be located."""
-    return all(_module_installed(name) for name in group.import_names)
+    """Whether every module of the group can be located, in a version it works with."""
+    return all(_module_installed(name) for name in group.import_names) and not too_new(group)
 
 
 def group_by_key(key: str) -> FeatureGroup | None:
@@ -291,6 +316,13 @@ def check_groups() -> list[CheckResult]:
     results = []
     for group in FEATURE_GROUPS:
         ok = group_installed(group)
+        newer = too_new(group)
+        if ok:
+            detail = "installiert"
+        elif newer:
+            detail = f"{', '.join(newer)} ist zu neu — wird bei der Einrichtung ersetzt"
+        else:
+            detail = "wird bei der Einrichtung installiert"
         results.append(
             CheckResult(
                 id=f"group:{group.key}",
@@ -298,7 +330,7 @@ def check_groups() -> list[CheckResult]:
                 ok=ok,
                 required=group.required,
                 installable=True,
-                detail="installiert" if ok else "wird bei der Einrichtung installiert",
+                detail=detail,
             )
         )
     return results

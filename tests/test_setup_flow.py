@@ -159,6 +159,48 @@ def test_transcribe_group_covers_numpy():
     assert set(group.import_names) == {"faster_whisper", "numpy"}
 
 
+def test_transcribe_group_pins_pyav():
+    """PyAV dropped `metadata_errors` from `av.open`, which faster-whisper passes."""
+    [group] = [g for g in setup_check.FEATURE_GROUPS if g.key == "transcribe"]
+    assert "av>=11,<16" in group.packages
+    assert group.max_major == {"av": 15}
+
+
+def test_a_dependency_that_is_too_new_counts_as_not_installed(monkeypatch):
+    """An installation that already resolved to PyAV 19 is repaired, not skipped."""
+    group = setup_check.FeatureGroup(
+        key="pinned", label="Pinned", packages=["json"], import_name="json", max_major={"av": 15}
+    )
+    versions = {"av": "19.0.2"}
+    monkeypatch.setattr(setup_check.metadata, "version", lambda name: versions[name])
+
+    assert setup_check.too_new(group) == ["av"]
+    assert setup_check.group_installed(group) is False
+
+    versions["av"] = "15.1.0"
+    assert setup_check.too_new(group) == []
+    assert setup_check.group_installed(group) is True
+
+
+def test_a_dependency_without_metadata_is_not_blamed(monkeypatch):
+    group = setup_check.FeatureGroup(
+        key="pinned", label="Pinned", packages=["json"], import_name="json", max_major={"av": 15}
+    )
+
+    def unknown(name):
+        raise setup_check.metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(setup_check.metadata, "version", unknown)
+    assert setup_check.too_new(group) == []
+
+
+def test_the_checklist_says_why_a_group_is_replaced(monkeypatch):
+    monkeypatch.setattr(setup_check.metadata, "version", lambda name: "19.0.2")
+    [check] = [c for c in setup_check.check_groups() if c.id == "group:transcribe"]
+    assert check.ok is False
+    assert "av" in check.detail and "zu neu" in check.detail
+
+
 def test_import_verification_covers_every_module(monkeypatch):
     checked: list[str] = []
 
