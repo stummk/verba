@@ -12,6 +12,9 @@
   to CPU/int8 and reports that via the status monitor. The libraries CUDA
   needs are installed and made loadable by services/cudalibs.py — the fallback
   is what happens when they are missing, so installing them lifts it.
+- With `whisper.engine = "openai"` none of the above runs: the audio goes to an
+  OpenAI-compatible `/audio/transcriptions` endpoint instead, in pieces cut at
+  pauses so no upload limit is reached and no word is cut in half.
 """
 
 from __future__ import annotations
@@ -19,15 +22,19 @@ from __future__ import annotations
 import logging
 import shutil
 import sys
+import tempfile
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from .. import config, db
 from ..core.jobs import JobCancelled
 from ..events import hub
-from . import cudalibs, hardware, transcripts, workspace
+from . import cudalibs, hardware, languages, transcripts, workspace
 from .media import format_clock, probe_duration
 
 logger = logging.getLogger(__name__)
@@ -49,6 +56,21 @@ _model_key: tuple[str, str, str, str] | None = None  # name, device, compute, mo
 _active_device: str = ""
 _cuda_broken = False  # set when CUDA libs or the VRAM turn out unusable at runtime
 _cuda_generation = -1  # the cudalibs installation `_cuda_broken` was decided against
+
+#: One upload to an endpoint: ten minutes are ~10 MB of 16 kHz FLAC, below the
+#: 25 MB OpenAI, Groq and vLLM accept, and short enough for a slow server.
+ENDPOINT_CHUNK_S = 600.0
+#: How far before the chunk limit a pause is looked for to cut at.
+ENDPOINT_CUT_WINDOW_S = 60.0
+ENDPOINT_TIMEOUT = httpx.Timeout(900.0, connect=15.0)
+ENDPOINT_DEFAULT_MODEL = "whisper-1"
+#: Longest `prompt` sent to an endpoint. Whisper reads at most 224 tokens of it
+#: and Groq refuses more; Cyrillic needs about 1.5 characters per token.
+ENDPOINT_PROMPT_CHARS = 300
+#: The end given to ffmpeg when the duration could not be read: "to the end".
+_UNKNOWN_END_S = 7 * 86400.0
+#: Optional request fields an endpoint refused, per base URL — dropped from then on.
+_endpoint_unsupported: dict[str, set[str]] = {}
 
 
 def _cuda_available() -> bool:
@@ -326,6 +348,277 @@ def unload_model() -> None:
     _publish_engine_status("idle")
 
 
+# ── engines ───────────────────────────────────────────────────────────
+
+
+def uses_endpoint(settings: config.Settings | None = None) -> bool:
+    """Whether speech is recognised by an OpenAI-compatible endpoint, not locally."""
+    return (settings or config.get_settings()).whisper.engine == "openai"
+
+
+@dataclass
+class _Info:
+    language: str = ""
+    duration: float | None = None
+
+
+def _recognise(
+    audio_path: Path,
+    *,
+    language: str = "",
+    model_override: str = "",
+    hotwords: str = "",
+    words: bool = False,
+    cancel: threading.Event,
+) -> tuple[Iterator[dict[str, Any]], _Info]:
+    """The segments `{start, end, text, words}` of a recording, by the configured engine.
+
+    The iterator is lazy, so progress can be reported while it runs. An
+    endpoint names the language only with its first answer; `_Info.language`
+    is complete once the iterator is.
+    """
+    if uses_endpoint():
+        info = _Info()
+        return _endpoint_segments(
+            audio_path, info, language=language, prompt=hotwords, words=words, cancel=cancel
+        ), info
+    model = get_model(model_override=model_override)
+    segments_iter, raw = model.transcribe(
+        str(audio_path),
+        language=language or None,
+        beam_size=5,
+        word_timestamps=words,
+        # passed only when there is something to say, so a transcription that has
+        # nothing learned behind it asks exactly what it always asked
+        **({"hotwords": hotwords} if hotwords else {}),
+    )
+    info = _Info(raw.language or "", raw.duration or probe_duration(audio_path))
+    return (_from_faster_whisper(segment, words) for segment in segments_iter), info
+
+
+def _from_faster_whisper(segment: Any, words: bool) -> dict[str, Any]:
+    # The tokens keep their leading space, so joining them back together
+    # reproduces the text exactly — which is what a segment split between
+    # two speakers has to do (services/diarize.py).
+    timings = [(w.start, w.end, w.word) for w in (segment.words or [])] if words else []
+    return {
+        "start": segment.start,
+        "end": segment.end,
+        "text": segment.text.strip(),
+        "words": timings,
+    }
+
+
+def plan_chunks(
+    duration: float | None,
+    pauses: list[tuple[float, float]],
+    limit: float = ENDPOINT_CHUNK_S,
+    window: float = ENDPOINT_CUT_WINDOW_S,
+) -> list[tuple[float, float]]:
+    """Where to cut a recording into uploads of at most `limit` seconds.
+
+    Each cut lies in the middle of the last pause in the `window` before the
+    limit, and exactly at the limit where the speech has none.
+    """
+    if not duration:
+        return [(0.0, _UNKNOWN_END_S)]
+    spans: list[tuple[float, float]] = []
+    start = 0.0
+    while duration - start > limit:
+        target = start + limit
+        middles = [(a + b) / 2 for a, b in pauses if target - window <= (a + b) / 2 <= target]
+        cut = middles[-1] if middles else target
+        spans.append((start, cut))
+        start = cut
+    spans.append((start, duration))
+    return spans
+
+
+def _endpoint_segments(
+    audio_path: Path,
+    info: _Info,
+    *,
+    language: str,
+    prompt: str,
+    words: bool,
+    cancel: threading.Event,
+) -> Iterator[dict[str, Any]]:
+    from . import audio
+
+    settings = config.get_settings().whisper
+    base_url = settings.base_url.strip().rstrip("/")
+    if not base_url:
+        raise RuntimeError(
+            "Kein Transkriptions-Endpunkt eingerichtet (Einstellungen → Transkription)"
+        )
+    duration = probe_duration(audio_path)
+    pauses: list[tuple[float, float]] = []
+    if duration is None or duration > ENDPOINT_CHUNK_S:
+        duration, pauses = audio.scan_pauses(audio_path)
+    info.duration = duration
+
+    fields = {"model": settings.remote_model.strip() or ENDPOINT_DEFAULT_MODEL, "temperature": "0"}
+    # everything an endpoint may not know: refused once, left out from then on
+    optional: dict[str, Any] = {"response_format": "verbose_json"}
+    if language:
+        optional["language"] = language
+    if prompt := fit_prompt(prompt):
+        optional["prompt"] = prompt
+    if words:
+        # OpenAI, Groq and LocalAI ask with the first, whisper.cpp with the second
+        optional["timestamp_granularities[]"] = ["segment", "word"]
+        optional["token_timestamps"] = "true"
+
+    with (
+        tempfile.TemporaryDirectory() as tmp,
+        httpx.Client(timeout=ENDPOINT_TIMEOUT, follow_redirects=True) as client,
+    ):
+        clip = Path(tmp) / "piece.flac"
+        for start, end in plan_chunks(duration, pauses):
+            if cancel.is_set():
+                raise JobCancelled()
+            audio.extract_range(audio_path, start, end, clip)
+            answer = _endpoint_request(client, base_url, settings.api_key, clip, fields, optional)
+            if not info.language:
+                info.language = languages.language_code(str(answer.get("language") or ""))
+            yield from _endpoint_pieces(answer, start, min(end, duration or end), words)
+
+
+def fit_prompt(terms: str, limit: int = ENDPOINT_PROMPT_CHARS) -> str:
+    """The learned spellings (`"a, b, c"`) shortened to `limit` characters.
+
+    Whole terms only, from the front: they come ordered by how well they are
+    attested, so what is dropped is what matters least.
+    """
+    kept: list[str] = []
+    length = 0
+    for term in terms.split(", ") if terms else []:
+        length += len(term) + (2 if kept else 0)
+        if length > limit:
+            break
+        kept.append(term)
+    return ", ".join(kept)
+
+
+def _endpoint_request(
+    client: httpx.Client,
+    base_url: str,
+    api_key: str,
+    clip: Path,
+    fields: dict[str, str],
+    optional: dict[str, Any],
+) -> dict[str, Any]:
+    """One upload; an optional field the endpoint refuses is dropped and the upload repeated."""
+    from . import llm
+
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    url = f"{base_url}/audio/transcriptions"
+    for _ in range(len(optional) + 1):
+        refused = _endpoint_unsupported.get(base_url, set())
+        sent = {key: value for key, value in optional.items() if key not in refused}
+        try:
+            with clip.open("rb") as handle:
+                response = client.post(
+                    url,
+                    data={**fields, **sent},
+                    files={"file": (clip.name, handle, "audio/flac")},
+                    headers=headers,
+                )
+            response.raise_for_status()
+            answer = response.json()
+        except httpx.HTTPStatusError as exc:
+            if rejected := llm.rejected_fields(exc, sent):
+                _endpoint_unsupported.setdefault(base_url, set()).update(rejected)
+                logger.info(
+                    "%s does not accept %s — retrying without it",
+                    base_url,
+                    ", ".join(sorted(rejected)),
+                )
+                continue
+            body = exc.response.text[:300].strip()
+            logger.warning("transcription endpoint %s answered %s: %s", url, exc, body)
+            raise RuntimeError(
+                f"Der Transkriptions-Endpunkt antwortete mit {exc.response.status_code}: {body}"
+            ) from exc
+        except httpx.TimeoutException as exc:
+            raise RuntimeError(
+                "Der Transkriptions-Endpunkt hat nicht rechtzeitig geantwortet"
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise RuntimeError(f"Transkriptions-Endpunkt nicht erreichbar: {exc}") from exc
+        except ValueError as exc:
+            raise RuntimeError("Der Transkriptions-Endpunkt lieferte kein JSON") from exc
+        if not isinstance(answer, dict):
+            raise RuntimeError("Der Transkriptions-Endpunkt lieferte eine unerwartete Antwort")
+        return answer
+    raise RuntimeError("Der Transkriptions-Endpunkt lehnt jede Anfrage ab")
+
+
+def _endpoint_pieces(
+    answer: dict[str, Any], offset: float, end: float, words: bool
+) -> Iterator[dict[str, Any]]:
+    """The segments of one endpoint answer, moved to where its piece starts.
+
+    `verbose_json` gives timed segments; a plain `json` answer is one segment
+    spanning the whole piece. Word timings come per segment (whisper.cpp) or
+    as one list for the whole answer (OpenAI).
+    """
+    segments = answer.get("segments")
+    if not isinstance(segments, list) or not segments:
+        text = str(answer.get("text") or "").strip()
+        if text:
+            yield {"start": offset, "end": end, "text": text, "words": []}
+        return
+    shared = answer.get("words") if isinstance(answer.get("words"), list) else []
+    for segment in segments:
+        if not isinstance(segment, dict):
+            continue
+        text = str(segment.get("text") or "").strip()
+        if not text:
+            continue
+        start = float(segment.get("start") or 0.0)
+        stop = float(segment.get("end") or start)
+        timings: list[tuple[float, float, str]] = []
+        if words:
+            own = segment.get("words")
+            raw = (
+                own
+                if isinstance(own, list) and own
+                else [w for w in shared if isinstance(w, dict) and start <= _num(w, "start") < stop]
+            )
+            timings = _word_timings(raw, offset)
+        yield {"start": offset + start, "end": offset + stop, "text": text, "words": timings}
+
+
+def _num(item: dict[str, Any], key: str) -> float:
+    try:
+        return float(item.get(key))
+    except (TypeError, ValueError):
+        return -1.0
+
+
+def _word_timings(raw: list[Any], offset: float) -> list[tuple[float, float, str]]:
+    timed = [
+        item
+        for item in raw
+        if isinstance(item, dict)
+        and _num(item, "start") >= 0
+        and _num(item, "end") >= 0
+        and str(item.get("word") or "").strip()
+        and not str(item["word"]).strip().startswith(("[_", "<|"))
+    ]
+    # Tokens carry their leading space (whisper.cpp); plain words do not (OpenAI)
+    # and get one, so joining them reproduces the text either way.
+    spaced = any(str(item["word"])[:1].isspace() for item in timed)
+    timings: list[tuple[float, float, str]] = []
+    for index, item in enumerate(timed):
+        text = str(item["word"])
+        if not spaced and index:
+            text = " " + text
+        timings.append((offset + _num(item, "start"), offset + _num(item, "end"), text))
+    return timings
+
+
 # ── transcription job handler ─────────────────────────────────────────
 
 
@@ -376,6 +669,8 @@ def _with_cpu_fallback(run: Callable[[], Any], report: Callable[[int, str], None
     of an allocation traceback.
     """
     global _cuda_broken
+    if uses_endpoint():
+        return run()  # no local model: nothing to move to the CPU
     try:
         return run()
     except JobCancelled:
@@ -486,26 +781,28 @@ def transcribe_path(
 
     def run() -> tuple[list[dict[str, Any]], str, float | None]:
         settings = config.get_settings().whisper
-        model = get_model(model_override=model_override)
-        segments_iter, info = model.transcribe(
-            str(audio_path),
-            language=language or settings.language or None,
-            beam_size=5,
+        segments_iter, info = _recognise(
+            audio_path,
+            language=language or settings.language,
+            model_override=model_override,
+            cancel=cancel,
         )
-        duration = info.duration or probe_duration(audio_path)
         _publish_engine_status_running(audio_path.name)
         collected: list[dict[str, Any]] = []
-        for segment in segments_iter:
-            if cancel.is_set():
-                _publish_engine_status("ready")
-                raise JobCancelled()
-            collected.append(
-                {"start": segment.start, "end": segment.end, "text": segment.text.strip()}
-            )
-            if duration:
-                percent = min(99, int(segment.end * 100 / duration))
-                report(percent, f"{audio_path.name}: {format_clock(segment.end)}")
-        return collected, info.language or "", duration
+        try:
+            for segment in segments_iter:
+                if cancel.is_set():
+                    raise JobCancelled()
+                collected.append(
+                    {"start": segment["start"], "end": segment["end"], "text": segment["text"]}
+                )
+                if info.duration:
+                    percent = min(99, int(segment["end"] * 100 / info.duration))
+                    report(percent, f"{audio_path.name}: {format_clock(segment['end'])}")
+        except JobCancelled:
+            _publish_engine_status("ready")
+            raise
+        return collected, info.language, info.duration
 
     segments, detected_language, duration = _with_cpu_fallback(run, report)
     _publish_engine_status("ready")
@@ -568,24 +865,24 @@ def handle_transcribe_range_job(
                 done: float = done_time,
                 label: str = counter,
             ) -> list[str]:
-                model = get_model(model_override=payload.get("model", ""))
                 language = language_for(file_row, payload)
-                hotwords = learned_hotwords(file_row, language)
-                segments_iter, _info = model.transcribe(
-                    str(clip),
-                    language=language or None,
-                    beam_size=5,
-                    **({"hotwords": hotwords} if hotwords else {}),
+                segments_iter, _info = _recognise(
+                    clip,
+                    language=language,
+                    model_override=payload.get("model", ""),
+                    hotwords=learned_hotwords(file_row, language),
+                    cancel=cancel,
                 )
                 collected: list[str] = []
                 for segment in segments_iter:
                     if cancel.is_set():
                         raise JobCancelled()
-                    collected.append(segment.text.strip())
-                    percent = min(99, int((done + min(segment.end, length)) * 100 / total_time))
+                    collected.append(segment["text"])
+                    end = segment["end"]
+                    percent = min(99, int((done + min(end, length)) * 100 / total_time))
                     report(
                         percent,
-                        f"{file_row['filename']}: {format_clock(segment.end + offset)}{label}",
+                        f"{file_row['filename']}: {format_clock(end + offset)}{label}",
                     )
                 return collected
 
@@ -654,45 +951,31 @@ def _run_transcription(
     words: bool = False,
 ) -> tuple[list[dict[str, Any]], Any, float | None]:
     overrides = overrides or {}
-    model = get_model(model_override=overrides.get("model", ""))
     language = language_for(file_row, overrides)
-    # passed only when there is something to say, so a transcription that has
-    # nothing learned behind it asks exactly what it always asked
-    hotwords = learned_hotwords(file_row, language)
-    segments_iter, info = model.transcribe(
-        str(audio_path),
-        language=language or None,
-        beam_size=5,
-        word_timestamps=words,
-        **({"hotwords": hotwords} if hotwords else {}),
+    segments_iter, info = _recognise(
+        audio_path,
+        language=language,
+        model_override=overrides.get("model", ""),
+        hotwords=learned_hotwords(file_row, language),
+        words=words,
+        cancel=cancel,
     )
-    duration = info.duration or probe_duration(audio_path)
 
     _publish_engine_status_running(file_row["filename"])
     segments: list[dict[str, Any]] = []
-    for segment in segments_iter:
-        if cancel.is_set():
-            workspace.set_file_status(file_id, "pending")
-            _publish_engine_status("ready")
-            raise JobCancelled()
-        # The tokens keep their leading space, so joining them back together
-        # reproduces the text exactly — which is what a segment split between
-        # two speakers has to do (services/diarize.py).
-        timings = (
-            [(word.start, word.end, word.word) for word in (segment.words or [])] if words else []
-        )
-        segments.append(
-            {
-                "start": segment.start,
-                "end": segment.end,
-                "text": segment.text.strip(),
-                "words": timings,
-            }
-        )
-        if duration:
-            percent = min(99, int(segment.end * 100 / duration))
-            report(percent, f"{file_row['filename']}: {format_clock(segment.end)}")
-    return segments, info, duration
+    try:
+        for segment in segments_iter:
+            if cancel.is_set():
+                raise JobCancelled()
+            segments.append(segment)
+            if info.duration:
+                percent = min(99, int(segment["end"] * 100 / info.duration))
+                report(percent, f"{file_row['filename']}: {format_clock(segment['end'])}")
+    except JobCancelled:
+        workspace.set_file_status(file_id, "pending")
+        _publish_engine_status("ready")
+        raise
+    return segments, info, info.duration
 
 
 def _publish_engine_status_running(filename: str) -> None:

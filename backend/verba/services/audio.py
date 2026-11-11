@@ -1,4 +1,5 @@
-"""Audio operations via ffmpeg: extracting a passage, and cutting a recording.
+"""Audio operations via ffmpeg: extracting a passage, finding the pauses, and
+cutting a recording.
 
 Cutting works the way an audio editor works: the editor collects the cuts
 without touching anything, and one "apply" turns the whole collection into a
@@ -25,6 +26,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 from contextlib import suppress
 from pathlib import Path
@@ -100,6 +102,56 @@ def to_mono_16k(source: Path, target_wav: Path, rate: int = 16000) -> None:
             str(target_wav),
         ]
     )
+
+
+_DURATION = re.compile(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)")
+_SILENCE = re.compile(r"silence_(start|end):\s*(-?\d+(?:\.\d+)?)")
+
+
+def scan_pauses(
+    source: Path, noise_db: int = -35, min_pause_s: float = 0.4
+) -> tuple[float | None, list[tuple[float, float]]]:
+    """The recording's duration and its pauses, from one ffmpeg pass.
+
+    Returns `(duration or None, [(start_s, end_s), …])`: the places where a
+    recording can be cut without cutting a word in half.
+    """
+    result = procutil.run(
+        [
+            _ffmpeg(),
+            "-hide_banner",
+            "-nostats",
+            "-i",
+            str(source),
+            "-af",
+            f"silencedetect=noise={noise_db}dB:d={min_pause_s}",
+            "-f",
+            "null",
+            "-",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=1800,
+    )
+    output = result.stderr or ""
+    if result.returncode != 0:
+        tail = output.strip().splitlines()[-3:]
+        raise RuntimeError("ffmpeg error: " + " | ".join(tail))
+    duration = None
+    if match := _DURATION.search(output):
+        hours, minutes, seconds = match.groups()
+        duration = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+    pauses: list[tuple[float, float]] = []
+    start: float | None = None
+    for kind, value in _SILENCE.findall(output):
+        if kind == "start":
+            start = max(float(value), 0.0)
+        elif start is not None:
+            pauses.append((start, float(value)))
+            start = None
+    if start is not None and duration:  # a recording that ends in silence
+        pauses.append((start, duration))
+    return duration, pauses
 
 
 # ── the cut itself ────────────────────────────────────────────────────

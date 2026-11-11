@@ -307,3 +307,13 @@ def test_frontend_and_backend_language_lists_stay_in_sync():
     array = re.search(r"WHISPER_LANGUAGES = \[(.*?)\];", source, re.DOTALL).group(1)
     frontend_codes = set(re.findall(r'"([a-z]+)"', array))
     assert frontend_codes == set(LANGUAGE_NAMES)
+
+
+def test_a_detected_language_is_read_as_code_or_name():
+    from verba.services.languages import language_code
+
+    assert language_code("de") == "de"
+    assert language_code("German") == "de"
+    assert language_code(" russian ") == "ru"
+    assert language_code("klingon") == ""
+    assert language_code("") == ""

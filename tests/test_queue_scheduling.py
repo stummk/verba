@@ -158,3 +158,26 @@ def test_local_llm_batch_runs_after_transcriptions(monkeypatch):
         assert order == ["transcribe", "transcribe", "llm"]
     finally:
         queue.stop()
+
+
+def test_a_local_llm_keeps_its_memory_while_an_endpoint_transcribes(monkeypatch):
+    from verba import config
+    from verba.services import llamacpp
+
+    stopped: list[str] = []
+    monkeypatch.setattr(JobQueue, "_llm_location", staticmethod(lambda: "local"))
+    monkeypatch.setattr(llamacpp, "stop_server", lambda: stopped.append("llama"))
+    queue = make_queue()
+    settings = config.get_settings()
+
+    settings.whisper.engine = "openai"
+    config.save_settings(settings)
+    queue._prepare_resources({"kind": "transcribe"})
+    assert stopped == []
+    queue._prepare_resources({"kind": "audio_edit"})  # not a transcription
+    assert stopped == ["llama"]
+
+    settings.whisper.engine = "faster_whisper"
+    config.save_settings(settings)
+    queue._prepare_resources({"kind": "transcribe"})
+    assert stopped == ["llama", "llama"]

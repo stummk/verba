@@ -376,7 +376,7 @@ def chat(
             return text
         except (httpx.HTTPError, EmptyAnswer, KeyError, IndexError, ValueError) as exc:
             last_error = exc
-            if rejected := _rejected_reasoning_fields(exc, sent_extras):
+            if rejected := rejected_fields(exc, sent_extras):
                 # not a failure of the request, only of one of its fields:
                 # retry immediately without it instead of burning a backoff
                 _reasoning_unsupported.setdefault(base_url, set()).update(rejected)
@@ -419,21 +419,24 @@ def _timeout_message(model: str, settings: config.Settings) -> str:
     return f"Das Modell '{model}' hat nach {minutes} Minuten nicht geantwortet.{advice}"
 
 
-def _rejected_reasoning_fields(exc: Exception, sent: dict[str, Any]) -> set[str]:
-    """Which of the reasoning fields this 400 was about, if any.
+def rejected_fields(exc: Exception, sent: dict[str, Any]) -> set[str]:
+    """Which of the optional request fields in `sent` this 400 refused, if any.
 
     Deliberately narrow: a 400 for any other reason must stay a 400, or one
-    bad request would silently switch the reasoning control off for good.
-    Every server that rejects an unknown parameter names it in the message —
-    and only that one is given up, so an endpoint that knows `reasoning_effort`
-    but not the budget keeps the half it understands.
+    bad request would silently switch a control off for good. Every server
+    that rejects an unknown parameter names it in the message — and only that
+    one is given up, so an endpoint that knows `reasoning_effort` but not the
+    budget keeps the half it understands. A form array (`name[]`) is matched
+    by its bare name.
     """
     if not isinstance(exc, httpx.HTTPStatusError) or exc.response.status_code != 400:
         return set()
     # searched, not lower-cased: some servers echo the whole request back in
     # the error body, and that is a transcript chunk, not a sentence
     body = exc.response.text
-    return {name for name in sent if re.search(re.escape(name), body, re.IGNORECASE)}
+    return {
+        name for name in sent if re.search(re.escape(name.removesuffix("[]")), body, re.IGNORECASE)
+    }
 
 
 def probe(base_url: str, api_key: str = "") -> dict[str, Any]:

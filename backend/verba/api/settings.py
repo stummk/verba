@@ -1,7 +1,8 @@
 """Read and update the application settings.
 
-The LLM API key is never returned in clear text: GET masks it, and PUT keeps
-the stored key when the masked placeholder is sent back unchanged.
+The API keys (LLM and transcription endpoint) are never returned in clear
+text: GET masks them, and PUT keeps the stored key when the masked placeholder
+is sent back unchanged.
 
 Two settings have consequences beyond the file they are stored in, so PUT
 acts on them: a new embedding model invalidates every stored vector (full
@@ -27,12 +28,15 @@ from .deps import AdminUser, current_user
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 API_KEY_MASK = "••••••••"
+#: Settings sections holding an endpoint key.
+KEYED_SECTIONS = ("llm", "whisper")
 
 
 def _masked(settings: config.Settings) -> dict:
     data = settings.model_dump()
-    if settings.llm.api_key:
-        data["llm"]["api_key"] = API_KEY_MASK
+    for section in KEYED_SECTIONS:
+        if getattr(settings, section).api_key:
+            data[section]["api_key"] = API_KEY_MASK
     return data
 
 
@@ -111,8 +115,9 @@ def update_settings(
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=f"Invalid settings: {exc}") from exc
 
-    if updated.llm.api_key == API_KEY_MASK:
-        updated.llm.api_key = current.llm.api_key
+    for section in KEYED_SECTIONS:
+        if getattr(updated, section).api_key == API_KEY_MASK:
+            getattr(updated, section).api_key = getattr(current, section).api_key
     # setup state is owned by the backend, not the settings form
     updated.setup = current.setup
     # so is the auth switch: it is turned on and off through /api/auth, never
@@ -170,12 +175,22 @@ class LLMTestRequest(BaseModel):
     api_key: str = ""
 
 
-@router.post("/llm/test")
-def test_llm_endpoint(body: LLMTestRequest, user: dict = AdminUser) -> dict:
-    """Probe an OpenAI-compatible endpoint and list its models."""
+def _probe(body: LLMTestRequest, section: str) -> dict:
     if not body.base_url.strip():
         raise HTTPException(status_code=422, detail="Base URL fehlt")
     api_key = body.api_key
     if api_key == API_KEY_MASK:
-        api_key = config.get_settings().llm.api_key
+        api_key = getattr(config.get_settings(), section).api_key
     return llm.probe(body.base_url.strip(), api_key)
+
+
+@router.post("/llm/test")
+def test_llm_endpoint(body: LLMTestRequest, user: dict = AdminUser) -> dict:
+    """Probe an OpenAI-compatible endpoint and list its models."""
+    return _probe(body, "llm")
+
+
+@router.post("/whisper/test")
+def test_transcription_endpoint(body: LLMTestRequest, user: dict = AdminUser) -> dict:
+    """Probe an OpenAI-compatible transcription endpoint and list its models."""
+    return _probe(body, "whisper")

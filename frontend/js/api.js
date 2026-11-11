@@ -171,6 +171,8 @@ export const api = {
     request("DELETE", `/api/models/speakers?name=${encodeURIComponent(name)}`),
   llmTest: (baseUrl, apiKey) =>
     request("POST", "/api/settings/llm/test", { base_url: baseUrl, api_key: apiKey }),
+  whisperTest: (baseUrl, apiKey) =>
+    request("POST", "/api/settings/whisper/test", { base_url: baseUrl, api_key: apiKey }),
 
   // project types
   listTypes: () => request("GET", "/api/types"),

@@ -1052,8 +1052,9 @@ Modellverzeichnis gelegt werden (Unterordner werden erkannt) und erscheinen in
 derselben Liste.
 
 **Passt das Modell auf diesen Rechner?** Jede Zeile trägt neben dem Status ein
-Urteil für **dieses** System — Whisper läuft immer lokal, gerechnet wird also
-mit dem eigenen RAM und dem eigenen Grafikspeicher:
+Urteil für **dieses** System — die lokale Erkennung läuft auf diesem
+Rechner, gerechnet wird also mit dem eigenen RAM und dem eigenen
+Grafikspeicher:
 
 - **geeignet** (grün) — genug Speicher frei, das Modell läuft ohne Klimmzüge
 - **eingeschränkt** (orange) — es läuft, aber mit Einschränkung: entweder ist
@@ -1114,6 +1115,35 @@ neu von der Platte.
 - Ordner ohne `model.bin` und abgebrochene Downloads werden ignoriert.
 - Ein Pfad, den es noch nicht gibt, wird angelegt. Liegt er auf einem
   Netzlaufwerk, das gerade nicht verbunden ist, bleibt die Liste leer.
+
+### Transkription über einen Endpunkt
+
+Statt des eingebauten faster-whisper kann die Spracherkennung auch auf einem
+anderen Server laufen, der die OpenAI-Schnittstelle `POST /audio/transcriptions`
+spricht — etwa ein stärkerer Rechner im Netz oder ein Dienst mit Modellen, die
+Verba selbst nicht mitbringt. Eingestellt wird das unter **Einstellungen →
+Transkription → OpenAI-kompatibler Endpunkt**: Basis-URL (z. B.
+`http://server:8000/v1`), API-Schlüssel (falls nötig) und Modellname (leer =
+`whisper-1`). **Verbindung testen** fragt den Server nach seinen Modellen.
+
+- Geeignet sind z. B. **vLLM**, **speaches**, **LocalAI**, **OpenAI** und
+  **Groq**, aber auch **whisper.cpp**: `whisper-server` mit
+  `--inference-path /v1/audio/transcriptions` gestartet, Basis-URL dann
+  `http://server:8080/v1`.
+- Die Aufnahmen **verlassen dabei diesen Rechner** und gehen an den
+  eingetragenen Server.
+- Lange Aufnahmen werden an Sprechpausen in Stücke von höchstens zehn Minuten
+  geteilt und nacheinander geschickt; so bleibt jedes Stück unter den üblichen
+  Upload-Grenzen (25 MB), und kein Wort wird mitten durchgeschnitten.
+- Aufnahmesprache und gelernte Schreibweisen werden mitgeschickt — die
+  Schreibweisen gekürzt auf die am besten belegten, weil Endpunkte nur kurze
+  Hinweise annehmen (rund 300 Zeichen). Liefert der
+  Server Wortzeiten, nutzt die Sprechererkennung sie; sonst setzt sie ihre
+  Schnitte geschätzt.
+- Kennt ein Server ein Zusatzfeld nicht und lehnt es ab, lässt Verba genau
+  dieses Feld für diesen Server künftig weg.
+- Modellliste, Gerät und Rechengenauigkeit gelten nur für die lokale
+  Erkennung und sind ausgeblendet, solange der Endpunkt gewählt ist.
 
 ## Sprachmodell (LLM) einrichten {#llm}
 
@@ -1538,9 +1568,10 @@ stehen wie bisher unter der Zeile.
   dabei nur die zur Frage passenden Abschnitte an das Modell; passt selbst das
   nicht in dessen Kontext, wird die Auswahl automatisch verkleinert statt eine
   Fehlermeldung zu zeigen. Ohne Sprachmodell gibt es das Eingabefeld nicht.
-- **Transkription:** Standard-Modell, Modellverzeichnis, Gerät (GPU/CPU),
-  Rechengenauigkeit, Aufnahmesprache — inklusive der Whisper-Modellverwaltung
-  (herunterladen/löschen) im selben Bereich
+- **Transkription:** lokal (faster-whisper) oder über einen
+  OpenAI-kompatiblen Endpunkt; Standard-Modell, Modellverzeichnis, Gerät
+  (GPU/CPU), Rechengenauigkeit, Aufnahmesprache — inklusive der
+  Whisper-Modellverwaltung (herunterladen/löschen) im selben Bereich
 - **KI-Aufbereitung (LLM):** Aus / Lokal / Endpunkt, GGUF-Verzeichnis
   (Abschnitt „Sprachmodell (LLM) einrichten")
 - **Speicherorte & Protokolle:** Datenverzeichnis, Workspace-Verzeichnis,

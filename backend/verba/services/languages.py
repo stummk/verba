@@ -113,3 +113,15 @@ LANGUAGE_NAMES: dict[str, str] = {
 
 def language_name(code: str) -> str:
     return LANGUAGE_NAMES.get(code.lower(), code)
+
+
+def language_code(value: str) -> str:
+    """The code for a language given as code or English name ("German" → "de").
+
+    Endpoints disagree on how they name the detected language; an unknown one
+    gives "".
+    """
+    value = (value or "").strip().lower()
+    if value in LANGUAGE_NAMES:
+        return value
+    return next((code for code, name in LANGUAGE_NAMES.items() if name.lower() == value), "")

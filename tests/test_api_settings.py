@@ -88,3 +88,55 @@ def test_the_thinking_budget_is_stored_and_bounded(client):
     # 0 is "no ceiling"; a negative number is not a budget at all
     data["llm"]["reasoning_budget"] = -1
     assert client.put("/api/settings", json=data).status_code == 422
+
+
+def test_transcription_endpoint_key_is_masked_and_preserved(client):
+    data = client.get("/api/settings").json()
+    data["whisper"]["engine"] = "openai"
+    data["whisper"]["base_url"] = "http://asr.test/v1"
+    data["whisper"]["api_key"] = "asr-geheim"
+    assert client.put("/api/settings", json=data).json()["whisper"]["api_key"] == API_KEY_MASK
+
+    data = client.get("/api/settings").json()
+    assert data["whisper"]["api_key"] == API_KEY_MASK
+    assert client.put("/api/settings", json=data).status_code == 200
+
+    config.reset_cache()
+    assert config.get_settings().whisper.api_key == "asr-geheim"
+    assert config.get_settings().whisper.engine == "openai"
+
+
+def test_settings_without_an_engine_keep_faster_whisper(client):
+    """An installation from before the engine choice transcribes as it did."""
+    data = client.get("/api/settings").json()
+    for key in ("engine", "base_url", "api_key", "remote_model"):
+        data["whisper"].pop(key)
+    assert client.put("/api/settings", json=data).status_code == 200
+
+    config.reset_cache()
+    assert config.get_settings().whisper.engine == "faster_whisper"
+
+
+def test_transcription_endpoint_probe_uses_the_stored_key(client, monkeypatch):
+    settings = config.get_settings()
+    settings.whisper.api_key = "asr-geheim"
+    config.save_settings(settings)
+    seen = {}
+
+    def fake_probe(base_url, api_key=""):
+        seen.update(base_url=base_url, api_key=api_key)
+        return {"ok": True, "models": ["whisper-large-v3-turbo"]}
+
+    monkeypatch.setattr("verba.services.llm.probe", fake_probe)
+    response = client.post(
+        "/api/settings/whisper/test",
+        json={"base_url": " http://asr.test/v1 ", "api_key": API_KEY_MASK},
+    )
+
+    assert response.json()["models"] == ["whisper-large-v3-turbo"]
+    assert seen == {"base_url": "http://asr.test/v1", "api_key": "asr-geheim"}
+
+
+def test_transcription_endpoint_probe_needs_a_url(client):
+    response = client.post("/api/settings/whisper/test", json={"base_url": "  "})
+    assert response.status_code == 422

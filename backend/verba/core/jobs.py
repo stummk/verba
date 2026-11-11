@@ -107,6 +107,10 @@ def report_step(
     report(lo + (hi - lo) * index // max(1, total), f"{label} {index + 1}/{total}")
 
 
+#: The jobs that need no local hardware when the transcription uses an endpoint.
+ENDPOINT_TRANSCRIPTION_KINDS = frozenset({"transcribe", "transcribe_range", "api_transcribe"})
+
+
 def lane_for_kind(kind: str) -> str:
     return "llm" if kind in LLM_KINDS else "main"
 
@@ -411,6 +415,8 @@ class JobQueue:
 
         if lane_for_kind(job["kind"]) == "llm":
             whisper.unload_model()  # free VRAM/RAM before the LLM loads
+        elif job["kind"] in ENDPOINT_TRANSCRIPTION_KINDS and whisper.uses_endpoint():
+            return  # the speech is recognised elsewhere: the LLM may keep its memory
         else:
             llamacpp.stop_server()  # transcription batch begins: LLM releases memory
 

@@ -1003,8 +1003,8 @@ much more power. Custom CTranslate2 models can be placed as folders in the
 models directory (subfolders are detected) and appear in the same list.
 
 **Does the model fit this machine?** Next to its status, every row carries a
-verdict for **this** system — Whisper always runs locally, so the numbers are
-your own RAM and your own graphics memory:
+verdict for **this** system — local recognition runs on this machine, so the
+numbers are your own RAM and your own graphics memory:
 
 - **suitable** (green) — enough free memory, the model runs comfortably
 - **limited** (orange) — it runs, but with a caveat: either the memory is
@@ -1064,6 +1064,34 @@ every request.
 - Folders without a `model.bin` and aborted downloads are ignored.
 - A path that does not exist yet is created. If it lives on a network drive
   that is currently not connected, the list stays empty.
+
+### Transcription through an endpoint
+
+Instead of the built-in faster-whisper, speech recognition can also run on
+another server that speaks the OpenAI interface `POST /audio/transcriptions` —
+a more powerful machine on the network, say, or a service with models Verba
+does not bring itself. Set it under **Settings → Transcription →
+OpenAI-compatible endpoint**: base URL (e.g. `http://server:8000/v1`), API key
+(if needed) and model name (empty = `whisper-1`). **Test connection** asks the
+server for its models.
+
+- Suitable are e.g. **vLLM**, **speaches**, **LocalAI**, **OpenAI** and
+  **Groq**, and also **whisper.cpp**: `whisper-server` started with
+  `--inference-path /v1/audio/transcriptions`, base URL then
+  `http://server:8080/v1`.
+- The recordings **leave this machine** and go to the configured server.
+- Long recordings are split at pauses into pieces of at most ten minutes and
+  sent one after another; every piece stays below the usual upload limits
+  (25 MB), and no word is cut in half.
+- Recording language and learned spellings are sent along — the spellings
+  shortened to the best attested ones, because endpoints only take short
+  hints (about 300 characters). If the server
+  returns word timings, speaker recognition uses them; otherwise it estimates
+  its cuts.
+- If a server does not know an extra field and refuses it, Verba leaves out
+  exactly that field for that server from then on.
+- Model list, device and compute precision only apply to local recognition
+  and are hidden while the endpoint is selected.
 
 ## Setting up a language model (LLM) {#llm}
 
@@ -1471,9 +1499,10 @@ its progress bar and its log are below the row as before.
   (not a chat), and below the answer you see which sections it is based on. Verba only sends the sections that match the question; if even that does
   not fit the model's context, the selection is shrunk automatically instead
   of showing an error. Without a language model the input box is not there.
-- **Transcription:** default model, models directory, device (GPU/CPU),
-  compute precision, recording language — including the Whisper model
-  management (download/delete) in the same section
+- **Transcription:** local (faster-whisper) or through an OpenAI-compatible
+  endpoint; default model, models directory, device (GPU/CPU), compute
+  precision, recording language — including the Whisper model management
+  (download/delete) in the same section
 - **AI processing (LLM):** off / local / endpoint, GGUF directory (section
   "Setting up a language model (LLM)")
 - **Storage & logs:** data directory, workspace directory, server port, log

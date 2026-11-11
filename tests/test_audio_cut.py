@@ -14,6 +14,7 @@ one would make these tests depend on a downloaded binary and on decoding time.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -231,3 +232,45 @@ def test_deleting_the_file_takes_the_kept_original_with_it(file_row):
 
     assert not folder.exists()
     assert workspace.get_file(file_row["id"]) is None
+
+
+# ── finding the pauses ────────────────────────────────────────────────
+
+SILENCEDETECT_OUTPUT = """Input #0, mp3, from 'rede.mp3':
+  Duration: 00:20:05.50, start: 0.025057, bitrate: 128 kb/s
+[silencedetect @ 0x1] silence_start: 12.5
+[silencedetect @ 0x1] silence_end: 13.25 | silence_duration: 0.75
+[silencedetect @ 0x1] silence_start: -0.01
+[silencedetect @ 0x1] silence_end: 0.4 | silence_duration: 0.41
+[silencedetect @ 0x1] silence_start: 1200
+"""
+
+
+def test_pauses_and_duration_come_from_one_ffmpeg_pass(monkeypatch):
+    monkeypatch.setattr(audio, "_ffmpeg", lambda: "ffmpeg")
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr=SILENCEDETECT_OUTPUT)
+
+    monkeypatch.setattr(audio.procutil, "run", fake_run)
+
+    duration, pauses = audio.scan_pauses(Path("rede.mp3"))
+
+    assert len(calls) == 1 and "silencedetect=noise=-35dB:d=0.4" in calls[0]
+    assert duration == 1205.5
+    # a pause still open at the end lasts until the end of the recording
+    assert pauses == [(12.5, 13.25), (0.0, 0.4), (1200.0, 1205.5)]
+
+
+def test_a_failing_scan_names_ffmpeg(monkeypatch):
+    monkeypatch.setattr(audio, "_ffmpeg", lambda: "ffmpeg")
+    monkeypatch.setattr(
+        audio.procutil,
+        "run",
+        lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 1, stderr="rede.mp3: Invalid data"),
+    )
+
+    with pytest.raises(RuntimeError, match="ffmpeg error: rede.mp3: Invalid data"):
+        audio.scan_pauses(Path("rede.mp3"))

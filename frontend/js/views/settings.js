@@ -82,18 +82,48 @@ export async function render(view) {
 
       <div class="card" id="card-transcribe">
         <h2>${t("settings.whisper")}</h2>
+        <div class="segmented" role="radiogroup" id="whisper-engine-group">
+          <label><input type="radio" name="whisper-engine" value="faster_whisper">
+            <span>${t("settings.engineLocal")}</span></label>
+          <label><input type="radio" name="whisper-engine" value="openai">
+            <span>${t("settings.engineEndpoint")}</span></label>
+        </div>
+        <div id="whisper-endpoint-section" hidden>
+          <p class="hint">${t("settings.engineEndpointHint")}</p>
+          <div class="form-grid">
+            <div class="setting-field">
+              <label for="whisper-base-url">${t("settings.baseUrl")}</label>
+              <input id="whisper-base-url" value="${settings.whisper.base_url ?? ""}"
+                     placeholder="http://localhost:8000/v1">
+            </div>
+            <div class="setting-field">
+              ${raw(fieldLabel("whisper-api-key", t("settings.apiKey"), t("settings.apiKeyHint")))}
+              <input id="whisper-api-key" type="password" value="${settings.whisper.api_key ?? ""}"
+                     autocomplete="off">
+            </div>
+            <div class="setting-field">
+              <label for="whisper-remote-model">${t("settings.llmModel")}</label>
+              <input id="whisper-remote-model" value="${settings.whisper.remote_model ?? ""}"
+                     placeholder="whisper-1">
+            </div>
+            <div class="setting-action">
+              <button type="button" class="text-btn" id="whisper-test">${t("settings.llmTest")}</button>
+              <p class="hint" id="whisper-test-result"></p>
+            </div>
+          </div>
+        </div>
         <div class="form-grid">
-          <div class="setting-field">
+          <div class="setting-field" data-whisper-local>
             ${raw(fieldLabel("whisper-model", t("settings.model"), t("settings.modelHint")))}
             <input id="whisper-model" value="${settings.whisper.model}" list="model-list">
             <datalist id="model-list"></datalist>
           </div>
-          <div class="setting-field">
+          <div class="setting-field" data-whisper-local>
             <label for="whisper-models-dir">${t("settings.modelsDir")}</label>
             <input id="whisper-models-dir" value="${settings.whisper.models_dir}"
                    placeholder="${t("settings.modelsDirPlaceholder")}">
           </div>
-          <div class="setting-field">
+          <div class="setting-field" data-whisper-local>
             <label for="whisper-device">${t("settings.device")}</label>
             <select id="whisper-device">
               <option value="auto">${t("settings.deviceAuto")}</option>
@@ -101,7 +131,7 @@ export async function render(view) {
               <option value="cpu">${t("settings.deviceCpu")}</option>
             </select>
           </div>
-          <div class="setting-field">
+          <div class="setting-field" data-whisper-local>
             <label for="whisper-compute">${t("settings.compute")}</label>
             <select id="whisper-compute">
               <option value="auto">${t("settings.computeAuto")}</option>
@@ -114,12 +144,14 @@ export async function render(view) {
             <select id="whisper-language"></select>
           </div>
         </div>
-        ${raw(labelHelp(
-          `<h3 class="subhead">${t("models.title")}</h3>`,
-          helpText(t("models.intro"), t("models.fitHint")), "head-row sub"
-        ))}
-        <p class="small" id="whisper-hardware"></p>
-        <div id="model-list-host"></div>
+        <div data-whisper-local>
+          ${raw(labelHelp(
+            `<h3 class="subhead">${t("models.title")}</h3>`,
+            helpText(t("models.intro"), t("models.fitHint")), "head-row sub"
+          ))}
+          <p class="small" id="whisper-hardware"></p>
+          <div id="model-list-host"></div>
+        </div>
         ${raw(labelHelp(
           `<h3 class="subhead">${t("speakers.title")}</h3>`,
           helpText(t("speakers.intro"), t("speakers.typeHint")), "head-row sub"
@@ -457,6 +489,18 @@ export async function render(view) {
   el("llm-reasoning-budget").value = settings.llm.reasoning_budget ?? 8192;
   el("whisper-device").value = settings.whisper.device;
   el("whisper-compute").value = settings.whisper.compute_type;
+
+  // speech recognition: local fields and endpoint fields are exclusive
+  const engineRadios = [...document.querySelectorAll('input[name="whisper-engine"]')];
+  const currentEngine = () => engineRadios.find((r) => r.checked)?.value ?? "faster_whisper";
+  function showEngineSection() {
+    const endpoint = currentEngine() === "openai";
+    el("whisper-endpoint-section").hidden = !endpoint;
+    for (const node of document.querySelectorAll("[data-whisper-local]")) node.hidden = endpoint;
+  }
+  (engineRadios.find((r) => r.value === settings.whisper.engine) ?? engineRadios[0]).checked = true;
+  engineRadios.forEach((radio) => radio.addEventListener("change", showEngineSection));
+  showEngineSection();
   el("log-level").value = settings.logging.level;
 
   // AI mode: exclusive choice — only the selected path's fields are visible
@@ -709,6 +753,21 @@ export async function render(view) {
     }
   });
 
+  el("whisper-test").onclick = async () => {
+    const result = el("whisper-test-result");
+    result.textContent = "…";
+    try {
+      const data = await api.whisperTest(
+        el("whisper-base-url").value.trim(), el("whisper-api-key").value
+      );
+      result.textContent = data.ok
+        ? t("settings.llmTestOk", { models: data.models.slice(0, 5).join(", ") || "–" })
+        : t("settings.llmTestFail", { error: data.error });
+    } catch (error) {
+      result.textContent = t("settings.llmTestFail", { error: error.message });
+    }
+  };
+
   el("llm-test").onclick = async () => {
     const result = el("llm-test-result");
     result.textContent = "…";
@@ -734,6 +793,10 @@ export async function render(view) {
         device: el("whisper-device").value,
         compute_type: el("whisper-compute").value,
         language: el("whisper-language").value,
+        engine: currentEngine(),
+        base_url: el("whisper-base-url").value.trim(),
+        api_key: el("whisper-api-key").value,
+        remote_model: el("whisper-remote-model").value.trim(),
       },
       llm: {
         mode: currentMode(),

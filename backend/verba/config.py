@@ -197,6 +197,15 @@ class WhisperSettings(BaseModel):
     device: Literal["auto", "cpu", "cuda"] = "auto"
     compute_type: Literal["auto", "int8", "int8_float16", "float16", "float32"] = "auto"
     language: str = ""  # empty = automatic detection; otherwise ISO code like "de"
+    # Who recognises the speech: the bundled faster-whisper, or any server that
+    # speaks OpenAI's `/audio/transcriptions` (vLLM, speaches, LocalAI, a
+    # whisper.cpp `whisper-server`, OpenAI, Groq …). With "openai" the audio
+    # leaves this machine for `base_url`, and model/device/compute above are
+    # not used.
+    engine: Literal["faster_whisper", "openai"] = "faster_whisper"
+    base_url: str = ""  # e.g. http://localhost:8000/v1
+    api_key: str = ""
+    remote_model: str = ""  # empty = "whisper-1"
 
     @field_validator("models_dir")
     @classmethod

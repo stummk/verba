@@ -121,7 +121,12 @@ report that the other platform is covered by CI.
     CPU fallback for broken CUDA and for a full VRAM, preflight refusal of a
     model that fits nowhere, range transcription; `word_timestamps` exactly
     where the type asks for the speakers, because that is the only thing that
-    reads them), diarize (speaker recognition, sherpa-onnx on the CPU: two
+    reads them; `whisper.engine = "openai"` sends the audio to an
+    OpenAI-compatible `/audio/transcriptions` endpoint instead — FLAC pieces
+    of at most ten minutes cut at pauses (`audio.scan_pauses`, `plan_chunks`),
+    an optional field the endpoint refuses is dropped for that endpoint via
+    `llm.rejected_fields`, and every caller goes through `_recognise`, so the
+    two engines yield the same segments), diarize (speaker recognition, sherpa-onnx on the CPU: two
     ONNX models downloaded into their own directory, and the half that
     matters — turning turns into a transcript. A segment of one voice only
     gains a name and keeps its row; a segment in which the speaker changes is

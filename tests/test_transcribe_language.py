@@ -8,6 +8,9 @@ Two things the editor depends on:
   wrong language, and nothing downstream can notice.
 - Transcribing a selection hands back text and writes no segments; only the
   `transcribe` job over the whole file rebuilds them.
+
+The same holds when an OpenAI-compatible endpoint recognises the speech
+instead of faster-whisper; how its answers become segments is tested at the end.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
+import httpx
 import pytest
 
 from verba import config, db
@@ -234,3 +238,248 @@ def test_a_silent_selection_says_so_in_german(range_job, monkeypatch):
     )
 
     assert "kein Text erkannt" in messages[-1]
+
+
+# ── an OpenAI-compatible endpoint ─────────────────────────────────────
+
+
+@pytest.fixture()
+def endpoint(env, monkeypatch):
+    """The endpoint engine against a fake server; `requests` records each upload."""
+    settings = config.get_settings()
+    settings.whisper.engine = "openai"
+    settings.whisper.base_url = "http://asr.test/v1/"
+    settings.whisper.api_key = "sk-test"
+    config.save_settings(settings)
+    whisper._endpoint_unsupported.clear()
+    monkeypatch.setattr(whisper, "_publish_engine_status", lambda *a, **k: None)
+    monkeypatch.setattr(whisper, "_publish_engine_status_running", lambda *a, **k: None)
+    monkeypatch.setattr(whisper, "probe_duration", lambda path: 6.0)
+    pieces: list[tuple[float, float]] = []
+
+    def fake_extract(source, start_s, end_s, target):
+        pieces.append((start_s, end_s))
+        Path(target).write_bytes(b"fLaC")
+
+    monkeypatch.setattr(audio, "extract_range", fake_extract)
+    state: dict = {"requests": [], "answers": [], "pieces": pieces}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.read().decode("utf-8", errors="replace")
+        state["requests"].append(
+            {"url": str(request.url), "headers": request.headers, "body": body}
+        )
+        answer = state["answers"].pop(0)
+        return answer(body) if callable(answer) else httpx.Response(200, json=answer)
+
+    real_client = httpx.Client
+
+    def client(**kwargs):
+        return real_client(transport=httpx.MockTransport(handler), **kwargs)
+
+    monkeypatch.setattr(whisper.httpx, "Client", client)
+    return state
+
+
+def recognise(**kwargs):
+    segments, info = whisper._recognise(Path("aufnahme.mp3"), cancel=NO_CANCEL, **kwargs)
+    return list(segments), info
+
+
+def form_value(body: str, name: str) -> str:
+    """The value of one multipart field of a recorded upload."""
+    marker = f'name="{name}"\r\n\r\n'
+    assert marker in body, name
+    return body.split(marker, 1)[1].split("\r\n", 1)[0]
+
+
+def test_the_endpoint_is_asked_with_the_declared_language(file_row, endpoint):
+    endpoint["answers"].append(
+        {"language": "russian", "segments": [{"start": 0.0, "end": 2.0, "text": " Привет"}]}
+    )
+
+    whisper.handle_transcribe_job(
+        {"file_id": file_row["id"], "payload": {}}, NO_CANCEL, noop_report
+    )
+
+    [request] = endpoint["requests"]
+    assert request["url"] == "http://asr.test/v1/audio/transcriptions"
+    assert request["headers"]["authorization"] == "Bearer sk-test"
+    assert form_value(request["body"], "language") == "ru"
+    assert form_value(request["body"], "response_format") == "verbose_json"
+    assert form_value(request["body"], "model") == "whisper-1"
+    [segment] = transcripts.list_segments(file_row["id"])
+    assert segment["text"] == "Привет"
+    assert workspace.get_file(file_row["id"])["status"] == "done"
+
+
+def test_the_endpoint_detection_fills_a_file_that_declares_nothing(file_row, endpoint):
+    workspace.update_file(file_row["id"], {"language": ""})
+    endpoint["answers"].append(
+        {"language": "german", "segments": [{"start": 0.0, "end": 2.0, "text": "Guten Tag"}]}
+    )
+
+    whisper.handle_transcribe_job(
+        {"file_id": file_row["id"], "payload": {}}, NO_CANCEL, noop_report
+    )
+
+    assert workspace.get_file(file_row["id"])["language"] == "de"
+
+
+def test_a_long_recording_is_sent_in_pieces_cut_at_pauses(endpoint, monkeypatch):
+    monkeypatch.setattr(whisper, "probe_duration", lambda path: 1300.0)
+    monkeypatch.setattr(audio, "scan_pauses", lambda path: (1300.0, [(589.0, 593.0)]))
+    for text in ("eins", "zwei", "drei"):
+        endpoint["answers"].append({"segments": [{"start": 1.0, "end": 2.0, "text": text}]})
+
+    segments, info = recognise()
+
+    assert endpoint["pieces"] == [(0.0, 591.0), (591.0, 1191.0), (1191.0, 1300.0)]
+    assert [(s["start"], s["text"]) for s in segments] == [
+        (1.0, "eins"),
+        (592.0, "zwei"),
+        (1192.0, "drei"),
+    ]
+    assert info.duration == 1300.0
+
+
+def test_plain_words_get_their_spaces_and_their_segment(endpoint):
+    """OpenAI lists the words once for the whole answer and without spaces."""
+    endpoint["answers"].append(
+        {
+            "segments": [
+                {"start": 0.0, "end": 1.0, "text": "Guten Tag"},
+                {"start": 1.0, "end": 2.0, "text": "liebe Leute"},
+            ],
+            "words": [
+                {"word": "Guten", "start": 0.0, "end": 0.4},
+                {"word": "Tag", "start": 0.5, "end": 0.9},
+                {"word": "liebe", "start": 1.0, "end": 1.4},
+                {"word": "Leute", "start": 1.5, "end": 1.9},
+            ],
+        }
+    )
+
+    segments, _info = recognise(words=True)
+
+    assert [w[2] for w in segments[0]["words"]] == ["Guten", " Tag"]
+    assert [w[2] for w in segments[1]["words"]] == ["liebe", " Leute"]
+    assert "".join(w[2] for w in segments[1]["words"]) == segments[1]["text"]
+
+
+def test_tokens_keep_their_own_spaces(endpoint):
+    """whisper.cpp hands out tokens per segment, special tokens included."""
+    endpoint["answers"].append(
+        {
+            "segments": [
+                {
+                    "start": 0.0,
+                    "end": 1.0,
+                    "text": " Hallo Welt",
+                    "words": [
+                        {"word": "[_BEG_]", "start": 0.0, "end": 0.0},
+                        {"word": " Hal", "start": 0.0, "end": 0.2},
+                        {"word": "lo", "start": 0.2, "end": 0.4},
+                        {"word": " Welt", "start": 0.5, "end": 0.9},
+                    ],
+                }
+            ]
+        }
+    )
+
+    [segment], _info = recognise(words=True)
+
+    assert "".join(w[2] for w in segment["words"]) == " Hallo Welt"
+
+
+def test_a_refused_field_is_dropped_for_that_endpoint(endpoint):
+    endpoint["answers"].append(
+        lambda body: httpx.Response(400, json={"error": "unknown parameter: token_timestamps"})
+    )
+    endpoint["answers"].append({"segments": [{"start": 0.0, "end": 1.0, "text": "ok"}]})
+    endpoint["answers"].append({"segments": [{"start": 0.0, "end": 1.0, "text": "ok"}]})
+
+    recognise(words=True)
+    recognise(words=True)  # the next upload does not ask again
+
+    first, retry, later = endpoint["requests"]
+    assert 'name="token_timestamps"' in first["body"]
+    assert 'name="token_timestamps"' not in retry["body"]
+    assert 'name="token_timestamps"' not in later["body"]
+    assert 'name="timestamp_granularities[]"' in retry["body"]
+
+
+def test_an_answer_without_segments_is_one_segment_for_the_piece(endpoint):
+    endpoint["answers"].append({"text": " Alles in einem Stück "})
+
+    [segment], _info = recognise()
+
+    assert (segment["start"], segment["end"]) == (0.0, 6.0)
+    assert segment["text"] == "Alles in einem Stück"
+
+
+def test_an_endpoint_error_fails_the_file_in_german(file_row, endpoint):
+    endpoint["answers"].append(lambda body: httpx.Response(500, text="model not loaded"))
+
+    with pytest.raises(RuntimeError, match="Transkriptions-Endpunkt antwortete mit 500"):
+        whisper.handle_transcribe_job(
+            {"file_id": file_row["id"], "payload": {}}, NO_CANCEL, noop_report
+        )
+
+    row = workspace.get_file(file_row["id"])
+    assert row["status"] == "failed"
+    assert "model not loaded" in row["error"]
+
+
+def test_an_endpoint_without_url_says_where_to_set_it(endpoint):
+    settings = config.get_settings()
+    settings.whisper.base_url = ""
+    config.save_settings(settings)
+
+    with pytest.raises(RuntimeError, match="Kein Transkriptions-Endpunkt"):
+        recognise()
+
+
+def test_a_cancelled_transcription_returns_the_file_to_pending(file_row, endpoint):
+    cancel = threading.Event()
+    cancel.set()
+
+    with pytest.raises(whisper.JobCancelled):
+        whisper.handle_transcribe_job(
+            {"file_id": file_row["id"], "payload": {}}, cancel, noop_report
+        )
+
+    assert endpoint["requests"] == []
+    assert workspace.get_file(file_row["id"])["status"] == "pending"
+
+
+def test_chunks_cut_at_the_limit_where_there_is_no_pause():
+    assert whisper.plan_chunks(1250.0, [], limit=600.0) == [
+        (0.0, 600.0),
+        (600.0, 1200.0),
+        (1200.0, 1250.0),
+    ]
+    assert whisper.plan_chunks(300.0, [], limit=600.0) == [(0.0, 300.0)]
+
+
+def test_an_unknown_duration_is_one_piece_to_the_end():
+    [(start, end)] = whisper.plan_chunks(None, [])
+    assert start == 0.0 and end > 86400
+
+
+def test_a_long_list_of_spellings_is_shortened_to_whole_terms(endpoint):
+    terms = [f"Begriff{index:03d}" for index in range(100)]
+    endpoint["answers"].append({"segments": [{"start": 0.0, "end": 1.0, "text": "ok"}]})
+
+    recognise(hotwords=", ".join(terms))
+
+    prompt = form_value(endpoint["requests"][0]["body"], "prompt")
+    assert len(prompt) <= whisper.ENDPOINT_PROMPT_CHARS
+    sent = prompt.split(", ")
+    assert sent == terms[: len(sent)]  # the best attested first, none cut in half
+
+
+def test_a_short_list_of_spellings_is_sent_unchanged():
+    assert whisper.fit_prompt("Wesner, Kontra") == "Wesner, Kontra"
+    assert whisper.fit_prompt("") == ""
+    assert whisper.fit_prompt("x" * 400) == ""  # a single term too long for the limit
